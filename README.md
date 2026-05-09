@@ -85,7 +85,7 @@ npm run dev
 **持久化與評估**
 - ✅ SQLite 持久化（papers / results / hash 快取）— 重啟仍保留
 - ✅ Token / cost logger — 每篇成本即時顯示，全域統計
-- ✅ Human-as-judge — 每個缺陷可標 ✅/🤔/❌
+- ✅ Human-as-judge UI 與 SQLite 紀錄（**目前只用於測量 precision，尚未自動回饋給 LLM** — 見 [docs/SYSTEM.md](docs/SYSTEM.md) §3.6）
 
 ## 規則來源
 
@@ -115,10 +115,11 @@ npm run dev
 
 | 優先 | 任務 | 工程量 |
 |---|---|---|
-| ⭐⭐⭐ | Prompt 集中化到 `backend/prompts/*.md`（學長能不寫 Python 改 prompt） | 2 hr |
-| ⭐⭐⭐ | 規則命中分布頁 `/stats`（哪幾條從沒觸發） | 半天 |
+| ⭐⭐⭐ | **Phase 2 — 判定 → LLM few-shot 自動回饋**（閉合人工標註迴路） | 半天 |
+| ⭐⭐ | Prompt 集中化到 `backend/prompts/*.md`（學長能不寫 Python 改 prompt） | 2 hr |
+| ⭐⭐ | 規則命中分布頁 `/stats`（哪幾條從沒觸發） | 半天 |
 | ⭐⭐ | 跨章節 second pass（Opus 1M context 補強 REL-04/08/12） | 半天 |
-| ⭐⭐ | LLM Confidence 分數（每個缺陷帶 0-1 信心分） | 2 hr |
+| ⭐ | LLM Confidence 分數（每個缺陷帶 0-1 信心分） | 2 hr |
 | ⭐ | Pre-annotation 評估工具 + F1 計算（接續現有 judgments 資料） | 1-2 天 |
 
 詳見 [docs/SYSTEM.md](docs/SYSTEM.md) §6 與 §10（工程經驗紀錄）。

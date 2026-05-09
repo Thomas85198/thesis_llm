@@ -43,7 +43,7 @@
 | **CSV 報告匯出** | 類似資安弱掃報告，含原文、嚴重度、建議，可給指導老師 |
 | **上傳快取** | 同一份檔案再次上傳秒回，不重新呼叫 LLM（永久有效，重啟後仍生效） |
 | **歷史頁** | 列出所有分析過的論文（SQLite 持久化） |
-| **學長判定 (Human-as-judge)** | 每個缺陷三個按鈕（✅判對 / 🤔部分對 / ❌誤判），即時存 SQLite，累積評估資料 |
+| **學長判定 (Human-as-judge)** | 每個缺陷三個按鈕（✅判對 / 🤔部分對 / ❌誤判），即時存 SQLite，**目前只用於測量 precision，尚未自動回饋給 LLM**（見 §3.6） |
 | **成本即時顯示** | 結果頁 header 標 `$X.XXX`，全域 `/api/cost` 統計每階段花費 |
 
 ---
@@ -144,6 +144,44 @@ flowchart TD
 - **結構性資料進 Neo4j**（給 Cypher 用）
 - **流水/分析資料進 SQLite**（給統計、cache、評估用）
 - **二進位檔案進磁碟**（給 frontend 拉回顯示）
+
+### 3.6 回饋迴路狀態（重要）
+
+人工判定目前**還沒接回 LLM**，迴路是開的：
+
+```mermaid
+flowchart LR
+    A[新論文] --> B[Cypher 撈候選]
+    B --> C[LLM 判讀<br/>system prompt = rules.yaml<br/>user = 候選]
+    C --> D[Defect 清單]
+    D -.手動標 ✅/🤔/❌.-> E[(SQLite<br/>defect_judgments)]
+    E -.目前只到這裡.-> F[/api/judgments/summary<br/>per-rule precision]
+    E -.X 尚未接回.-> C
+```
+
+意思是：學長標再多次，**下次跑同一篇論文 LLM 還是會出同樣的缺陷**，判定資料目前只用於：
+
+1. 算 precision，找出最爛的規則
+2. 提供人工依據去手動改 `rules.yaml`（如 REL-09 的修正）
+
+**閉環設計（Phase 2，未實作）** 應該長這樣：
+
+```
+規則檢核時，自動撈該規則最近 N 個判定，
+塞進 LLM system prompt 當作 in-context examples：
+
+  System: REL-09 規則描述...
+          以下是學長標過的範例：
+            ✅ 判對:
+              - "single-head 比最佳設定差 0.9 BLEU" 
+            ❌ 誤判:
+              - "我們用了 8 個 GPU"  ← 純粹事實
+  User: 這次的候選子圖...
+```
+
+效果：每加一筆判定，下次同規則 LLM 判讀就會更貼近學長口味。**不需要 fine-tune**，是純 in-context learning。
+
+工程量約半天，預期是「人標 5 篇 → 重跑 → precision 明顯提升」的有感效果。詳見 §6。
 
 ---
 
@@ -278,6 +316,10 @@ flowchart TB
 
 ### 短期（1-2 週）
 
+- **⭐ Phase 2：判定 → LLM few-shot 自動回饋**（**最高優先**，閉合 §3.6 的迴路）
+  - 規則檢核時，自動撈該 rule_id 最近 N 個判定當 in-context examples
+  - 塞進 system prompt 後 prompt cache miss 一次，之後固定
+  - 預期效果：學長標 5 篇後，重跑 precision 明顯提升
 - **Prompt 集中化**：把 prompts 從 Python 抽到 `backend/prompts/*.md`，學長可在不寫 code 的情況下調整
 - **缺陷分組摺疊**：相同規則的缺陷可摺疊顯示，UI 更乾淨
 - **規則命中分布頁** `/stats`：跑完幾篇後看哪些規則最常觸發、哪些從沒觸發 → 找出規則設計盲點
@@ -429,7 +471,13 @@ Abstract 寫「使用動機及持續使用意圖均有受到心流之影響」�
 
 **通則**：每條 REL 規則的 Cypher 都要回答「同篇內、哪個範圍內」是合理的搜尋邊界，不是 paper-wide boolean。
 
-### 10.3 SQLite vs in-memory dict — 看似能延後的 refactor 其實阻擋很多事
+### 10.3 Human-as-judge 的迴路是開的（容易誤會）
+
+加完判定 UI 後團隊很容易誤以為「按一按就會自動學習」。**沒有**。判定目前只進 SQLite 給統計用，下次跑 LLM 還是看 `rules.yaml` 的靜態 prompt。
+
+要真正閉環需要做 §6 的 Phase 2 — 把判定當 in-context examples 塞回 LLM prompt。在做之前，UI 上也明確標註「只用於測量」，避免標註者誤會付出沒有效果。
+
+### 10.4 SQLite vs in-memory dict — 看似能延後的 refactor 其實阻擋很多事
 
 最初 `_paper_results / _hash_to_paper_id / _paper_files` 都用 in-memory dict，一切看起來「dev 階段先這樣」。但很快遇到三個問題同時湧現：
 1. 重啟丟失分析結果，每次都要重跑（昂貴）
@@ -440,5 +488,102 @@ Abstract 寫「使用動機及持續使用意圖均有受到心流之影響」�
 
 ---
 
-*文件版本：v2（2026-05-09）*
+## 11. SQL / DBeaver 查詢手冊
+
+backend 跑著時，可以另外用 DBeaver 或 `sqlite3` CLI 查 `backend/data.db`（SQLite 支援多 reader 並發，**只 SELECT 不會打架**）。
+
+### 11.1 連線（DBeaver Community）
+
+1. `brew install --cask dbeaver-community`（或從 [dbeaver.io](https://dbeaver.io/download/) 下載）
+2. New Database Connection → 選 **SQLite**
+3. Path 填：`<repo>/backend/data.db`
+4. 第一次會問 Download SQLite JDBC driver → 按下載
+5. Test Connection → Finish
+
+### 11.2 常用查詢（複製即用）
+
+**看哪條規則最爛（per-rule precision）**
+
+```sql
+SELECT rule_id,
+       COUNT(*) AS total,
+       SUM(verdict='correct') AS correct,
+       SUM(verdict='partial') AS partial,
+       SUM(verdict='wrong')   AS wrong,
+       ROUND((SUM(verdict='correct') + 0.5*SUM(verdict='partial')) * 1.0
+             / COUNT(*), 2) AS precision
+FROM defect_judgments
+GROUP BY rule_id
+ORDER BY precision ASC;   -- 最爛的排前面
+```
+
+**看每篇論文的 LLM 成本**
+
+```sql
+SELECT paper_id,
+       COUNT(*) AS calls,
+       ROUND(SUM(cost_usd), 4) AS cost_usd,
+       SUM(input_tokens) AS in_tok,
+       SUM(output_tokens) AS out_tok
+FROM llm_calls
+GROUP BY paper_id
+ORDER BY cost_usd DESC;
+```
+
+**看哪個階段最貴（rule_check / edu / er / rst_fru）**
+
+```sql
+SELECT stage,
+       COUNT(*) AS calls,
+       ROUND(SUM(cost_usd), 4) AS cost_usd
+FROM llm_calls
+GROUP BY stage
+ORDER BY cost_usd DESC
+LIMIT 10;
+```
+
+**從 results JSON 抽 metadata**
+
+```sql
+SELECT json_extract(result_json, '$.paper_id') AS paper_id,
+       json_extract(result_json, '$.graph.title') AS title,
+       json_array_length(result_json, '$.graph.edus') AS edu_count,
+       json_array_length(result_json, '$.defects')   AS defect_count
+FROM results;
+```
+
+**找「燒錢但判錯多」的規則**（最該優先改）
+
+```sql
+SELECT j.rule_id,
+       COUNT(j.defect_id) AS judged,
+       SUM(j.verdict='wrong') AS wrong,
+       ROUND(SUM(c.cost_usd), 4) AS total_cost_usd
+FROM defect_judgments j
+LEFT JOIN llm_calls c
+    ON c.paper_id = j.paper_id
+   AND c.stage = 'rule_check:' || j.rule_id
+GROUP BY j.rule_id
+ORDER BY wrong DESC, total_cost_usd DESC;
+```
+
+### 11.3 安全性
+
+- ✅ **SELECT 隨便跑** — SQLite 多 reader 並發 OK
+- ⚠️ **避免 UPDATE / DELETE / INSERT** — DBeaver 預設交易模式可能 hold lock，跟 backend 寫入打架。要改的話先 `Ctrl+C` 停 backend
+- 想開更好的並發模式：DBeaver 連線 properties 加 `journal_mode = WAL`（停 backend 改一次後永久生效）
+
+### 11.4 等價的 HTTP API（不想開 SQL 也行）
+
+| 等價 SQL | API |
+|---|---|
+| 全域 per-rule precision | `GET /api/judgments/summary` |
+| 單篇所有判定 | `GET /api/papers/{id}/judgments` |
+| 全域成本 | `GET /api/cost` |
+| 單篇成本 | `GET /api/papers/{id}/cost` |
+| 論文清單 | `GET /api/papers` |
+
+---
+
+*文件版本：v3（2026-05-09）*
 *維護者：實驗室 thesis-llm 團隊*

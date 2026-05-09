@@ -67,15 +67,25 @@ npm run dev
 
 ## 已實作
 
+**Pipeline**
 - ✅ PDF/TXT 上傳與抽取 (PyMuPDF，含 page+bbox)
 - ✅ EDU 切分 + 回映原始座標 (rapidfuzz)
 - ✅ ER / RST / FRU 標註 (Claude tool use)
 - ✅ Neo4j Knowledge Graph 寫入
-- ✅ 13 條 REL 規則檢核 (Cypher + LLM 雙層)
-- ✅ FastAPI endpoints (`/api/upload`, `/api/jobs/...`, `/api/papers/...`, `/api/rules`)
-- ✅ CORS middleware (允許 localhost:3000)
-- ✅ Next.js 16 + shadcn/ui 前端骨架
-- ✅ 整合測試頁 (連到 backend 列出 13 條規則)
+- ✅ 13 條 REL 規則檢核 (Cypher 候選 + LLM 判讀)
+
+**前端**
+- ✅ Next.js 16 + Tailwind 4 + shadcn/ui
+- ✅ 上傳頁含進度回報、toast、自動跳轉
+- ✅ 結果頁 PDF viewer + 缺陷面板雙向連結（react-pdf）
+- ✅ KG 視覺化（React Flow + dagre layout，Entity / FRU 兩層）
+- ✅ CSV 報告匯出（UTF-8 BOM）
+- ✅ RWD（mobile / tablet / desktop）
+
+**持久化與評估**
+- ✅ SQLite 持久化（papers / results / hash 快取）— 重啟仍保留
+- ✅ Token / cost logger — 每篇成本即時顯示，全域統計
+- ✅ Human-as-judge — 每個缺陷可標 ✅/🤔/❌
 
 ## 規則來源
 
@@ -86,18 +96,29 @@ npm run dev
 
 | Method | Path | 說明 |
 |---|---|---|
-| POST | `/api/upload` | 上傳論文 (multipart, `file` + 選填 `title`) |
+| POST | `/api/upload` | 上傳論文 (multipart, `file` + 選填 `title`)，hash 命中快取會直接回傳之前 paper_id |
 | GET | `/api/jobs/{job_id}` | 工作狀態 (queued / extracting / checking / done / error) |
-| GET | `/api/papers/{paper_id}/pdf` | 回傳原始 PDF（給前端 viewer） |
-| GET | `/api/papers/{paper_id}/graph` | KG 節點+邊 |
+| GET | `/api/papers` | 所有分析過的論文 |
+| GET | `/api/papers/{paper_id}/pdf` | 回傳原始 PDF |
+| GET | `/api/papers/{paper_id}/result` | 完整 AnalysisResult (graph + defects) |
+| GET | `/api/papers/{paper_id}/graph` | Neo4j 節點+邊（給 KG viewer） |
 | GET | `/api/papers/{paper_id}/edus/{edu_id}` | EDU detail (text, page, bbox) |
+| GET | `/api/papers/{paper_id}/cost` | 該篇 LLM 成本與 token breakdown |
+| GET | `/api/cost` | 全域 LLM 成本統計 |
+| GET | `/api/papers/{paper_id}/judgments` | 該篇所有人工判定 |
+| POST | `/api/papers/{paper_id}/judgments` | 新增/更新某缺陷的判定 (`{defect_id, rule_id, verdict, note?}`) |
+| DELETE | `/api/papers/{paper_id}/judgments/{defect_id}` | 取消該缺陷的判定 |
+| GET | `/api/judgments/summary` | 全域 per-rule precision 與計數 |
 | GET | `/api/rules` | 列出 13 條規則 |
 
 ## 下一步路線圖
 
 | 優先 | 任務 | 工程量 |
 |---|---|---|
-| ⭐⭐⭐ | 前端：上傳頁 + 進度回報 (SSE) | 半天 |
-| ⭐⭐⭐ | 前端：PDF Viewer + 缺陷高亮（雙向連結） | 一天 |
-| ⭐⭐ | 前端：React Flow KG 視覺化 | 半天 |
-| ⭐ | 後端：論文列表、重跑規則、token 用量記錄 | 半天 |
+| ⭐⭐⭐ | Prompt 集中化到 `backend/prompts/*.md`（學長能不寫 Python 改 prompt） | 2 hr |
+| ⭐⭐⭐ | 規則命中分布頁 `/stats`（哪幾條從沒觸發） | 半天 |
+| ⭐⭐ | 跨章節 second pass（Opus 1M context 補強 REL-04/08/12） | 半天 |
+| ⭐⭐ | LLM Confidence 分數（每個缺陷帶 0-1 信心分） | 2 hr |
+| ⭐ | Pre-annotation 評估工具 + F1 計算（接續現有 judgments 資料） | 1-2 天 |
+
+詳見 [docs/SYSTEM.md](docs/SYSTEM.md) §6 與 §10（工程經驗紀錄）。

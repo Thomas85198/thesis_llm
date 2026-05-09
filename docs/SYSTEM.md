@@ -41,8 +41,10 @@
 | **PDF 視覺化** | 點缺陷 → PDF 自動 scroll + 高亮對應段落；點 PDF 高亮 → 反向選缺陷 |
 | **Knowledge Graph 視覺化** | 用 React Flow 渲染論文的 Entity 圖與 FRU 修辭結構圖 |
 | **CSV 報告匯出** | 類似資安弱掃報告，含原文、嚴重度、建議，可給指導老師 |
-| **上傳快取** | 同一份檔案再次上傳秒回，不重新呼叫 LLM（省 API cost） |
-| **歷史頁** | 列出本 session 分析過的論文 |
+| **上傳快取** | 同一份檔案再次上傳秒回，不重新呼叫 LLM（永久有效，重啟後仍生效） |
+| **歷史頁** | 列出所有分析過的論文（SQLite 持久化） |
+| **學長判定 (Human-as-judge)** | 每個缺陷三個按鈕（✅判對 / 🤔部分對 / ❌誤判），即時存 SQLite，累積評估資料 |
+| **成本即時顯示** | 結果頁 header 標 `$X.XXX`，全域 `/api/cost` 統計每階段花費 |
 
 ---
 
@@ -54,10 +56,11 @@
 flowchart LR
     User[使用者] -->|上傳 PDF| Frontend
     Frontend[Next.js 16<br/>+ Tailwind 4<br/>+ shadcn/ui] -->|HTTP/JSON| Backend
-    Backend[FastAPI + Python] -->|抽取 / 判讀| Claude[Claude API<br/>Opus 4.7 / Sonnet 4.6]
-    Backend -->|寫入 / 查詢| Neo4j[(Neo4j<br/>Knowledge Graph)]
-    Backend -->|儲存 PDF| Disk[本地檔案系統]
-    Frontend -->|渲染 PDF + KG| User
+    Backend[FastAPI + Python] -->|抽取 / 判讀| Claude[Claude API]
+    Backend -->|KG 結構| Neo4j[(Neo4j<br/>Knowledge Graph)]
+    Backend -->|metadata / results /<br/>cost log / judgments| SQLite[(SQLite<br/>data.db)]
+    Backend -->|PDF 原檔| Disk[backend/uploads]
+    Frontend -->|渲染 + 標註| User
 ```
 
 ### 3.2 處理流程（時序圖）
@@ -119,11 +122,28 @@ flowchart TD
 
 | 層 | 技術 |
 |---|---|
-| 前端 | Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · shadcn/ui · React Flow · react-pdf |
+| 前端 | Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · shadcn/ui · React Flow · react-pdf · sonner |
 | 後端 | Python 3.11+ · FastAPI · Pydantic v2 · PyMuPDF · rapidfuzz |
 | LLM | Anthropic Claude API（Opus 4.7 / Sonnet 4.6 / Haiku 4.5） |
 | 知識圖譜 | Neo4j 5.26 (Community) · Cypher |
+| 持久化 | SQLite (stdlib `sqlite3`)：metadata、results、hash 快取、LLM 成本 log、人工判定 |
 | 容器化 | Docker Compose（用於 Neo4j） |
+
+### 3.5 資料持久化分工
+
+三個層各管一塊，**不重疊**：
+
+| 儲存層 | 內容 | 重啟後 |
+|---|---|---|
+| **Neo4j** | 五種節點與邊（`Paper / EDU / Entity / FRU / RST` + 邊）— 用於 Cypher 候選查詢 | 持久（Docker volume） |
+| **SQLite** (`backend/data.db`) | `papers`（含 content_hash、pdf_path）· `results`（完整 JSON）· `llm_calls`（每次呼叫的 token / cost）· `defect_judgments`（學長 ✅/🤔/❌ 標註） | 持久 |
+| **本地磁碟** (`backend/uploads/`) | PDF 原檔，檔名以 `paper_id` 為 key | 持久 |
+| In-memory `_jobs` dict | 分析中的 job 進度（`queued`/`extracting`/`checking`） | 重啟丟失（無關緊要） |
+
+設計準則：
+- **結構性資料進 Neo4j**（給 Cypher 用）
+- **流水/分析資料進 SQLite**（給統計、cache、評估用）
+- **二進位檔案進磁碟**（給 frontend 拉回顯示）
 
 ---
 
@@ -250,19 +270,24 @@ flowchart TB
 
 ## 6. 未來展望
 
+### ✅ 已完成
+
+- **後端 SQLite 持久化** — 重啟仍保留歷史與 hash 快取
+- **Token / cost logger** — 每篇成本即時顯示，全域統計可查
+- **Human-as-judge 標註介面** — 每個缺陷可標 ✅/🤔/❌，累積評估資料
+
 ### 短期（1-2 週）
 
-- **後端 SQLite 持久化**：目前重啟 server 會清空 in-memory 結果，加 SQLite 後歷史永久保留
-- **Token / cost logger**：每次 LLM 呼叫紀錄 input/output tokens，估算單篇成本
 - **Prompt 集中化**：把 prompts 從 Python 抽到 `backend/prompts/*.md`，學長可在不寫 code 的情況下調整
 - **缺陷分組摺疊**：相同規則的缺陷可摺疊顯示，UI 更乾淨
+- **規則命中分布頁** `/stats`：跑完幾篇後看哪些規則最常觸發、哪些從沒觸發 → 找出規則設計盲點
 
 ### 中期（1 個月）
 
 - **跨章節驗證 second pass**：跑完現有切段流程後，多一次「全文摘要 + 所有 FRU」的 Opus 1M context 檢查，補強 REL-04/08/12 等跨章節規則
 - **LLM Confidence 分數**：每個缺陷帶 0-1 信心分，前端顯示星星
-- **Human-as-judge 標註介面**：學長可在系統內對每個缺陷標「對 / 錯 / 部分對」，累積 evaluation data
-- **Pre-annotation 評估工具**：學長可預先標 ground truth，系統自動算 Precision / Recall / F1
+- **Pre-annotation 評估工具**：學長預先標 ground truth，系統自動算 Precision / Recall / F1（搭配既有 judgments 表延伸）
+- **規則迭代回饋迴路**：根據 `/api/judgments/summary` 的 per-rule precision，自動建議低於 threshold 的規則需要 review
 
 ### 長期（投論文前）
 
@@ -374,5 +399,46 @@ Abstract 寫「使用動機及持續使用意圖均有受到心流之影響」�
 
 ---
 
-*文件版本：v1（2026-05-09）*
+## 10. 工程經驗紀錄（已踩過的坑）
+
+> 此區記錄迭代過程中得到的非顯而易見決策，避免後人重踩。
+
+### 10.1 模型選擇：Opus → Sonnet → Sonnet+Haiku → Sonnet（最終）
+
+跑了三輪實驗：
+
+| 配置 | EDU 數（同一篇） | 缺陷數 | 單篇成本 | 結果 |
+|---|---|---|---|---|
+| Opus heavy + Sonnet light | 311 | 4 | ~$3 | 品質感覺好但成本高 |
+| Sonnet heavy + Haiku light | **194** ↓38% | 16 | ~$0.4 | EDU 粒度違反定義 — 拒絕 |
+| **Sonnet heavy + Sonnet light** | ~300 | TBD | ~$0.55 | 採用 |
+
+**關鍵教訓**：
+- **EDU 切分不能省**。Haiku 把多個命題合成一個 EDU，違反 "elementary" 定義，會 cascade 弄壞下游所有 FRU/RST 標註。
+- **規則判讀 Sonnet 比 Opus 更積極**（同候選輸出更多 verdict=violates）。沒有 ground truth 時不能說誰對，但實作上應該配合 Human-as-judge 累積資料再決定。
+- **不要為了「看起來省錢」就把每階段都用最便宜的模型** — 結構性步驟出錯成本不可逆。
+
+### 10.2 規則迭代：REL-09 從「全篇 boolean」改 proximity 檢查
+
+原版 Cypher 的 `WHERE NOT EXISTS { MATCH (a:FRU {function: 'Attribution'}) }` 實際語意是「全文有沒有任何 Attribution」。導致：
+
+- 全篇 0 個 Attribution → **所有** Observation 全被丟給 LLM 判
+- 全篇 1 個 Attribution → **沒有任何** Observation 被丟出（明顯錯）
+
+改成「同章節、order 鄰近 [obs_start - 3, obs_end + 8] 內檢查」，外加 description 加保守原則指令。預期 false positive 從 ~12 降到 ~5。
+
+**通則**：每條 REL 規則的 Cypher 都要回答「同篇內、哪個範圍內」是合理的搜尋邊界，不是 paper-wide boolean。
+
+### 10.3 SQLite vs in-memory dict — 看似能延後的 refactor 其實阻擋很多事
+
+最初 `_paper_results / _hash_to_paper_id / _paper_files` 都用 in-memory dict，一切看起來「dev 階段先這樣」。但很快遇到三個問題同時湧現：
+1. 重啟丟失分析結果，每次都要重跑（昂貴）
+2. Hash 快取失效，無法做永久去重
+3. 沒地方存 cost log → 沒辦法回答「這篇花多少錢」
+
+加 SQLite 後三件事一次解掉，且為 Human-as-judge 留好桌位（`defect_judgments` 表）。**結論：當 in-memory state 開始綁定 user-visible 行為時，立刻換 SQLite，不要拖。**
+
+---
+
+*文件版本：v2（2026-05-09）*
 *維護者：實驗室 thesis-llm 團隊*

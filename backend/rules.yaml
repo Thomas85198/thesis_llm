@@ -1,0 +1,195 @@
+# 13 條全域通用 REL 規則 (志祥學長從 51 條章節規則 MECE 收斂而來)
+#
+# 每條規則:
+#   id: REL-XX
+#   name: 規則名稱
+#   description: 規則白話描述 (給 LLM 判讀)
+#   candidate_query: Cypher 查詢，回傳「可能違反規則」的候選節點/路徑
+#   defect_label: 違反時記錄的缺陷標籤 (對應老師舉的缺陷型態)
+#
+# 規則的精確語意應由學長維護。下方 candidate_query 為起步版本，
+# 用於把 KG 中相關子圖撈出來丟給 LLM 做最終判讀。
+
+rules:
+  - id: REL-01
+    name: Claim-Evidence
+    description: |
+      每個主張 (Claim) 都應該有對應的證據 (Evidence) 支撐 — 量化數據、引用、實驗結果或邏輯推論。
+      孤立、無支撐的主張 (The Naked Claim) 是常見缺陷。
+    candidate_query: |
+      MATCH (f:FRU {paper_id: $pid, function: 'Claim'})
+      WHERE NOT EXISTS {
+        MATCH (e:FRU {paper_id: $pid, function: 'Evidence'})-[:COVERS]->(:EDU)<-[:COVERS]-(f)
+      }
+      AND NOT EXISTS {
+        MATCH (f)-[:COVERS]->(:EDU)<-[:NUCLEUS|SATELLITE]-(:RST {rst_type: 'Evidence'})
+      }
+      RETURN f.id AS fru_id, f.summary AS summary,
+             [(f)-[:COVERS]->(e:EDU) | e.id] AS edu_ids,
+             [(f)-[:COVERS]->(e:EDU) | e.text] AS edu_texts,
+             [(f)-[:COVERS]->(e:EDU) | e.section][0] AS section
+    defect_label: NakedClaim
+
+  - id: REL-02
+    name: Baseline-Critique
+    description: |
+      在 Method/Experiment 中提到 baseline 時，應有對其侷限或不足的批判，
+      作為自身方法的對照動機。只列 baseline 不批判是缺陷。
+    candidate_query: |
+      MATCH (e:Entity {paper_id: $pid})
+      WHERE toLower(e.name) CONTAINS 'baseline'
+         OR e.type = 'Method'
+      OPTIONAL MATCH (e)-[:MENTIONED_IN]->(edu:EDU)
+      WITH e, collect(DISTINCT edu.id) AS edu_ids, collect(DISTINCT edu.text) AS edu_texts,
+           collect(DISTINCT edu.section) AS sections
+      WHERE size(edu_ids) > 0
+      RETURN e.id AS entity_id, e.name AS entity_name, edu_ids, edu_texts, sections
+    defect_label: BaselineNotCritiqued
+
+  - id: REL-03
+    name: Action-Justification
+    description: |
+      對每個關鍵研究行動 (選某資料集/某評估指標/某架構) 都應有合理化說明。
+      無動機交代 (Missing Motivation) 是常見缺陷。
+    candidate_query: |
+      MATCH (f:FRU {paper_id: $pid, function: 'MethodStep'})
+      WHERE NOT EXISTS {
+        MATCH (m:FRU {paper_id: $pid, function: 'Motivation'})-[:COVERS]->(:EDU)
+        WHERE m.id <> f.id
+      }
+      RETURN f.id AS fru_id, f.summary AS summary,
+             [(f)-[:COVERS]->(e:EDU) | e.id] AS edu_ids,
+             [(f)-[:COVERS]->(e:EDU) | e.text] AS edu_texts,
+             [(f)-[:COVERS]->(e:EDU) | e.section][0] AS section
+    defect_label: MissingMotivation
+
+  - id: REL-04
+    name: Macro-Decomposition
+    description: |
+      論文整體應有清楚的巨觀結構拆解 — 大問題拆成子問題，子問題拆成子方法。
+      若 Introduction 沒有交代問題拆解、或 Method 沒有與問題對應的子模組，是缺陷。
+    candidate_query: |
+      MATCH (p:Paper {id: $pid})
+      OPTIONAL MATCH (p)-[:HAS_EDU]->(e:EDU {section: 'Introduction'})<-[:COVERS]-(f:FRU)
+      WITH p, collect(DISTINCT f.function) AS intro_fns
+      RETURN p.id AS paper_id, intro_fns
+    defect_label: NoMacroDecomposition
+
+  - id: REL-05
+    name: Process-Sequence
+    description: |
+      Method 章節中的步驟應有明確時序 (先做什麼後做什麼)，並用適當連接詞或編號表達。
+      時序混亂或跳躍是缺陷。
+    candidate_query: |
+      MATCH (e:EDU {paper_id: $pid, section: 'Method'})
+      WITH collect({id: e.id, text: e.text, order: e.order}) AS method_edus
+      RETURN method_edus
+    defect_label: WeakProcessSequence
+
+  - id: REL-06
+    name: Concept-Formalization
+    description: |
+      新引入的概念/術語/變數應該被形式化定義 (數學定義、操作型定義或公式)，不能只用比喻或模糊描述。
+    candidate_query: |
+      MATCH (n:Entity {paper_id: $pid})
+      WHERE n.type IN ['Concept', 'Metric']
+      OPTIONAL MATCH (n)-[:MENTIONED_IN]->(e:EDU)
+      WITH n, collect(DISTINCT e.id) AS edu_ids, collect(DISTINCT e.text) AS edu_texts
+      RETURN n.id AS entity_id, n.name AS entity_name, edu_ids, edu_texts
+    defect_label: ConceptNotFormalized
+
+  - id: REL-07
+    name: Setup-Scoping
+    description: |
+      實驗章節 (Experiment) 應交代實驗設定範圍 (資料、超參、硬體、評估協議)，
+      範圍模糊會使結果不可重現。
+    candidate_query: |
+      MATCH (e:EDU {paper_id: $pid, section: 'Experiment'})
+      WITH collect({id: e.id, text: e.text}) AS exp_edus
+      RETURN exp_edus
+    defect_label: SetupNotScoped
+
+  - id: REL-08
+    name: Problem-Solution
+    description: |
+      論文應有清楚的「問題 → 解決方案」對應 — Introduction 提出的每個 problem
+      應在 Method 對應一個 solution，反之亦然。
+    candidate_query: |
+      MATCH (p:Paper {id: $pid})
+      OPTIONAL MATCH (p)-[:HAS_EDU]->(e1:EDU {section: 'Introduction'})<-[:COVERS]-(f1:FRU)
+      OPTIONAL MATCH (p)-[:HAS_EDU]->(e2:EDU {section: 'Method'})<-[:COVERS]-(f2:FRU)
+      WITH collect(DISTINCT {id: f1.id, fn: f1.function, summary: f1.summary}) AS intro_fru,
+           collect(DISTINCT {id: f2.id, fn: f2.function, summary: f2.summary}) AS method_fru
+      RETURN intro_fru, method_fru
+    defect_label: ProblemSolutionMismatch
+
+  - id: REL-09
+    name: Observation-Attribution
+    description: |
+      Results/Discussion 中的觀察 (數字、現象) 應有歸因 — 為何出現這個結果？
+      只報告數字不解釋是缺陷。
+    candidate_query: |
+      MATCH (f:FRU {paper_id: $pid, function: 'Observation'})
+      WHERE NOT EXISTS {
+        MATCH (a:FRU {paper_id: $pid, function: 'Attribution'})
+        WHERE a.id <> f.id
+      }
+      RETURN f.id AS fru_id, f.summary AS summary,
+             [(f)-[:COVERS]->(e:EDU) | e.id] AS edu_ids,
+             [(f)-[:COVERS]->(e:EDU) | e.text] AS edu_texts
+    defect_label: ObservationWithoutAttribution
+
+  - id: REL-10
+    name: Concession-Compensation
+    description: |
+      承認侷限 (Concession) 後應有補償策略 (Compensation) — 例如未來工作、可行替代或範圍說明。
+      只承認不補償會弱化論證。
+    candidate_query: |
+      MATCH (f:FRU {paper_id: $pid, function: 'Concession'})
+      WHERE NOT EXISTS {
+        MATCH (c:FRU {paper_id: $pid, function: 'Compensation'})
+        WHERE c.id <> f.id
+      }
+      RETURN f.id AS fru_id, f.summary AS summary,
+             [(f)-[:COVERS]->(e:EDU) | e.id] AS edu_ids,
+             [(f)-[:COVERS]->(e:EDU) | e.text] AS edu_texts
+    defect_label: UncompensatedConcession
+
+  - id: REL-11
+    name: Specific-Generalization
+    description: |
+      具體案例 (specific) 應導向通則 (generalization)，反之通則應有具體案例支撐。
+      只有特例沒泛化、或只有泛化沒實例都是缺陷。
+    candidate_query: |
+      MATCH (f1:FRU {paper_id: $pid, function: 'Specific'})
+      OPTIONAL MATCH (f2:FRU {paper_id: $pid, function: 'Generalization'})
+      RETURN collect(DISTINCT {id: f1.id, summary: f1.summary}) AS specifics,
+             collect(DISTINCT {id: f2.id, summary: f2.summary}) AS generalizations
+    defect_label: SpecificGeneralizationImbalance
+
+  - id: REL-12
+    name: Core-Restatement
+    description: |
+      Conclusion 應重述論文核心主張 (與 Abstract/Introduction 的核心一致)。
+      Conclusion 與全文核心錯位是缺陷。
+    candidate_query: |
+      MATCH (p:Paper {id: $pid})
+      OPTIONAL MATCH (p)-[:HAS_EDU]->(a:EDU {section: 'Abstract'})
+      OPTIONAL MATCH (p)-[:HAS_EDU]->(c:EDU {section: 'Conclusion'})
+      WITH collect(DISTINCT a.text) AS abstract_texts,
+           collect(DISTINCT c.text) AS conclusion_texts
+      RETURN abstract_texts, conclusion_texts
+    defect_label: ConclusionMisaligned
+
+  - id: REL-13
+    name: Meta-Discourse
+    description: |
+      論文應有適當的後設論述 (例如「本節將介紹...」、「下一節討論...」、章節導引)，
+      幫助讀者導航。完全缺乏或氾濫使用都是問題。
+    candidate_query: |
+      MATCH (f:FRU {paper_id: $pid, function: 'MetaDiscourse'})
+      RETURN f.id AS fru_id, f.summary AS summary,
+             [(f)-[:COVERS]->(e:EDU) | e.id] AS edu_ids,
+             [(f)-[:COVERS]->(e:EDU) | e.text] AS edu_texts,
+             [(f)-[:COVERS]->(e:EDU) | e.section][0] AS section
+    defect_label: MetaDiscourseImbalance

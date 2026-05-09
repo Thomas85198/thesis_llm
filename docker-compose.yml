@@ -1,0 +1,12 @@
+services:
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: thesis_neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/thesis_demo_pw
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - ./neo4j_data:/data

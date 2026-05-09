@@ -10,9 +10,17 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from . import db, kg, pipeline, rules
 from .schemas import AnalysisResult
+
+
+class JudgmentIn(BaseModel):
+    defect_id: str
+    rule_id: str
+    verdict: str = Field(..., pattern="^(correct|wrong|partial)$")
+    note: str | None = None
 
 router = APIRouter()
 
@@ -224,3 +232,34 @@ def overall_cost() -> dict[str, Any]:
 def paper_cost(paper_id: str) -> dict[str, Any]:
     """Spending breakdown for a single paper."""
     return db.cost_summary(paper_id=paper_id)
+
+
+# ---------- human-as-judge evaluation ----------
+
+@router.get("/api/papers/{paper_id}/judgments")
+def list_judgments(paper_id: str) -> list[dict[str, Any]]:
+    return db.list_judgments(paper_id)
+
+
+@router.post("/api/papers/{paper_id}/judgments")
+def upsert_judgment(paper_id: str, body: JudgmentIn) -> dict[str, str]:
+    db.upsert_judgment(
+        paper_id=paper_id,
+        defect_id=body.defect_id,
+        rule_id=body.rule_id,
+        verdict=body.verdict,
+        note=body.note,
+    )
+    return {"status": "ok"}
+
+
+@router.delete("/api/papers/{paper_id}/judgments/{defect_id:path}")
+def delete_judgment(paper_id: str, defect_id: str) -> dict[str, str]:
+    db.delete_judgment(paper_id, defect_id)
+    return {"status": "ok"}
+
+
+@router.get("/api/judgments/summary")
+def judgments_summary() -> dict[str, Any]:
+    """Per-rule + global precision based on accumulated human judgments."""
+    return db.judgment_summary()

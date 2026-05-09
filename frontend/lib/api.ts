@@ -186,3 +186,71 @@ export async function fetchOverallCost(): Promise<CostSummary> {
 export async function fetchPaperCost(paperId: string): Promise<CostSummary> {
   return get<CostSummary>(`/api/papers/${encodeURIComponent(paperId)}/cost`);
 }
+
+// ---------- Human-as-judge ----------
+
+export type Verdict = "correct" | "wrong" | "partial";
+
+export type Judgment = {
+  defect_id: string;
+  rule_id: string;
+  verdict: Verdict;
+  note: string | null;
+  created_at: string;
+};
+
+export async function fetchJudgments(paperId: string): Promise<Judgment[]> {
+  return get<Judgment[]>(
+    `/api/papers/${encodeURIComponent(paperId)}/judgments`
+  );
+}
+
+export async function submitJudgment(
+  paperId: string,
+  body: { defect_id: string; rule_id: string; verdict: Verdict; note?: string }
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/papers/${encodeURIComponent(paperId)}/judgments`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) throw new Error(`submitJudgment failed: ${await res.text()}`);
+}
+
+export async function deleteJudgment(
+  paperId: string,
+  defectId: string
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/papers/${encodeURIComponent(paperId)}/judgments/${encodeURIComponent(defectId)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) throw new Error(`deleteJudgment failed: ${await res.text()}`);
+}
+
+export type JudgmentRuleStat = {
+  rule_id: string;
+  total: number;
+  correct: number;
+  wrong: number;
+  partial: number;
+  precision: number | null;
+};
+
+export type JudgmentSummary = {
+  by_rule: JudgmentRuleStat[];
+  total: {
+    total: number;
+    correct: number;
+    wrong: number;
+    partial: number;
+    precision: number | null;
+  };
+};
+
+export async function fetchJudgmentSummary(): Promise<JudgmentSummary> {
+  return get<JudgmentSummary>("/api/judgments/summary");
+}

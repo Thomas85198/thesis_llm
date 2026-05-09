@@ -126,17 +126,58 @@ rules:
   - id: REL-09
     name: Observation-Attribution
     description: |
-      Results/Discussion 中的觀察 (數字、現象) 應有歸因 — 為何出現這個結果？
-      只報告數字不解釋是缺陷。
+      在 Results / Discussion / Experiment 章節中，**值得注意的觀察**
+      （顯著數字差異、效能變化、出乎意料的現象）若沒有配對的解釋
+      （Attribution，說明 why），就是缺陷。
+
+      什麼算 Attribution（不要 flag）：
+      - 同段內的因果片語：「because / due to / we attribute this to / X 導致 Y」
+      - 緊接其後的解釋段落（FRU function = Attribution）
+      - 引用外部解釋：「as shown by Smith et al.」、「consistent with prior work」
+      - 圖表中的對照組已暗示原因（例如 ablation study 表格）
+
+      什麼**不需要**歸因（保守，不要 flag）：
+      - 純粹事實敘述：「我們用了 8 個 GPU」、「資料集包含 60K 句子」
+      - 例行 baseline 報告：「Method A: 60.3 BLEU; Method B: 60.5 BLEU」
+      - 中性的描述句，沒有「值得注意」的語氣
+      - 已被同段或前段上下文明顯解釋的觀察
+
+      **保守原則**：只 flag 帶有「值得注意」語氣（significantly / surprisingly /
+      interestingly / notably / however / but / unexpected），但完全沒嘗試
+      解釋 why 的句子。中性的描述性敘述請放過 — 寧可 false negative，
+      不要 false positive。
+
+      候選資料中已附 `section` 與 evidence 文字；若文字本身帶有任何因果
+      連接詞（because, since, due to, as, owing to, attribute, explain），
+      代表已內含 attribution → 不算違規。
     candidate_query: |
-      MATCH (f:FRU {paper_id: $pid, function: 'Observation'})
-      WHERE NOT EXISTS {
-        MATCH (a:FRU {paper_id: $pid, function: 'Attribution'})
-        WHERE a.id <> f.id
-      }
-      RETURN f.id AS fru_id, f.summary AS summary,
-             [(f)-[:COVERS]->(e:EDU) | e.id] AS edu_ids,
-             [(f)-[:COVERS]->(e:EDU) | e.text] AS edu_texts
+      // 對每個 Observation FRU，檢查同章節、order 鄰近範圍內是否有 Attribution。
+      // 若沒有，才當候選。比起原本「全文有沒有 Attribution」，這個
+      // proximity 檢查能避免「全篇有一段歸因就放過所有 observation」的反例。
+      MATCH (obs:FRU {paper_id: $pid, function: 'Observation'})-[:COVERS]->(obs_edu:EDU)
+      WHERE obs_edu.section IN ['Results', 'Discussion', 'Experiment']
+      WITH obs, obs_edu.section AS section,
+           min(obs_edu.order) AS obs_start,
+           max(obs_edu.order) AS obs_end,
+           collect(obs_edu.id)   AS evidence_ids,
+           collect(obs_edu.text) AS evidence_texts
+
+      OPTIONAL MATCH (attr:FRU {paper_id: $pid, function: 'Attribution'})-[:COVERS]->(attr_edu:EDU)
+      WHERE attr_edu.section = section
+        AND attr_edu.order >= obs_start - 3
+        AND attr_edu.order <= obs_end + 8
+
+      WITH obs, section, obs_start, obs_end, evidence_ids, evidence_texts,
+           count(DISTINCT attr) AS nearby_attribution_count
+      WHERE nearby_attribution_count = 0
+
+      RETURN obs.id   AS fru_id,
+             obs.summary AS summary,
+             section,
+             obs_start,
+             obs_end,
+             evidence_ids   AS edu_ids,
+             evidence_texts AS edu_texts
     defect_label: ObservationWithoutAttribution
 
   - id: REL-10

@@ -114,6 +114,8 @@ def check_rule(
         tool_name="emit_verdicts",
         tool_description="Emit per-candidate verdicts on this rule.",
         tool_input_schema=VERDICT_SCHEMA,
+        paper_id=paper_id,
+        stage=f"rule_check:{rule['id']}",
     )
 
     defects: list[Defect] = []

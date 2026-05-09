@@ -249,6 +249,8 @@ def extract_edus(
         tool_name="emit_edus",
         tool_description="Emit EDUs for the section.",
         tool_input_schema=EDU_SCHEMA,
+        paper_id=paper_id,
+        stage=f"edu:{section}",
     )
     edus: list[EDU] = []
     for i, item in enumerate(out.get("edus", [])):
@@ -327,6 +329,7 @@ def extract_er(edus: list[EDU], paper_id: str) -> tuple[list[Entity], list[ERTri
     if not edus:
         return [], []
     indexed = "\n".join(f"[{i}] {e.text}" for i, e in enumerate(edus))
+    section_label = edus[0].section if edus else "unknown"
     out = call_with_tool(
         model=model_light(),
         system=ER_SYSTEM,
@@ -334,6 +337,8 @@ def extract_er(edus: list[EDU], paper_id: str) -> tuple[list[Entity], list[ERTri
         tool_name="emit_er",
         tool_description="Emit entities and relation triples.",
         tool_input_schema=ER_SCHEMA,
+        paper_id=paper_id,
+        stage=f"er:{section_label}",
     )
     name_to_id: dict[str, str] = {}
     entities: list[Entity] = []
@@ -470,6 +475,7 @@ def extract_rst_fru(
     if not edus:
         return [], []
     indexed = "\n".join(f"[{i}] {e.text}" for i, e in enumerate(edus))
+    section_label = edus[0].section if edus else "unknown"
     out = call_with_tool(
         model=model_heavy(),
         system=RST_FRU_SYSTEM,
@@ -477,6 +483,8 @@ def extract_rst_fru(
         tool_name="emit_rst_fru",
         tool_description="Emit RST relations and FRU groupings.",
         tool_input_schema=RST_FRU_SCHEMA,
+        paper_id=paper_id,
+        stage=f"rst_fru:{section_label}",
     )
 
     rst_nodes: list[RSTNode] = []

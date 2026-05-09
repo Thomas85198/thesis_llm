@@ -1,4 +1,4 @@
-"""FastAPI routes: upload paper → analyze → fetch graph, defects, PDF, EDU detail."""
+"""FastAPI routes: upload paper → analyze → fetch graph, defects, PDF, EDU detail, cost."""
 from __future__ import annotations
 
 import hashlib
@@ -11,7 +11,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from . import kg, pipeline, rules
+from . import db, kg, pipeline, rules
 from .schemas import AnalysisResult
 
 router = APIRouter()
@@ -21,20 +21,10 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 JobStatus = Literal["queued", "extracting", "checking", "done", "error"]
 
+# Job state stays in-memory: it only matters during a single analysis run.
+# Papers / results / hash-cache / cost log all live in SQLite (app/db.py).
 _jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
-
-# paper_id → saved PDF path (so /papers/{id}/pdf can serve it back to frontend)
-_paper_files: dict[str, Path] = {}
-_paper_files_lock = threading.Lock()
-
-# paper_id → AnalysisResult dump (so result page can fetch by paper_id)
-_paper_results: dict[str, dict[str, Any]] = {}
-_paper_results_lock = threading.Lock()
-
-# content SHA-256 → paper_id (so re-uploading the exact same file is instant)
-_hash_to_paper_id: dict[str, str] = {}
-_hash_lock = threading.Lock()
 
 
 def _set_job(job_id: str, **fields: Any) -> None:
@@ -53,7 +43,6 @@ def _run_analysis(
     paper_id: str,
     title: str,
     spans: list[pipeline.Span],
-    content_hash: str | None = None,
 ) -> None:
     try:
         _set_job(job_id, status="extracting", message="Building EDU/ER/RST/FRU…")
@@ -65,21 +54,17 @@ def _run_analysis(
 
         result = AnalysisResult(paper_id=paper_id, graph=graph, defects=defects)
         result_dump = result.model_dump()
-        with _paper_results_lock:
-            _paper_results[paper_id] = result_dump
+        db.upsert_result(paper_id, result_dump)
         _set_job(
             job_id,
             status="done",
             result=result_dump,
             finished_at=datetime.now(timezone.utc).isoformat(),
         )
-        # Register content-hash → paper_id only after a fully successful run.
-        if content_hash:
-            with _hash_lock:
-                _hash_to_paper_id[content_hash] = paper_id
     except Exception as exc:
         try:
             kg.clear_paper(paper_id)
+            db.delete_paper(paper_id)
         except Exception as cleanup_exc:
             _set_job(
                 job_id,
@@ -100,13 +85,11 @@ async def upload(
     raw = await file.read()
     content_hash = hashlib.sha256(raw).hexdigest()
 
-    # Cache hit: same file already analyzed → return existing paper_id
-    # as an instantly-done job, no LLM cost incurred.
-    with _hash_lock:
-        cached_paper_id = _hash_to_paper_id.get(content_hash)
-    if cached_paper_id:
-        with _paper_results_lock:
-            cached_result = _paper_results.get(cached_paper_id)
+    # Cache hit: same file already analyzed (persistent across restarts).
+    cached = db.get_paper_by_hash(content_hash)
+    if cached:
+        cached_paper_id = cached["paper_id"]
+        cached_result = db.get_result(cached_paper_id)
         if cached_result is not None:
             now = datetime.now(timezone.utc).isoformat()
             job_id = f"job:{uuid.uuid4().hex[:8]}"
@@ -114,7 +97,7 @@ async def upload(
                 job_id,
                 status="done",
                 paper_id=cached_paper_id,
-                title=cached_result.get("graph", {}).get("title", file.filename),
+                title=cached["title"],
                 created_at=now,
                 finished_at=now,
                 message="Cached (same file already analyzed).",
@@ -130,11 +113,11 @@ async def upload(
     suffix = Path(file.filename).suffix or ".pdf"
     saved_path = UPLOAD_DIR / f"{paper_id.replace(':', '_')}{suffix}"
     saved_path.write_bytes(raw)
-    with _paper_files_lock:
-        _paper_files[paper_id] = saved_path
+    db.upsert_paper(paper_id, title or file.filename, content_hash, str(saved_path))
 
     spans = pipeline.extract_spans_from_bytes(raw, file.filename)
     if not spans:
+        db.delete_paper(paper_id)
         raise HTTPException(400, "empty document")
 
     job_id = f"job:{uuid.uuid4().hex[:8]}"
@@ -152,7 +135,6 @@ async def upload(
         paper_id,
         title or file.filename,
         spans,
-        content_hash,
     )
     return {"job_id": job_id, "paper_id": paper_id, "cached": False}
 
@@ -167,34 +149,39 @@ def job_status(job_id: str) -> dict[str, Any]:
 
 @router.get("/api/papers/{paper_id}/pdf")
 def paper_pdf(paper_id: str) -> FileResponse:
-    with _paper_files_lock:
-        path = _paper_files.get(paper_id)
-    if path is None or not path.exists():
+    paper = db.get_paper(paper_id)
+    if paper is None or not paper.get("pdf_path"):
         raise HTTPException(404, "PDF not found for this paper")
+    path = Path(paper["pdf_path"])
+    if not path.exists():
+        raise HTTPException(404, "PDF file missing on disk")
     return FileResponse(path, media_type="application/pdf")
 
 
 @router.get("/api/papers/{paper_id}/result")
 def paper_result(paper_id: str) -> dict[str, Any]:
-    with _paper_results_lock:
-        result = _paper_results.get(paper_id)
+    result = db.get_result(paper_id)
     if result is None:
-        raise HTTPException(404, "Result not found (server may have restarted)")
+        raise HTTPException(404, "Result not found")
     return result
 
 
 @router.get("/api/papers")
 def list_papers() -> list[dict[str, Any]]:
-    with _paper_results_lock:
-        items = [
-            {
-                "paper_id": pid,
-                "title": r.get("graph", {}).get("title", ""),
-                "defect_count": len(r.get("defects", [])),
-                "edu_count": len(r.get("graph", {}).get("edus", [])),
-            }
-            for pid, r in _paper_results.items()
-        ]
+    items: list[dict[str, Any]] = []
+    for p in db.list_papers():
+        if not p.get("has_result"):
+            continue
+        result = db.get_result(p["paper_id"])
+        if result is None:
+            continue
+        items.append({
+            "paper_id": p["paper_id"],
+            "title": p["title"] or result.get("graph", {}).get("title", ""),
+            "defect_count": len(result.get("defects", [])),
+            "edu_count": len(result.get("graph", {}).get("edus", [])),
+            "finished_at": p.get("finished_at"),
+        })
     return items
 
 
@@ -225,3 +212,15 @@ def list_rules() -> list[dict[str, Any]]:
         {"id": r["id"], "name": r["name"], "description": r["description"]}
         for r in rules.load_rules()
     ]
+
+
+@router.get("/api/cost")
+def overall_cost() -> dict[str, Any]:
+    """Total spending + per-stage breakdown across all papers."""
+    return db.cost_summary(paper_id=None)
+
+
+@router.get("/api/papers/{paper_id}/cost")
+def paper_cost(paper_id: str) -> dict[str, Any]:
+    """Spending breakdown for a single paper."""
+    return db.cost_summary(paper_id=paper_id)

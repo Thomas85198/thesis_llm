@@ -110,6 +110,28 @@ export type PaperListItem = {
   title: string;
   defect_count: number;
   edu_count: number;
+  finished_at?: string | null;
+};
+
+export type CostStageRow = {
+  stage: string;
+  model: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+};
+
+export type CostSummary = {
+  total: {
+    calls: number;
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_tokens: number;
+    cache_write_tokens: number;
+    cost_usd: number;
+  };
+  by_stage: CostStageRow[];
 };
 
 // ---------- Calls ----------
@@ -155,4 +177,12 @@ export async function uploadPaper(
 
 export function pdfUrl(paperId: string): string {
   return `${API_BASE}/api/papers/${encodeURIComponent(paperId)}/pdf`;
+}
+
+export async function fetchOverallCost(): Promise<CostSummary> {
+  return get<CostSummary>("/api/cost");
+}
+
+export async function fetchPaperCost(paperId: string): Promise<CostSummary> {
+  return get<CostSummary>(`/api/papers/${encodeURIComponent(paperId)}/cost`);
 }

@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { fetchPaperResult } from "@/lib/api";
+import { fetchPaperCost, fetchPaperResult } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +19,8 @@ export default async function PaperLayout({
   let title = decodedId;
   let defectCount: number | null = null;
   let eduCount: number | null = null;
+  let costUsd: number | null = null;
+  let costCalls: number | null = null;
   try {
     const result = await fetchPaperResult(decodedId);
     title = result.graph.title || decodedId;
@@ -26,6 +28,13 @@ export default async function PaperLayout({
     eduCount = result.graph.edus.length;
   } catch {
     // Layout still renders; child page will show a friendlier error.
+  }
+  try {
+    const cost = await fetchPaperCost(decodedId);
+    costUsd = cost.total.cost_usd;
+    costCalls = cost.total.calls;
+  } catch {
+    // Cost is best-effort.
   }
 
   return (
@@ -51,6 +60,15 @@ export default async function PaperLayout({
                   )}
                   {eduCount !== null && (
                     <Badge variant="outline">EDU {eduCount}</Badge>
+                  )}
+                  {costUsd !== null && costCalls !== null && costCalls > 0 && (
+                    <Badge
+                      variant="outline"
+                      title={`${costCalls} 次 LLM 呼叫`}
+                      className="font-mono"
+                    >
+                      ${costUsd.toFixed(3)}
+                    </Badge>
                   )}
                 </div>
               )}

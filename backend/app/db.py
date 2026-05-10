@@ -272,6 +272,68 @@ def list_judgments(paper_id: str) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def get_judgment_examples(
+    rule_id: str, limit_per_verdict: int = 4
+) -> list[dict[str, Any]]:
+    """Recent human judgments for ONE rule, joined with the original defect text.
+
+    Returns up to `limit_per_verdict` correct + `limit_per_verdict` wrong examples,
+    each shaped as:
+        {verdict, description, suggestion, evidence_texts: [str], note}
+    Used to build few-shot calibration examples in rules.check_rule().
+    """
+    with connect() as c:
+        rows = c.execute(
+            """
+            SELECT j.paper_id, j.defect_id, j.verdict, j.note, j.created_at,
+                   r.result_json
+            FROM defect_judgments j
+            JOIN results r ON r.paper_id = j.paper_id
+            WHERE j.rule_id = ? AND j.verdict IN ('correct', 'wrong')
+            ORDER BY j.created_at DESC
+            """,
+            (rule_id,),
+        ).fetchall()
+
+    bucket: dict[str, list[dict[str, Any]]] = {"correct": [], "wrong": []}
+    for r in rows:
+        v = r["verdict"]
+        if len(bucket[v]) >= limit_per_verdict:
+            continue
+        try:
+            result = json.loads(r["result_json"])
+        except Exception:
+            continue
+        defect = next(
+            (d for d in result.get("defects", []) if d.get("id") == r["defect_id"]),
+            None,
+        )
+        if defect is None:
+            continue
+        edu_map = {
+            e["id"]: e.get("text", "")
+            for e in result.get("graph", {}).get("edus", [])
+        }
+        evidence_texts = [
+            (edu_map.get(eid) or "").strip()
+            for eid in defect.get("evidence_edu_ids", [])
+        ]
+        evidence_texts = [t for t in evidence_texts if t]
+        bucket[v].append(
+            {
+                "verdict": v,
+                "description": defect.get("description", ""),
+                "suggestion": defect.get("suggestion", ""),
+                "evidence_texts": evidence_texts,
+                "note": r["note"],
+            }
+        )
+        if len(bucket["correct"]) >= limit_per_verdict and len(bucket["wrong"]) >= limit_per_verdict:
+            break
+
+    return bucket["correct"] + bucket["wrong"]
+
+
 def judgment_summary() -> dict[str, Any]:
     """Per-rule + global counts of correct/wrong/partial judgments + precision."""
     with connect() as c:
@@ -313,6 +375,39 @@ def judgment_summary() -> dict[str, Any]:
         (g["correct"] + 0.5 * g["partial"]) / g_total if g_total else None
     )
     return {"by_rule": by_rule, "total": g}
+
+
+def rule_firing_stats() -> dict[str, Any]:
+    """Per-rule firing distribution across all analyzed papers.
+
+    Returned shape (used by /api/rules/stats and the /stats page):
+      {
+        papers_analyzed: int,
+        per_rule: {rule_id: {papers_fired, total_defects}},
+      }
+    Caller (routes) joins this with rule metadata + judgment_summary.
+    """
+    per_rule: dict[str, dict[str, int]] = {}
+    papers_analyzed = 0
+    with connect() as c:
+        rows = c.execute("SELECT result_json FROM results").fetchall()
+    for r in rows:
+        try:
+            res = json.loads(r["result_json"])
+        except Exception:
+            continue
+        papers_analyzed += 1
+        rules_in_paper: set[str] = set()
+        for d in res.get("defects", []):
+            rid = d.get("rule_id")
+            if not rid:
+                continue
+            slot = per_rule.setdefault(rid, {"papers_fired": 0, "total_defects": 0})
+            slot["total_defects"] += 1
+            rules_in_paper.add(rid)
+        for rid in rules_in_paper:
+            per_rule[rid]["papers_fired"] += 1
+    return {"papers_analyzed": papers_analyzed, "per_rule": per_rule}
 
 
 def cost_summary(paper_id: str | None = None) -> dict[str, Any]:

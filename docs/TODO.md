@@ -1,155 +1,160 @@
 # 專案管理 / TODO
 
-> 最後更新：2026-05-10
+> 最後更新：2026-05-10（深夜）
 > 用途：列出 v3 已完成的主幹之外、還欠的工程與決策。每天如果有進度就把對應條目劃掉或更新。
 > 架構與設計細節在 [SYSTEM.md](SYSTEM.md)，這份只放「還沒做的事」。
 
 ---
 
-## 0. 最近完成
+## 0. 最近完成（2026-05-10）
 
-### 2026-05-10 — 論文助手聊天抽屜 ✅
+下面這幾件事是同一晚 burst 做完的，都是為了下週 demo。
 
+### 0.1 論文助手聊天抽屜 ✅
 - 後端 [backend/app/chat.py](../backend/app/chat.py)：context 組裝（整篇 EDU + defects + 13 規則 + prompt cache）+ Guardrails（scope refuse、強制 cite、injection 偵測、rate limit 15/min、輸入 cap 2000 字、history cap 10 turns）
-- 後端 endpoint：`POST /api/papers/{id}/chat`（429 → rate limit / 400 → validation / 409 → 分析未完成）
+- 端點：`POST /api/papers/{id}/chat`（429 → rate limit / 400 → validation / 409 → 分析未完成）
 - 前端 [frontend/components/chat-drawer.tsx](../frontend/components/chat-drawer.tsx)：右下浮動按鈕 + Sheet 抽屜，`[EDU:xxx]` / `[DEFECT:xxx]` 自動 parse 成可點 chip → 跳 PDF/缺陷面板
-- LLM 用 Sonnet（chat 夠用，比 Opus 便宜 5x），單次 ~$0.001-0.003 USD（cache hit 後）
+- LLM 用 Sonnet（chat 夠用，cache hit 後 ~$0.001-0.003 / 次）
+
+### 0.2 Phase 2 — Judgment → Few-shot 回饋迴路 ✅
+- [backend/app/db.py](../backend/app/db.py)：`get_judgment_examples(rule_id, limit_per_verdict=4)` — JOIN judgments × results，回傳 `{verdict, description, suggestion, evidence_texts, note}`
+- [backend/app/rules.py](../backend/app/rules.py)：`_build_examples_block()` 把 correct + wrong examples 組成 calibration prompt（≥3 筆才注入），`check_rule()` 自動把 examples 拼進 system prompt
+- Schema 加 `RuleRunMeta`（rule_id、examples_used、candidate_count、defect_count），透過 `AnalysisResult.rule_meta` 傳到前端
+- 前端 result 頁顯示「⚙️ 參考 N 筆學長判定」綠色 badge
+
+### 0.3 LLM Confidence 分數 ✅
+- `Defect.confidence` 0.0–1.0，schema 強制 LLM 輸出（描述 0.9+/0.6-0.9/0.3-0.6 區間）
+- 缺陷卡片顯示信心 % + 高/中/低色塊（emerald/sky/zinc）
+
+### 0.4 缺陷依嚴重度 / 規則分組 ✅
+- DefectPanel 加分組切換器
+- Evidence text hover 取消 line-clamp 看完整內容
+
+### 0.5 /stats 規則統計頁 ✅
+- 端點 `GET /api/rules/stats`：JOIN `rule_firing_stats` × `judgment_summary`，per rule 統計命中分布 + precision
+- 前端 [/stats](../frontend/app/stats/page.tsx)：4 KPI + 13 條規則表格 + 狀態 badge（🌑 從未觸發 / 🔥 高頻 / ⚠️ 需檢討 / ✅ 表現良好）+ Phase 2 樣本充足度欄
+
+### 0.6 Prompt 集中化 ✅
+- 新 [backend/prompts/](../backend/prompts/) 目錄：`edu.md` `er.md` `rst_fru.md` `checker.md` `chat.md` `cross_section.md`
+- [backend/app/prompts.py](../backend/app/prompts.py) `load_prompt(name)` lru_cache loader
+- 學長改 prompt 不用碰 Python（重啟 backend 即生效；或呼叫 `prompts.reload()`）
+
+### 0.7 跨章節 second pass ✅
+- [backend/app/rules.py](../backend/app/rules.py)：`cross_section_pass()` — 用 Opus 4.7 1M context 跑全篇，專攻 REL-04 (Macro-Decomposition) / REL-08 (Problem-Solution) / REL-12 (Core-Restatement) 這三條 per-section 抓不到的
+- Schema 強制 `evidence_edu_ids ≥ 2`（必須引用跨章節證據）
+- 預設開啟，`ENABLE_CROSS_SECTION_PASS=0` 關閉
+- 缺陷類型加「（跨章節）」標籤區分
+
+### 0.8 歷史頁批次刪除 ✅
+- 端點 `DELETE /api/papers/{paper_id}` — 同步清 SQLite + Neo4j + PDF 檔
+- 前端 papers 頁改 client component，加 checkbox + 全選 + 批次刪除 + confirm
+
+### 0.9 KG minimap ✅
+- 之前就有了（`kg-flow.tsx` 用 React Flow 內建 `<MiniMap>`）
 
 ---
 
-## 1. 立即優先：Phase 2 — Judgment → LLM 回饋迴路
+## 1. 立即優先：學長標 50 筆 + Phase 2 ablation
 
-**狀態**：尚未開工。**這是現在閉合人工標註迴路的關鍵一步。**
+> Phase 2 程式碼已就緒，但**沒資料就跑不起來**。這是現在唯一卡住論文 main result 的事。
 
-**目的**：讓學長標的「✅ 判對 / 🤔 部分對 / ❌ 誤判」自動成為下次同規則檢核的 few-shot examples，迴路才會閉合。目前 SQLite 已經存了，但 LLM 不會去讀。
+### 學長 labeling 計畫
+- 目標：~50 筆 judgments（理想分布：每條規則至少 3 筆，方能觸發 Phase 2 注入）
+- 每篇論文約 5-15 個 defects，標 5-10 篇就足夠
+- 估時：學長半小時/篇 × 8 篇 ≈ 4 小時，可拆成兩天
+- UI 已就緒：result 頁缺陷卡片底下 ✅判對 / 🤔部分對 / ❌誤判 三鈕
 
-### 動作清單
+### 累積後的 ablation 實驗
+1. 先記錄 baseline（沒 inject few-shot）：拿 5 篇沒判定過的論文，跑 → 記下 defect 數、信心分分布
+2. 標完 50 筆後，重跑同 5 篇：看 defect 數 / precision 是否改善
+3. 表格化呈現 → 寫進論文 evaluation 章節
 
-- [ ] `backend/app/db.py` 加 `get_judgment_examples(rule_id: str, limit: int = 4)` — 撈該規則最近 N 筆 `correct` + N 筆 `wrong`，回傳 `{defect_text, evidence_texts, verdict, note}`
-- [ ] `backend/app/rules.py` 在 `check_rule()` 組 system prompt 時自動 inject 範例段（格式：「以下是學長過去對此規則的判定範例，請學習：...」）
-- [ ] `backend/app/rules.py` 同步把 example_count 寫到回傳的 result，傳到前端
-- [ ] `frontend/components/result-view.tsx` header 加 badge「⚙️ 此次參考 N 筆學長判定」
-- [ ] 邊界處理：判定 < 3 筆時不 inject（避免 over-fit），> 8 筆時取最新 + 最有代表性的（先用最新）
-- [ ] 跑回歸：對同一篇論文 before/after，看 defect 數量與內容是否變化合理
-
-**工程量**：半天（不含跑回歸實驗）
-**前置條件**：學長至少標 ~10-20 個 defect 才有意義；建議**今天起在 result 頁邊用邊標**，累積樣本
-
-### 為什麼是最高優先
-
-1. SQLite 紀錄已經建好但沒接上 LLM — 工程上是「線斷在最後一哩」
-2. 有了這條迴路才能寫論文 ablation：with/without few-shot → precision 差異
-3. 也才能解釋 demo 中「為什麼這個系統會越用越準」
+### `/stats` 頁監控訊號
+- ⚠️ 需檢討：precision < 0.5 → 學長重寫該規則 description / Cypher
+- 🌑 從未觸發：該規則太嚴或 Cypher 沒抓到候選
+- 🔥 高頻：可能 over-fire，加進 cross-section pass 也好
 
 ---
 
-## 2. 短期（1-2 週）
+## 2. 中期（demo 後 2-4 週）
 
-| 任務 | 優先 | 工程量 | 說明 |
+### 2.1 Pre-annotation 評估工具 + per-rule precision
+- 把 SQLite judgments 當 ground truth，自動算 per-rule precision、F1
+- 工程量：1 天
+- 卡點：需要 50+ judgments 才有意義
+
+### 2.2 Anthropic Batch API（51 篇實驗 50% 折扣）
+- 把 pipeline 改 async，submit batch → poll
+- 工程量：1-2 天
+- 收益：同樣 51 篇實驗成本砍半，方便跑大規模測試
+
+### 2.3 Prompt 版本化
+- 現在 prompts 是純文字檔，沒版本概念
+- 進階：每個 prompt 改動記到 SQLite + 跑回歸看 precision 變化
+- 工程量：半天
+
+---
+
+## 3. 長期 / 戰略性（demo 後再說）
+
+| 項目 | 動機 | 工程量 | Defer 原因 |
 |---|---|---|---|
-| Prompt 集中化到 `backend/prompts/*.md` | ⭐⭐ | 2 hr | 學長能直接改 prompt 不用碰 Python |
-| 規則命中分布頁 `/stats` | ⭐⭐ | 半天 | 哪幾條從沒觸發、哪幾條 over-fire；接到 SQLite 統計 |
-| 跨章節 second pass | ⭐⭐ | 半天 | Opus 4.7 1M context 補強 REL-04/REL-08/REL-12（這幾條本來就需要跨章節推理） |
-| LLM Confidence 分數 | ⭐ | 2 hr | 每個缺陷帶 0-1 信心分，前端用透明度或數字呈現 |
-| 缺陷依規則分組顯示 | ⭐ | 1 hr | DefectPanel 可切「按 severity / 按 rule_id」分組 |
+| Hybrid Local + Cloud | EDU/ER 用 Ollama (M1 Max 64GB 跑 Qwen2.5-72B 可行)，省 70% cost | 2 天 | 老師明確說先不嘗試 |
+| 跨論文 Entity 對齊 | 同一作者多篇連動；對畢業論文系列特別有用 | 1-2 天 | entity dedup 是研究級題目，demo 不需要 |
+| Multi-agent (Claim / Evidence / Critic) | 比單 prompt 細分職責 | 2+ 天 | 需要重設計 pipeline，demo 先不動 |
 
 ---
 
-## 3. 中期（1 個月）
+## 4. UX polish（剩餘）
 
-### 3.1 Pre-annotation 評估工具 + F1
-
-把 SQLite 已累積的 judgments 當 ground truth，自動算 per-rule F1：
-
-- 把每筆 defect 視為一個預測；judgment 為 `correct` → TP，`wrong` → FP，`partial` → 0.5 TP + 0.5 FP
-- Recall 算不出來（沒有「漏掉的 defect」標註），但 **precision 是真實的**
-- 配合 Phase 2 做 A/B：with/without few-shot → precision 變化
-
-### 3.2 規則迭代回饋迴路
-
-- F1（precision）< 0.5 的規則自動標紅，前端 `/stats` 頁顯示
-- 提示學長：「REL-XX 在 25 筆中只有 8 筆判對，建議重寫 Cypher 或 description」
-- 終局：學長維護 13 條規則 + LLM 自動學會邊界 → 規則本身越來越穩
+- [x] PDF 縮圖 navigation — defer，scroll 已堪用
+- [ ] 缺陷卡片支援 inline edit 修改建議 — defer 到 demo 後
+- [x] 批次刪除已上傳論文 ✅
+- [x] 缺陷 hover 顯示完整 evidence text ✅
+- [x] KG 視覺化 minimap ✅（之前就有）
+- [x] 缺陷依規則 / 嚴重度分組 ✅
 
 ---
 
-## 4. 長期 / 戰略性
+## 5. Benchmark / 自動評估討論
 
-| 項目 | 動機 |
-|---|---|
-| Hybrid Local + Cloud | EDU/ER 用 Ollama (M1 Max 64GB 跑 Qwen2.5-72B 可行)，RST/規則用 Cloud；省 70% cost |
-| Anthropic Batch API | 51 篇實驗一次跑省 50%；async 設計需要改 |
-| 跨論文 Entity 對齊 | 同一作者多篇連動；對於畢業論文系列特別有用 |
-| Multi-agent (Claim / Evidence / Critic) | 比單 prompt 細分職責，但工程複雜度高，需 demo 先撐住 |
-
----
-
-## 5. UX polish (cheap wins)
-
-- [ ] PDF 縮圖 navigation（左側欄）
-- [ ] 缺陷卡片支援 inline edit 修改建議
-- [ ] 批次刪除已上傳論文（目前要一篇一篇）
-- [ ] 缺陷 hover 顯示完整 evidence text（目前 line-clamp-3 截斷）
-- [ ] KG 視覺化加 minimap
-
----
-
-## 6. Benchmark / 自動評估討論
-
-### 6.1 問題
-
-人工判定（學長標）成本高、收斂慢。**有沒有公開資料集可以直接跑、自動算正確率？**
-
-### 6.2 已知相關資料集
+### 5.1 已知相關資料集
 
 | 資料集 | 任務 | 與我們的契合度 | 評論 |
 |---|---|---|---|
 | **PeerRead** (Kang et al. NAACL 2018) | 論文 + reviews + accept/reject 標註 | ★★☆☆☆ | 可看「我們系統的缺陷數是否與 reject 機率正相關」，但不是 per-defect ground truth |
-| **AAEC** (Stab & Gurevych CL 2017) | 402 篇學生論文 + argument 結構標註（major-claim / claim / premise / support） | ★★★☆☆ | 可對映 REL-01 (Claim-Evidence) / REL-02 (Action-Justification) 的精神，是 essay 不是 thesis |
-| **AbstRCT** (Mayer et al. ECAI 2020) | 醫學摘要的 argument mining | ★★☆☆☆ | Domain 完全不同，但 schema 接近 |
-| **Logical Fallacy Detection** (Jin et al. EMNLP 2022) | 13 種邏輯謬誤分類資料集 | ★★★☆☆ | 與 REL 精神接近，但是句級分類非結構檢核 |
-| **F1000Research / OpenReview reviews** | 公開 review + paper | ★★☆☆☆ | 弱 ground truth：只能看「review 提到的問題」是否被我們抓到 |
-| **SciFact / SciFact-Open** | 摘要 + 事實核對 | ★☆☆☆☆ | 偏 factuality，不是邏輯結構 |
-| **Persuasive Essays Corpus** (Stab & Gurevych 2014) | 早期版 AAEC | ★★☆☆☆ | 已被 AAEC 取代 |
+| **AAEC** (Stab & Gurevych CL 2017) | 402 篇學生論文 + argument 結構標註 | ★★★☆☆ | 可對映 REL-01 / REL-02 的精神，但 essay ≠ thesis |
+| **AbstRCT** (Mayer et al. ECAI 2020) | 醫學摘要的 argument mining | ★★☆☆☆ | Domain 不同 |
+| **Logical Fallacy Detection** (Jin et al. EMNLP 2022) | 13 種邏輯謬誤分類 | ★★★☆☆ | 與 REL 精神接近，但句級分類非結構檢核 |
+| **F1000Research / OpenReview** | 公開 review + paper | ★★☆☆☆ | 弱 ground truth |
+| **SciFact / SciFact-Open** | 摘要事實核對 | ★☆☆☆☆ | 偏 factuality |
 
-### 6.3 結論（誠實版）
+### 5.2 結論
 
-**沒有完全對映 13 條 REL 規則 + thesis 結構的公開資料集。** 原因：
-
-1. 13 條 REL 是志祥學長從 51 條章節分層規則 MECE 收斂的，**非通用 taxonomy**
+**沒有完全對映 13 條 REL 規則 + thesis 結構的公開資料集**。原因：
+1. 13 條 REL 是學長從 51 條章節分層規則 MECE 收斂的，**非通用 taxonomy**
 2. 多數 argument mining 資料集都是「essay / abstract」，不是完整 thesis 結構
-3. 「邏輯缺陷」標註本身就是研究級難題，沒有大規模公開資料
+3. 「邏輯缺陷」標註本身就是研究級難題
 4. 中文學術論文資料集更稀少
 
-### 6.4 可行的 proxy benchmark（如果還是要跑）
+### 5.3 推薦路線
 
-| 路線 | 做法 | 工程量 | 產出強度 |
-|---|---|---|---|
-| **A. PeerRead 對齊** | 跑 100 篇 PeerRead → 統計 reject 篇平均缺陷數 vs accept 篇 | 1-2 天 | 弱（只能說「我們的 score 與接受機率有相關」） |
-| **B. AAEC 部分對映** | 把 REL-01 / REL-02 接到 AAEC claim/premise 標註，算 per-rule precision | 2-3 天 | 中（但只覆蓋 2/13 條規則） |
-| **C. 論文 abstract proxy** | 收 50 高被引 + 50 低被引，比對「缺陷數」分布 | 2 天 | 弱（noisy） |
-| **D. 自建小型 benchmark** | 學長標 10-20 篇（anyway 要做的）| 0 額外（已在做）| 高（內部 ground truth） |
+**主軸**：自建 ThesisCheck-zh-50（學長標 50 篇）→ Phase 2 ablation。
+**Generalization 章節（可選）**：跑 AAEC 對 REL-01/REL-02，做 cross-domain 證據。
+**Sanity check（1-2 天）**：跑 PeerRead 20 accept + 20 reject，看 reject 平均缺陷數是否 > accept。
 
-### 6.5 建議
+### 5.4 Self-annotation 注意事項（已和你討論）
 
-**短期不跑 public benchmark，直接做 Phase 2 + 累積 judgments**。理由：
-
-- 跑 PeerRead/AAEC 工程量 1-2 天，**但結果只是 proxy 信號**（不是真的「我們對」）
-- 學長標 10-20 篇 + Phase 2 閉迴路，這個證據對論文 / demo 更直接，也對得起 13 條規則的 specificity
-- 等手上 SQLite 有 50+ judgments 時再回頭做 benchmark，那時 ground truth 才夠
-
-**中期 sweet spot**：把 SQLite 累積的 judgments 包成內部 benchmark（暫稱 **ThesisCheck-zh-50**），配合 Phase 2 後做 ablation：
-
-- with vs without few-shot judgments → precision 差異
-- **這個就是論文的 main result**，比跑 PeerRead 強
-
-**如果學長想做為論文評估章節用**：建議 D + B 組合 — 自建 50 篇做 main eval，AAEC 跑 REL-01/REL-02 做 generalization argument。
+- ✅ 自標自己論文 OK，但需在論文 method 章節寫 "first-author annotation, future work: multi-annotator with kappa"
+- ✅ AI 幫忙做 OCR / 切段 / 列 claim 候選 OK
+- ❌ AI 不能告訴你「這是不是缺陷」 — judgment 環節必須人工
+- 推薦：抽 5 篇給學長盲標算 Cohen's kappa，論文寫「single annotator with N=5 verification by domain expert」
 
 ---
 
-## 7. 開放問題（明天討論）
+## 6. 待決策（明天討論）
 
-- [ ] 學長那邊願不願意一週內標 10-20 篇？（標的 UI 已做好）
-- [ ] Phase 2 的 example 是 per-rule 累積還是全域？per-rule 比較精準但需要每條規則都有樣本
-- [ ] 要不要先做 `/stats` 頁讓學長看到「哪幾條規則他從沒判過」，引導他標
-- [ ] benchmark 是否真的進論文，還是 demo 用就好（影響工程投資）
+- [ ] 學長願不願意一週內標 50 篇？沒這個 Phase 2 跑不出 ablation
+- [ ] Phase 2 的 example 是 per-rule 累積還是全域？目前是 per-rule，但若某規則一直沒樣本要不要 fallback 全域？
+- [ ] benchmark 是否真的進論文？影響是否花 1-2 天跑 PeerRead/AAEC
+- [ ] Cross-section pass 在 demo 要不要 highlight？目前 defect 標「（跨章節）」，可以做成獨立區塊

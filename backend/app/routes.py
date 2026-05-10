@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -68,9 +69,21 @@ def _run_analysis(
         kg.write_graph(graph)
 
         _set_job(job_id, status="checking", message="Running 13 REL rules…")
-        defects = rules.check_all_rules(paper_id, paper_title=title)
+        defects, rule_meta = rules.check_all_rules(paper_id, paper_title=title)
 
-        result = AnalysisResult(paper_id=paper_id, graph=graph, defects=defects)
+        # Cross-section second pass with Opus 1M (REL-04/08/12). Opt-in via env;
+        # default ON because the demo benefits from "the system also reasons across
+        # sections", and the cost is modest (~$0.20/paper with prompt cache).
+        if os.getenv("ENABLE_CROSS_SECTION_PASS", "1") == "1" and graph.edus:
+            cs_defects, cs_meta = rules.cross_section_pass(
+                paper_id, title, graph.edus
+            )
+            defects.extend(cs_defects)
+            rule_meta.append(cs_meta)
+
+        result = AnalysisResult(
+            paper_id=paper_id, graph=graph, defects=defects, rule_meta=rule_meta
+        )
         result_dump = result.model_dump()
         db.upsert_result(paper_id, result_dump)
         _set_job(
@@ -165,6 +178,26 @@ def job_status(job_id: str) -> dict[str, Any]:
     return job
 
 
+@router.delete("/api/papers/{paper_id}")
+def delete_paper(paper_id: str) -> dict[str, str]:
+    """Remove a paper from SQLite + Neo4j + uploaded PDF on disk."""
+    paper = db.get_paper(paper_id)
+    if paper is None:
+        raise HTTPException(404, "paper not found")
+    pdf_path = paper.get("pdf_path")
+    try:
+        kg.clear_paper(paper_id)
+    except Exception:
+        pass  # Neo4j may already be empty for this paper
+    db.delete_paper(paper_id)
+    if pdf_path:
+        try:
+            Path(pdf_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+    return {"status": "deleted", "paper_id": paper_id}
+
+
 @router.get("/api/papers/{paper_id}/pdf")
 def paper_pdf(paper_id: str) -> FileResponse:
     paper = db.get_paper(paper_id)
@@ -230,6 +263,42 @@ def list_rules() -> list[dict[str, Any]]:
         {"id": r["id"], "name": r["name"], "description": r["description"]}
         for r in rules.load_rules()
     ]
+
+
+@router.get("/api/rules/stats")
+def rules_stats() -> dict[str, Any]:
+    """Per-rule firing rate + judgment precision across all analyzed papers."""
+    rule_defs = rules.load_rules()
+    firing = db.rule_firing_stats()
+    judgments = db.judgment_summary()
+    j_by_rule = {j["rule_id"]: j for j in judgments["by_rule"]}
+
+    items: list[dict[str, Any]] = []
+    for r in rule_defs:
+        rid = r["id"]
+        fire = firing["per_rule"].get(rid, {"papers_fired": 0, "total_defects": 0})
+        j = j_by_rule.get(
+            rid,
+            {"total": 0, "correct": 0, "wrong": 0, "partial": 0, "precision": None},
+        )
+        items.append(
+            {
+                "rule_id": rid,
+                "name": r["name"],
+                "defect_label": r.get("defect_label", ""),
+                "papers_fired": fire["papers_fired"],
+                "total_defects": fire["total_defects"],
+                "judged_total": j["total"],
+                "judged_correct": j["correct"],
+                "judged_wrong": j["wrong"],
+                "judged_partial": j["partial"],
+                "precision": j["precision"],
+            }
+        )
+    return {
+        "papers_analyzed": firing["papers_analyzed"],
+        "items": items,
+    }
 
 
 @router.get("/api/cost")

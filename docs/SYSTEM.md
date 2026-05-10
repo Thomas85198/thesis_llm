@@ -42,8 +42,13 @@
 | **Knowledge Graph 視覺化** | 用 React Flow 渲染論文的 Entity 圖與 FRU 修辭結構圖 |
 | **CSV 報告匯出** | 類似資安弱掃報告，含原文、嚴重度、建議，可給指導老師 |
 | **上傳快取** | 同一份檔案再次上傳秒回，不重新呼叫 LLM（永久有效，重啟後仍生效） |
-| **歷史頁** | 列出所有分析過的論文（SQLite 持久化） |
-| **學長判定 (Human-as-judge)** | 每個缺陷三個按鈕（✅判對 / 🤔部分對 / ❌誤判），即時存 SQLite，**目前只用於測量 precision，尚未自動回饋給 LLM**（見 §3.6） |
+| **歷史頁** | 列出所有分析過的論文（SQLite 持久化），支援多選批次刪除（同步清 Neo4j + PDF） |
+| **學長判定 (Human-as-judge)** | 每個缺陷三個按鈕（✅判對 / 🤔部分對 / ❌誤判），即時存 SQLite。**Phase 2 已啟用**：≥3 筆判定後自動 inject 為 LLM few-shot calibration（見 §3.6） |
+| **論文助手聊天** | 右下角浮動抽屜，限定本篇 scope，強制 cite `[EDU:xxx]` / `[DEFECT:xxx]`（可點擊跳 PDF）；Guardrails 含 prompt-injection 偵測 + rate limit 15/min |
+| **規則統計頁 `/stats`** | 13 條規則跨論文命中率、precision、Phase 2 樣本充足度，狀態 badge（🌑 從未觸發 / ⚠️ 需檢討 / ✅ 表現良好 / 🔥 高頻） |
+| **跨章節 second pass** | 每篇分析另跑 Opus 4.7 1M 全篇掃 REL-04/08/12（per-section 抓不到的） |
+| **LLM Confidence 分數** | 每個 defect 帶 0–1 信心分，前端用色塊顯示 |
+| **Prompt 集中化** | 所有 system prompt 在 `backend/prompts/*.md`，學長改不用碰 Python |
 | **成本即時顯示** | 結果頁 header 標 `$X.XXX`，全域 `/api/cost` 統計每階段花費 |
 
 ---
@@ -145,43 +150,66 @@ flowchart TD
 - **流水/分析資料進 SQLite**（給統計、cache、評估用）
 - **二進位檔案進磁碟**（給 frontend 拉回顯示）
 
-### 3.6 回饋迴路狀態（重要）
+### 3.6 回饋迴路狀態（Phase 2 已閉合）
 
-人工判定目前**還沒接回 LLM**，迴路是開的：
+從 2026-05-10 起，迴路**已經閉合**。判定一旦累積到 ≥3 筆（per rule），下次同規則檢核會自動把 correct + wrong 範例 inject 到 LLM system prompt：
 
 ```mermaid
 flowchart LR
     A[新論文] --> B[Cypher 撈候選]
-    B --> C[LLM 判讀<br/>system prompt = rules.yaml<br/>user = 候選]
-    C --> D[Defect 清單]
-    D -.手動標 ✅/🤔/❌.-> E[(SQLite<br/>defect_judgments)]
-    E -.目前只到這裡.-> F[/api/judgments/summary<br/>per-rule precision]
-    E -.X 尚未接回.-> C
+    B --> C{該規則<br/>≥3 筆<br/>判定?}
+    C -- 否 --> D[LLM 判讀 zero-shot]
+    C -- 是 --> E[db.get_judgment_examples<br/>撈 correct/wrong 各 4 筆]
+    E --> F[LLM 判讀 few-shot<br/>system prompt 含學長範例]
+    D --> G[Defect 清單<br/>+ confidence + rule_meta]
+    F --> G
+    G -.手動標 ✅/🤔/❌.-> H[(SQLite<br/>defect_judgments)]
+    H --> E
+    H --> I[/api/judgments/summary<br/>per-rule precision]
 ```
 
-意思是：學長標再多次，**下次跑同一篇論文 LLM 還是會出同樣的缺陷**，判定資料目前只用於：
+實作位置：
+- [backend/app/db.py](../backend/app/db.py) `get_judgment_examples(rule_id, limit_per_verdict=4)` — JOIN judgments × results
+- [backend/app/rules.py](../backend/app/rules.py) `_build_examples_block()` — 把範例組成 calibration block，當 ≥3 筆才注入
+- 注入後的 prompt 看起來像：
+  ```
+  Past human judgments on THIS rule (calibrate to these):
 
-1. 算 precision，找出最爛的規則
-2. 提供人工依據去手動改 `rules.yaml`（如 REL-09 的修正）
+  [✓ CORRECT (real defect)]
+    evidence: «single-head 比最佳設定差 0.9 BLEU»
+    why-flagged: 觀察句沒附原因說明...
 
-**閉環設計（Phase 2，未實作）** 應該長這樣：
+  [✗ FALSE POSITIVE (do NOT flag again)]
+    evidence: «我們用了 8 個 GPU»
+    reviewer note: 純粹事實陳述，不需歸因
 
-```
-規則檢核時，自動撈該規則最近 N 個判定，
-塞進 LLM system prompt 當作 in-context examples：
+  Use these to recalibrate your threshold...
+  ```
 
-  System: REL-09 規則描述...
-          以下是學長標過的範例：
-            ✅ 判對:
-              - "single-head 比最佳設定差 0.9 BLEU" 
-            ❌ 誤判:
-              - "我們用了 8 個 GPU"  ← 純粹事實
-  User: 這次的候選子圖...
-```
+前端 result 頁 header 會顯示「⚙️ 參考 N 筆學長判定」綠色 badge，學長能直觀看出「這次 LLM 有用我的標註」。
 
-效果：每加一筆判定，下次同規則 LLM 判讀就會更貼近學長口味。**不需要 fine-tune**，是純 in-context learning。
+**驗證方法**：學長累積 ~50 筆後，跑 with vs without few-shot 的 ablation。預期 precision 上升 10-20%（這也是論文 main result）。詳見 [docs/TODO.md §1](TODO.md#1-立即優先學長標-50-筆--phase-2-ablation)。
 
-工程量約半天，預期是「人標 5 篇 → 重跑 → precision 明顯提升」的有感效果。詳見 §6。
+### 3.7 跨章節 second pass（Opus 1M）
+
+13 條規則中，**REL-04 / REL-08 / REL-12** 本質需要跨章節推理（例如 Conclusion 的 restatement vs Introduction 的 claim），per-section Cypher 抓不到。
+
+從 2026-05-10 起，每篇分析在 13 條規則跑完後會額外做一次 [cross_section_pass](../backend/app/rules.py)：
+- 模型：`claude-opus-4-7[1m]`（1M context）
+- 輸入：整篇 EDU 依 section 排好 + 三條規則描述
+- Schema 強制 `evidence_edu_ids ≥ 2`（必須引跨章節證據）
+- 缺陷類型加「（跨章節）」字樣與 per-section 結果區分
+- 預設開啟，`ENABLE_CROSS_SECTION_PASS=0` 可關掉
+
+成本：一篇 ~10K input tokens × Opus 4.7 ≈ $0.15-0.30，比省這錢值得。
+
+### 3.8 Prompt 集中化
+
+從 2026-05-10 起，所有 system prompt 抽到 [backend/prompts/](../backend/prompts/)：
+- `edu.md` `er.md` `rst_fru.md` `checker.md` `chat.md` `cross_section.md`
+- 載入器：[backend/app/prompts.py](../backend/app/prompts.py) `load_prompt(name)`（lru_cache，呼叫 `prompts.reload()` 可清快取）
+- 學長改 prompt 重啟 backend 即生效，不用碰 Python
+- Git diff 也能看到 prompt 演進史
 
 ---
 
@@ -313,30 +341,34 @@ flowchart TB
 - **後端 SQLite 持久化** — 重啟仍保留歷史與 hash 快取
 - **Token / cost logger** — 每篇成本即時顯示，全域統計可查
 - **Human-as-judge 標註介面** — 每個缺陷可標 ✅/🤔/❌，累積評估資料
+- **Phase 2：Judgment → LLM Few-shot 回饋迴路**（2026-05-10）— ≥3 筆判定後自動 inject 為 calibration，閉合 §3.6 的迴路
+- **Prompt 集中化** — 全部 system prompt 在 `backend/prompts/*.md`，學長改不用碰 Python
+- **跨章節 second pass** — Opus 4.7 1M context 全篇掃 REL-04/08/12
+- **LLM Confidence 分數** — 每個 defect 帶 0–1 信心分
+- **規則統計頁 `/stats`** — 13 條規則跨論文命中率、precision、Phase 2 樣本充足度
+- **論文助手聊天抽屜** — 限定本篇 scope + Guardrails（injection / rate limit / 強制 cite）
+- **缺陷分組顯示 + hover 完整 evidence**
+- **歷史頁批次刪除**（同步清 SQLite + Neo4j + PDF）
 
-### 短期（1-2 週）
+### 短期（demo 後 1–2 週）
 
-- **⭐ Phase 2：判定 → LLM few-shot 自動回饋**（**最高優先**，閉合 §3.6 的迴路）
-  - 規則檢核時，自動撈該 rule_id 最近 N 個判定當 in-context examples
-  - 塞進 system prompt 後 prompt cache miss 一次，之後固定
-  - 預期效果：學長標 5 篇後，重跑 precision 明顯提升
-- **Prompt 集中化**：把 prompts 從 Python 抽到 `backend/prompts/*.md`，學長可在不寫 code 的情況下調整
-- **缺陷分組摺疊**：相同規則的缺陷可摺疊顯示，UI 更乾淨
-- **規則命中分布頁** `/stats`：跑完幾篇後看哪些規則最常觸發、哪些從沒觸發 → 找出規則設計盲點
+- **⭐ 學長累積 ~50 筆 judgments → Phase 2 ablation**（最高優先，論文 main result）
+  - 標完跑 with vs without few-shot，預期 precision 上升 10-20%
+  - 也順便解鎖 Pre-annotation 評估工具（需要 ≥50 筆才有意義）
+- **Pre-annotation 評估工具 + per-rule F1**：把 SQLite judgments 當 ground truth，自動算 per-rule precision
+- **規則迭代回饋迴路**：`/stats` 頁 precision < 0.5 自動標紅，提示學長改規則 description
 
 ### 中期（1 個月）
 
-- **跨章節驗證 second pass**：跑完現有切段流程後，多一次「全文摘要 + 所有 FRU」的 Opus 1M context 檢查，補強 REL-04/08/12 等跨章節規則
-- **LLM Confidence 分數**：每個缺陷帶 0-1 信心分，前端顯示星星
-- **Pre-annotation 評估工具**：學長預先標 ground truth，系統自動算 Precision / Recall / F1（搭配既有 judgments 表延伸）
-- **規則迭代回饋迴路**：根據 `/api/judgments/summary` 的 per-rule precision，自動建議低於 threshold 的規則需要 review
+- **Anthropic Batch API**：跑大規模實驗時 50% 折扣（pipeline 需改 async）
+- **Prompt 版本化**：每個 prompt 變更記到 SQLite + 跑回歸看 precision 變化
+- **Inter-annotator agreement**：學長 + 你各標 5 篇 overlap，算 Cohen's kappa（強化論文方法章節）
 
-### 長期（投論文前）
+### 長期（投論文前 — 老師說先不嘗試）
 
-- **Hybrid Local + Cloud**：EDU/ER 用 Ollama (Qwen 2.5 32B) 本地跑，RST/FRU + 規則判讀用 Claude，成本降 60%
-- **Batch API 整合**：跑大規模 benchmark 時用 Anthropic Batch API（50% 折扣）
-- **跨論文 Entity 對齊**：同一個 method（如 Transformer）在多篇論文間對齊，做引用網絡分析
-- **規則命中分布頁**：展示 13 條規則在歷史論文上的觸發頻率，找出規則設計的盲點
+- **Hybrid Local + Cloud**：EDU/ER 用 Ollama (Qwen 2.5 32B/72B) 本地，RST/規則用 Claude，成本降 60%
+- **跨論文 Entity 對齊**：同一個 method 在多篇對齊，做引用網絡分析
+- **Multi-agent (Claim/Evidence/Critic)**：拆 prompt 細分職責，但需要重設計 pipeline
 
 ---
 
@@ -471,13 +503,39 @@ Abstract 寫「使用動機及持續使用意圖均有受到心流之影響」�
 
 **通則**：每條 REL 規則的 Cypher 都要回答「同篇內、哪個範圍內」是合理的搜尋邊界，不是 paper-wide boolean。
 
-### 10.3 Human-as-judge 的迴路是開的（容易誤會）
+### 10.3 Human-as-judge 的迴路（曾經開的，現已閉合）
 
-加完判定 UI 後團隊很容易誤以為「按一按就會自動學習」。**沒有**。判定目前只進 SQLite 給統計用，下次跑 LLM 還是看 `rules.yaml` 的靜態 prompt。
+最初加完判定 UI 時迴路是開的 — 學長標再多次 LLM 也不會理。容易讓團隊誤以為「按一按就會自動學習」，但其實判定只進 SQLite 統計用。
 
-要真正閉環需要做 §6 的 Phase 2 — 把判定當 in-context examples 塞回 LLM prompt。在做之前，UI 上也明確標註「只用於測量」，避免標註者誤會付出沒有效果。
+**2026-05-10 起閉合（Phase 2）**：規則檢核時自動撈該規則最近 4 筆 correct + 4 筆 wrong 注入 system prompt（≥3 筆才注入）。前端 result 頁顯示「⚙️ 參考 N 筆學長判定」綠色 badge 讓使用者知道有用。
 
-### 10.4 SQLite vs in-memory dict — 看似能延後的 refactor 其實阻擋很多事
+**注入閾值決策**：
+- < 3 筆：不注入。樣本太少容易 over-fit，LLM 反而被誤導。
+- 3-8 筆：取最新（時序）。最新的判定通常反映最新的 calibration。
+- > 8 筆：未來可改成「representative sampling」（最有代表性的 wrong + 最有代表性的 correct）。
+
+### 10.4 跨章節推理需要 Opus 1M context
+
+REL-04 (Macro-Decomposition) / REL-08 (Problem-Solution) / REL-12 (Core-Restatement) 本質要對比兩個以上章節：
+- 「Conclusion 的 restatement 跟 Introduction 的 claim 是否一致？」
+- 「Method 拆解是否真的對應 Introduction 的問題？」
+
+per-section Cypher 抓不到這個（candidates 只能看一個 section 的子圖）。原本只用 Sonnet 在 per-section 模式跑，這三條規則經常 0 hit 或漏判。
+
+加了 [cross_section_pass](../backend/app/rules.py)（Opus 1M）一次掃整篇後，這三條的命中質量明顯改善。Schema 強制 `evidence_edu_ids ≥ 2`，要求 LLM 必須引兩個以上 EDU 才能 emit 缺陷，避免它退化成 per-section 抓法。
+
+**通則**：跨章節規則要獨立的 prompt + 模型分配，不能塞在 per-section 流程裡。
+
+### 10.5 Prompt 集中化的時機點
+
+最初 prompt 散在 `pipeline.py` / `rules.py` / `chat.py` 各處。一開始這樣 OK，因為 prompt 還在迭代。但當：
+1. 開始有 5+ 個 prompt
+2. 學長想自己改 prompt 但不寫 Python
+3. 開始想做 prompt 版本化 / A/B 測試
+
+…就應該抽到 markdown。實作 [backend/app/prompts.py](../backend/app/prompts.py) 用 `lru_cache` + `reload()`，學長改完 .md 重啟 backend 即生效。Git diff 也能單獨追 prompt 演進。
+
+### 10.6 SQLite vs in-memory dict — 看似能延後的 refactor 其實阻擋很多事
 
 最初 `_paper_results / _hash_to_paper_id / _paper_files` 都用 in-memory dict，一切看起來「dev 階段先這樣」。但很快遇到三個問題同時湧現：
 1. 重啟丟失分析結果，每次都要重跑（昂貴）

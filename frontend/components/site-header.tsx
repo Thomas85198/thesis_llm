@@ -26,6 +26,12 @@ export function SiteHeader() {
           >
             歷史
           </Link>
+          <Link
+            href="/stats"
+            className={buttonVariants({ variant: "ghost", size: "sm" })}
+          >
+            規則統計
+          </Link>
         </nav>
       </div>
     </header>

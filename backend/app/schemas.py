@@ -110,6 +110,7 @@ class Defect(BaseModel):
     evidence_edu_ids: list[str]
     description: str
     suggestion: str
+    confidence: float | None = None  # 0.0–1.0; None = not scored
 
 
 class PaperGraph(BaseModel):
@@ -122,7 +123,16 @@ class PaperGraph(BaseModel):
     fru_nodes: list[FRUNode] = Field(default_factory=list)
 
 
+class RuleRunMeta(BaseModel):
+    """Per-rule run statistics (few-shot examples used, candidate count, etc)."""
+    rule_id: str
+    examples_used: int = 0  # number of past human judgments injected into prompt
+    candidate_count: int = 0  # how many Cypher candidates the LLM was asked to judge
+    defect_count: int = 0  # how many candidates the LLM marked as violating
+
+
 class AnalysisResult(BaseModel):
     paper_id: str
     graph: PaperGraph
     defects: list[Defect] = Field(default_factory=list)
+    rule_meta: list[RuleRunMeta] = Field(default_factory=list)

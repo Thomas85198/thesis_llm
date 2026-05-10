@@ -12,6 +12,7 @@ import pymupdf
 from rapidfuzz import fuzz
 
 from .llm import call_with_tool, model_heavy, model_light
+from .prompts import load_prompt
 from .schemas import EDU, ERTriple, Entity, FRUNode, PaperGraph, RSTNode, SectionName
 
 
@@ -228,12 +229,8 @@ EDU_SCHEMA = {
     "required": ["edus"],
 }
 
-EDU_SYSTEM = (
-    "You are a discourse-analysis expert. Split the given paper section into "
-    "Elementary Discourse Units (EDUs). An EDU is a minimal clause that carries "
-    "a single proposition. Preserve the original wording — do not paraphrase. "
-    "Keep them in reading order. Output via the provided tool."
-)
+# Prompts now live in backend/prompts/*.md so 學長 can edit without Python.
+# Loaded lazily via load_prompt(name) — see app/prompts.py.
 
 
 def extract_edus(
@@ -244,7 +241,7 @@ def extract_edus(
         return []
     out = call_with_tool(
         model=model_light(),
-        system=EDU_SYSTEM,
+        system=load_prompt("edu"),
         user_content=f"<section name='{section}'>\n{section_text}\n</section>",
         tool_name="emit_edus",
         tool_description="Emit EDUs for the section.",
@@ -312,14 +309,6 @@ ER_SCHEMA = {
     "required": ["entities", "triples"],
 }
 
-ER_SYSTEM = (
-    "You extract entities and binary relations from academic-paper EDUs. "
-    "Use canonical entity names (deduplicate aliases). Predicates should be "
-    "concise verbs/phrases (e.g. 'proposes', 'evaluates_on', 'outperforms', "
-    "'is_a', 'measured_by'). Every triple must cite the EDU index it came from. "
-    "Output via the provided tool."
-)
-
 ENTITY_TYPES = {
     "Concept", "Method", "Metric", "Dataset", "Model", "Task", "Claim", "Other",
 }
@@ -332,7 +321,7 @@ def extract_er(edus: list[EDU], paper_id: str) -> tuple[list[Entity], list[ERTri
     section_label = edus[0].section if edus else "unknown"
     out = call_with_tool(
         model=model_light(),
-        system=ER_SYSTEM,
+        system=load_prompt("er"),
         user_content=f"<edus>\n{indexed}\n</edus>",
         tool_name="emit_er",
         tool_description="Emit entities and relation triples.",
@@ -447,16 +436,6 @@ RST_FRU_SCHEMA = {
     "required": ["rst", "fru"],
 }
 
-RST_FRU_SYSTEM = (
-    "You annotate two layers over the EDUs:\n"
-    "1) RST (Rhetorical Structure Theory) relations: each entry has a nucleus "
-    "EDU and zero or more satellite EDUs, plus the relation type.\n"
-    "2) FRU (Functional Rhetorical Units): each entry groups consecutive EDUs "
-    "that together perform a single rhetorical function (Motivation, Claim, "
-    "Evidence, etc.) with a one-sentence summary.\n"
-    "Be conservative — prefer 'Other' over guessing. Output via the tool."
-)
-
 RST_RELATION_TYPES = {
     "Elaboration", "Background", "Cause", "Result", "Contrast", "Concession",
     "Evidence", "Justify", "Motivation", "Solutionhood", "Sequence",
@@ -478,7 +457,7 @@ def extract_rst_fru(
     section_label = edus[0].section if edus else "unknown"
     out = call_with_tool(
         model=model_heavy(),
-        system=RST_FRU_SYSTEM,
+        system=load_prompt("rst_fru"),
         user_content=f"<edus>\n{indexed}\n</edus>",
         tool_name="emit_rst_fru",
         tool_description="Emit RST relations and FRU groupings.",

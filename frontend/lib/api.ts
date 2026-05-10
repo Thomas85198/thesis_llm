@@ -79,12 +79,21 @@ export type Defect = {
   evidence_edu_ids: string[];
   description: string;
   suggestion: string;
+  confidence?: number | null; // 0.0–1.0
+};
+
+export type RuleRunMeta = {
+  rule_id: string;
+  examples_used: number;
+  candidate_count: number;
+  defect_count: number;
 };
 
 export type AnalysisResult = {
   paper_id: string;
   graph: PaperGraph;
   defects: Defect[];
+  rule_meta?: RuleRunMeta[];
 };
 
 export type JobStatus =
@@ -179,6 +188,14 @@ export function pdfUrl(paperId: string): string {
   return `${API_BASE}/api/papers/${encodeURIComponent(paperId)}/pdf`;
 }
 
+export async function deletePaper(paperId: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/papers/${encodeURIComponent(paperId)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) throw new Error(`deletePaper failed: ${await res.text()}`);
+}
+
 export async function fetchOverallCost(): Promise<CostSummary> {
   return get<CostSummary>("/api/cost");
 }
@@ -253,6 +270,30 @@ export type JudgmentSummary = {
 
 export async function fetchJudgmentSummary(): Promise<JudgmentSummary> {
   return get<JudgmentSummary>("/api/judgments/summary");
+}
+
+// ---------- Rule firing stats ----------
+
+export type RuleStatRow = {
+  rule_id: string;
+  name: string;
+  defect_label: string;
+  papers_fired: number;
+  total_defects: number;
+  judged_total: number;
+  judged_correct: number;
+  judged_wrong: number;
+  judged_partial: number;
+  precision: number | null;
+};
+
+export type RulesStats = {
+  papers_analyzed: number;
+  items: RuleStatRow[];
+};
+
+export async function fetchRuleStats(): Promise<RulesStats> {
+  return get<RulesStats>("/api/rules/stats");
 }
 
 // ---------- Paper-scoped chat ----------

@@ -184,6 +184,15 @@ export function ResultView({ result }: { result: AnalysisResult }) {
     (d) => judgments.get(d.id) === "partial"
   ).length;
 
+  // Phase 2 — total past judgments injected as few-shot calibration this run.
+  const examplesInjected = (result.rule_meta ?? []).reduce(
+    (s, m) => s + (m.examples_used || 0),
+    0
+  );
+  const rulesWithExamples = (result.rule_meta ?? []).filter(
+    (m) => (m.examples_used || 0) > 0
+  ).length;
+
   return (
     <div className="grid h-[calc(100vh-9rem)] gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
       <ChatDrawer
@@ -216,6 +225,14 @@ export function ResultView({ result }: { result: AnalysisResult }) {
                     （✅{correctCount} 🤔{partialCount} ❌{wrongCount}）
                   </>
                 )}
+              </span>
+            )}
+            {examplesInjected > 0 && (
+              <span
+                className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                title={`本次規則檢核時，${rulesWithExamples} 條規則參考了過去學長的判定 (Phase 2 few-shot)`}
+              >
+                ⚙️ 參考 {examplesInjected} 筆學長判定
               </span>
             )}
           </div>

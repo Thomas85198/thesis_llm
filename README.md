@@ -13,6 +13,8 @@ thesis_llm_demo_v3/
 │   │   ├── pipeline.py       # PyMuPDF + EDU/ER/RST/FRU + bbox 映射
 │   │   ├── kg.py             # Neo4j 寫入/查詢
 │   │   ├── rules.py
+│   │   ├── chat.py           # 論文助手 + Guardrails (scope / injection / rate limit)
+│   │   ├── db.py             # SQLite (papers/results/judgments/llm_calls)
 │   │   ├── llm.py
 │   │   └── schemas.py
 │   ├── rules.yaml            # 13 條 REL 規則 (學長維護)
@@ -81,6 +83,7 @@ npm run dev
 - ✅ KG 視覺化（React Flow + dagre layout，Entity / FRU 兩層）
 - ✅ CSV 報告匯出（UTF-8 BOM）
 - ✅ RWD（mobile / tablet / desktop）
+- ✅ 論文助手聊天抽屜（Sheet）— 限定本篇 scope、強制 cite [EDU:xxx] / [DEFECT:xxx] 可點擊跳轉
 
 **持久化與評估**
 - ✅ SQLite 持久化（papers / results / hash 快取）— 重啟仍保留
@@ -110,6 +113,7 @@ npm run dev
 | DELETE | `/api/papers/{paper_id}/judgments/{defect_id}` | 取消該缺陷的判定 |
 | GET | `/api/judgments/summary` | 全域 per-rule precision 與計數 |
 | GET | `/api/rules` | 列出 13 條規則 |
+| POST | `/api/papers/{paper_id}/chat` | 論文助手聊天（`{messages: [{role, content}]}`），含 scope/injection guardrails，rate limit 15/min |
 
 ## 下一步路線圖
 

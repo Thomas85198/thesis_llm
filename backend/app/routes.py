@@ -12,6 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from . import chat as chat_mod
 from . import db, kg, pipeline, rules
 from .schemas import AnalysisResult
 
@@ -21,6 +22,15 @@ class JudgmentIn(BaseModel):
     rule_id: str
     verdict: str = Field(..., pattern="^(correct|wrong|partial)$")
     note: str | None = None
+
+
+class ChatMessage(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str
+
+
+class ChatIn(BaseModel):
+    messages: list[ChatMessage] = Field(..., min_length=1, max_length=40)
 
 router = APIRouter()
 
@@ -263,3 +273,32 @@ def delete_judgment(paper_id: str, defect_id: str) -> dict[str, str]:
 def judgments_summary() -> dict[str, Any]:
     """Per-rule + global precision based on accumulated human judgments."""
     return db.judgment_summary()
+
+
+# ---------- paper-scoped chat assistant ----------
+
+@router.post("/api/papers/{paper_id}/chat")
+def paper_chat(paper_id: str, body: ChatIn) -> dict[str, Any]:
+    paper = db.get_paper(paper_id)
+    if paper is None:
+        raise HTTPException(404, "paper not found")
+    if db.get_result(paper_id) is None:
+        raise HTTPException(409, "paper analysis not finished yet")
+
+    try:
+        return chat_mod.chat(
+            paper_id=paper_id,
+            paper_title=paper.get("title") or "",
+            messages=[m.model_dump() for m in body.messages],
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except RuntimeError as e:
+        msg = str(e)
+        if msg.startswith("rate_limited:"):
+            wait = msg.split(":", 1)[1]
+            raise HTTPException(
+                429,
+                f"chat rate limit reached, retry in ~{wait}s",
+            ) from e
+        raise HTTPException(500, msg) from e

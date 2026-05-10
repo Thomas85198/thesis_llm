@@ -254,3 +254,51 @@ export type JudgmentSummary = {
 export async function fetchJudgmentSummary(): Promise<JudgmentSummary> {
   return get<JudgmentSummary>("/api/judgments/summary");
 }
+
+// ---------- Paper-scoped chat ----------
+
+export type ChatRole = "user" | "assistant";
+
+export type ChatMessage = {
+  role: ChatRole;
+  content: string;
+};
+
+export type ChatResponse = {
+  reply: string;
+  cost_usd: number;
+  cited_edu_ids: string[];
+  cited_defect_ids: string[];
+  model: string;
+};
+
+export class ChatRateLimitError extends Error {
+  retryAfter: number;
+  constructor(message: string, retryAfter: number) {
+    super(message);
+    this.name = "ChatRateLimitError";
+    this.retryAfter = retryAfter;
+  }
+}
+
+export async function sendChat(
+  paperId: string,
+  messages: ChatMessage[]
+): Promise<ChatResponse> {
+  const res = await fetch(
+    `${API_BASE}/api/papers/${encodeURIComponent(paperId)}/chat`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages }),
+    }
+  );
+  if (res.status === 429) {
+    const text = await res.text();
+    const m = text.match(/~(\d+)s/);
+    const wait = m ? Number(m[1]) : 30;
+    throw new ChatRateLimitError(text, wait);
+  }
+  if (!res.ok) throw new Error(`chat failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}

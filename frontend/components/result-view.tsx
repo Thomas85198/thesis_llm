@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { ChatDrawer } from "@/components/chat-drawer";
 import { DefectPanel } from "@/components/defect-panel";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -101,6 +102,30 @@ export function ResultView({ result }: { result: AnalysisResult }) {
     }
   }
 
+  // Chat assistant cites [EDU:xxx] / [DEFECT:xxx] — clicking a citation should
+  // jump the PDF viewer / defect panel to that location.
+  function handleChatEduClick(eduId: string) {
+    if (!eduMap.has(eduId)) {
+      toast.error("找不到該段落（EDU 已不存在）");
+      return;
+    }
+    setFocusedEduId(eduId);
+    const owner = result.defects.find((d) =>
+      d.evidence_edu_ids.includes(eduId)
+    );
+    if (owner) setSelectedDefectId(owner.id);
+  }
+
+  function handleChatDefectClick(defectId: string) {
+    const d = result.defects.find((x) => x.id === defectId);
+    if (!d) {
+      toast.error("找不到該缺陷");
+      return;
+    }
+    setSelectedDefectId(d.id);
+    setFocusedEduId(d.evidence_edu_ids[0] ?? null);
+  }
+
   async function handleJudge(
     defectId: string,
     ruleId: string,
@@ -161,6 +186,11 @@ export function ResultView({ result }: { result: AnalysisResult }) {
 
   return (
     <div className="grid h-[calc(100vh-9rem)] gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
+      <ChatDrawer
+        paperId={result.paper_id}
+        onEduClick={handleChatEduClick}
+        onDefectClick={handleChatDefectClick}
+      />
       <div className="min-h-[400px] min-w-0 lg:min-h-0">
         <PdfViewer
           pdfUrl={pdfUrl(result.paper_id)}

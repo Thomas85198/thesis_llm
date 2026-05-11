@@ -17,6 +17,7 @@ import {
   type Verdict,
 } from "@/lib/api";
 import { defectsToCsv, downloadCsv } from "@/lib/csv";
+import { cn } from "@/lib/utils";
 
 // react-pdf must be client-only (touches window).
 const PdfViewer = dynamic(
@@ -82,14 +83,19 @@ export function ResultView({ result }: { result: AnalysisResult }) {
   }, [result.paper_id]);
 
   function handleSelectDefect(id: string | null) {
+    // Only toggle selection — don't auto-scroll PDF. PDF jump is now an
+    // explicit user action via the "在 PDF 中查看" button on the selected
+    // card, so reading the full evidence inline doesn't yank the viewport.
     setSelectedDefectId(id);
-    if (id) {
-      const d = result.defects.find((x) => x.id === id);
-      const firstEdu = d?.evidence_edu_ids[0] ?? null;
-      setFocusedEduId(firstEdu);
-    } else {
+    if (!id) {
       setFocusedEduId(null);
     }
+  }
+
+  function handleJumpToPdf(defectId: string) {
+    const d = result.defects.find((x) => x.id === defectId);
+    const firstEdu = d?.evidence_edu_ids[0] ?? null;
+    if (firstEdu) setFocusedEduId(firstEdu);
   }
 
   function handleHighlightClick(eduId: string) {
@@ -194,13 +200,19 @@ export function ResultView({ result }: { result: AnalysisResult }) {
   ).length;
 
   return (
-    <div className="grid h-[calc(100vh-9rem)] gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
+    <div
+      className={cn(
+        "gap-3 flex flex-col",
+        // 桌面：固定高度兩欄、外層 clip — 每欄各自內部 scroll，PDF 釘左邊不動。
+        "lg:grid lg:h-[calc(100vh-5rem)] lg:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)] lg:overflow-hidden"
+      )}
+    >
       <ChatDrawer
         paperId={result.paper_id}
         onEduClick={handleChatEduClick}
         onDefectClick={handleChatDefectClick}
       />
-      <div className="min-h-[400px] min-w-0 lg:min-h-0">
+      <div className="min-h-[400px] min-w-0 lg:min-h-0 lg:overflow-hidden">
         <PdfViewer
           pdfUrl={pdfUrl(result.paper_id)}
           highlights={highlights}
@@ -208,7 +220,7 @@ export function ResultView({ result }: { result: AnalysisResult }) {
           onHighlightClick={handleHighlightClick}
         />
       </div>
-      <div className="flex min-h-[300px] min-w-0 flex-col gap-2 lg:min-h-0">
+      <div className="flex min-h-[300px] min-w-0 flex-col gap-2 lg:min-h-0 lg:overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span>
@@ -251,6 +263,7 @@ export function ResultView({ result }: { result: AnalysisResult }) {
             eduMap={eduMap}
             selectedId={selectedDefectId}
             onSelect={handleSelectDefect}
+            onJumpToPdf={handleJumpToPdf}
             judgments={judgments}
             onJudge={handleJudge}
           />

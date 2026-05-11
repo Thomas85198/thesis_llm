@@ -116,7 +116,8 @@ export type Job = {
 
 export type PaperListItem = {
   paper_id: string;
-  title: string;
+  title: string;        // 顯示用：使用者填的 title，沒填 fallback 到 filename
+  filename: string;     // 原始檔名（永遠記錄）
   defect_count: number;
   edu_count: number;
   finished_at?: string | null;

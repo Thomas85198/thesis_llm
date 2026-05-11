@@ -29,7 +29,8 @@ SCHEMA = """
 -- ============================================================
 CREATE TABLE IF NOT EXISTS papers (
     paper_id      TEXT PRIMARY KEY,    -- 論文唯一識別 (格式 'paper:xxxxxxxx')
-    title         TEXT,                -- 論文標題 (使用者填或檔名)
+    title         TEXT,                -- 論文標題（使用者上傳時填的；可為空）
+    filename      TEXT,                -- 原始檔名 (e.g. "2017_Vaswani.pdf")，永遠記下
     content_hash  TEXT,                -- 檔案 SHA-256，用於上傳去重
     pdf_path      TEXT,                -- PDF 在本地磁碟的絕對路徑
     created_at    TEXT NOT NULL        -- 建立時間 (ISO 8601 UTC)
@@ -104,6 +105,31 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Idempotent schema migrations for existing DBs.
+
+    SQLite doesn't have ALTER TABLE ADD COLUMN IF NOT EXISTS, so we check
+    PRAGMA table_info first. Each migration must be safe to re-run.
+    """
+    # Migration 1 (2026-05-11): papers.filename
+    # Old schema had only `title`; uploads used `title or filename` so the
+    # column was ambiguous (could be user-input or original filename).
+    # Add a dedicated `filename` column and backfill from existing title.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(papers)").fetchall()}
+    if "filename" not in cols:
+        conn.execute("ALTER TABLE papers ADD COLUMN filename TEXT")
+        # Backfill: assume existing title (if it ends with a file extension)
+        # was originally a filename. Move that to filename and clear title
+        # so the row falls back to filename display naturally.
+        conn.execute(
+            """
+            UPDATE papers
+            SET filename = title
+            WHERE filename IS NULL AND title IS NOT NULL
+            """
+        )
+
+
 def _ensure_init() -> None:
     global _initialized
     if _initialized:
@@ -113,6 +139,7 @@ def _ensure_init() -> None:
             return
         with sqlite3.connect(DB_PATH) as conn:
             conn.executescript(SCHEMA)
+            _migrate(conn)
             conn.commit()
         _initialized = True
 
@@ -136,19 +163,25 @@ def connect() -> Iterator[sqlite3.Connection]:
 # ---------- papers ----------
 
 def upsert_paper(
-    paper_id: str, title: str, content_hash: str, pdf_path: str
+    paper_id: str,
+    title: str,
+    filename: str,
+    content_hash: str,
+    pdf_path: str,
 ) -> None:
+    """Insert or update a paper. title can be empty; filename should always be set."""
     with connect() as c:
         c.execute(
             """
-            INSERT INTO papers (paper_id, title, content_hash, pdf_path, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO papers (paper_id, title, filename, content_hash, pdf_path, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(paper_id) DO UPDATE SET
                 title=excluded.title,
+                filename=excluded.filename,
                 content_hash=excluded.content_hash,
                 pdf_path=excluded.pdf_path
             """,
-            (paper_id, title, content_hash, pdf_path, _now()),
+            (paper_id, title, filename, content_hash, pdf_path, _now()),
         )
 
 
@@ -180,7 +213,7 @@ def list_papers() -> list[dict[str, Any]]:
     with connect() as c:
         rows = c.execute(
             """
-            SELECT p.paper_id, p.title, p.created_at,
+            SELECT p.paper_id, p.title, p.filename, p.created_at,
                    r.result_json IS NOT NULL AS has_result,
                    r.finished_at
             FROM papers p

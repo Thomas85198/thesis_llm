@@ -182,7 +182,13 @@ export default function PapersPage() {
                       <CardContent className="flex items-center justify-between gap-4 py-4">
                         <div className="min-w-0">
                           <p className="truncate font-medium">{p.title}</p>
-                          <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                          {/* filename 小字顯示，但若跟 title 相同就不重複（多數為舊資料 backfill 的情況） */}
+                          {p.filename && p.filename !== p.title && (
+                            <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                              📄 {p.filename}
+                            </p>
+                          )}
+                          <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">
                             {p.paper_id}
                           </p>
                         </div>

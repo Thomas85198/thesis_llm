@@ -63,6 +63,7 @@ type Props = {
   eduMap: Map<string, EDU>;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  onJumpToPdf?: (defectId: string) => void;
   judgments: Map<string, Verdict>;
   onJudge: (defectId: string, ruleId: string, verdict: Verdict | null) => void;
 };
@@ -72,6 +73,7 @@ export function DefectPanel({
   eduMap,
   selectedId,
   onSelect,
+  onJumpToPdf,
   judgments,
   onJudge,
 }: Props) {
@@ -120,7 +122,7 @@ export function DefectPanel({
         </button>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="space-y-3 p-2">
           {groups.map((g) => (
             <section key={g.key}>
@@ -139,6 +141,7 @@ export function DefectPanel({
                     onSelect={() =>
                       onSelect(selectedId === d.id ? null : d.id)
                     }
+                    onJumpToPdf={onJumpToPdf ? () => onJumpToPdf(d.id) : undefined}
                     onJudge={(v) => onJudge(d.id, d.rule_id, v)}
                   />
                 ))}
@@ -157,6 +160,7 @@ function DefectCard({
   isSelected,
   currentVerdict,
   onSelect,
+  onJumpToPdf,
   onJudge,
 }: {
   defect: Defect;
@@ -164,11 +168,20 @@ function DefectCard({
   isSelected: boolean;
   currentVerdict: Verdict | null;
   onSelect: () => void;
+  onJumpToPdf?: () => void;
   onJudge: (v: Verdict | null) => void;
 }) {
   const evidenceTexts = d.evidence_edu_ids
     .map((eid) => eduMap.get(eid)?.text)
     .filter((t): t is string => Boolean(t));
+
+  // 點 card 時若使用者剛選了文字（drag-select），不要 toggle 選取 —
+  // 讓使用者能正常複製文字 / 點右鍵 context menu，不會被 click handler 搶走。
+  const handleCardClick = () => {
+    const sel = typeof window !== "undefined" ? window.getSelection() : null;
+    if (sel && sel.toString().length > 0) return;
+    onSelect();
+  };
 
   return (
     <div
@@ -178,10 +191,17 @@ function DefectCard({
         isSelected && "bg-accent ring-2 ring-primary/40"
       )}
     >
-      <button
-        type="button"
-        className="block w-full cursor-pointer text-left hover:opacity-90"
-        onClick={onSelect}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={handleCardClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelect();
+          }
+        }}
+        className="block w-full cursor-pointer text-left select-text hover:opacity-90"
       >
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="outline" className="font-mono text-[10px]">
@@ -208,7 +228,11 @@ function DefectCard({
               <p
                 key={i}
                 title={t.trim()}
-                className="text-xs italic leading-relaxed text-muted-foreground line-clamp-3 hover:line-clamp-none"
+                className={cn(
+                  "text-xs italic leading-relaxed text-muted-foreground",
+                  // 選中時完整顯示原句；未選中保持 line-clamp-3
+                  isSelected ? "" : "line-clamp-3 hover:line-clamp-none"
+                )}
               >
                 「{t.trim()}」
               </p>
@@ -216,13 +240,42 @@ function DefectCard({
           </div>
         )}
 
-        <p className="mt-2 text-sm leading-relaxed">{d.description}</p>
+        <p
+          className={cn(
+            "mt-2 text-sm leading-relaxed",
+            isSelected ? "" : "line-clamp-3"
+          )}
+        >
+          {d.description}
+        </p>
 
-        <div className="mt-2 rounded bg-muted/60 p-2 text-xs leading-relaxed">
+        <div
+          className={cn(
+            "mt-2 rounded bg-muted/60 p-2 text-xs leading-relaxed",
+            isSelected ? "" : "line-clamp-3"
+          )}
+        >
           <span className="font-semibold">建議：</span>
           {d.suggestion}
         </div>
-      </button>
+      </div>
+
+      {isSelected && onJumpToPdf && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onJumpToPdf();
+          }}
+          className={cn(
+            "mt-2 inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-medium",
+            "transition-colors hover:bg-accent"
+          )}
+          title="跳到 PDF 中對應位置並高亮"
+        >
+          📄 在 PDF 中查看
+        </button>
+      )}
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2">
         <span className="text-[10px] font-medium text-muted-foreground">

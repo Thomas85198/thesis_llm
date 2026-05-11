@@ -315,16 +315,56 @@ export default function StatsPage() {
         </table>
       </div>
 
-      <div className="space-y-1 text-xs text-muted-foreground">
-        <p>
-          <strong>命中率</strong>：觸發論文數 / 已分析論文數。過低 (≤10%) 可能規則太嚴或 Cypher 漏寫；過高 (≥80%) 可能 over-fire。
-        </p>
-        <p>
-          <strong>Precision</strong>：(correct + 0.5 × partial) / 已判數。&lt; 0.5 應該重寫規則 description 或 Cypher。
-        </p>
-        <p>
-          <strong>Phase 2</strong>：≥3 筆判定才會 inject 為 few-shot；&lt;3 筆時規則仍走 zero-shot。
-        </p>
+      <div className="space-y-3 text-xs text-muted-foreground">
+        <div className="space-y-1">
+          <p>
+            <strong>命中率</strong>：觸發論文數 / 已分析論文數。過低 (≤10%) 可能規則太嚴或 Cypher 漏寫；過高 (≥80%) 可能 over-fire。
+          </p>
+          <p>
+            <strong>Precision</strong>：(correct + 0.5 × partial) / 已判數。&lt; 0.5 應該重寫規則 description 或 Cypher。
+          </p>
+          <p>
+            <strong>Phase 2</strong>：≥3 筆判定才會 inject 為 few-shot；&lt;3 筆時規則仍走 zero-shot。
+          </p>
+        </div>
+
+        <div className="space-y-1 border-t pt-3">
+          <p className="mb-1 font-medium text-foreground">狀態欄說明</p>
+          <div className="grid gap-1.5 sm:grid-cols-2">
+            <div className="flex items-start gap-2">
+              <Badge variant="outline" className="border-emerald-400 text-emerald-700 shrink-0">
+                ✅ 表現良好
+              </Badge>
+              <span>已判 ≥ 3 筆 且 precision ≥ 70% — 規則穩定，可作為 Phase 2 calibration 範本。</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <Badge variant="outline" className="border-red-400 text-red-700 shrink-0">
+                ⚠️ 需檢討
+              </Badge>
+              <span>已判 ≥ 3 筆 但 precision &lt; 50% — 誤判率偏高，建議重寫規則 description 或 Cypher。</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <Badge variant="outline" className="border-orange-400 text-orange-700 shrink-0">
+                🔥 高頻觸發
+              </Badge>
+              <span>命中率 &gt; 80% — 幾乎每篇都觸發，可能 over-fire，需 Phase 2 範例校正。</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <Badge variant="outline" className="border-zinc-400 text-zinc-600 shrink-0">
+                🌑 從未觸發
+              </Badge>
+              <span>總缺陷 = 0 — 規則太嚴或 Cypher 沒抓到候選，需要範例論文驗證。</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <Badge variant="outline" className="shrink-0">運作中</Badge>
+              <span>規則有觸發但判定樣本不足（&lt; 3 筆）— 目前無法判斷品質，需要學長標更多。</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <Badge variant="outline" className="shrink-0">無資料</Badge>
+              <span>系統尚未分析過任何論文，所有規則都還沒運作。</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

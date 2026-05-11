@@ -152,7 +152,15 @@ async def upload(
     suffix = Path(file.filename).suffix or ".pdf"
     saved_path = UPLOAD_DIR / f"{paper_id.replace(':', '_')}{suffix}"
     saved_path.write_bytes(raw)
-    db.upsert_paper(paper_id, title or file.filename, content_hash, str(saved_path))
+    # 把 user-input title 跟原始 filename 分開存：title 可為空（fallback 顯示
+    # filename），但 filename 永遠記錄原檔名。
+    db.upsert_paper(
+        paper_id,
+        title.strip(),
+        file.filename,
+        content_hash,
+        str(saved_path),
+    )
 
     spans = pipeline.extract_spans_from_bytes(raw, file.filename)
     if not spans:
@@ -234,9 +242,16 @@ def list_papers() -> list[dict[str, Any]]:
         result = db.get_result(p["paper_id"])
         if result is None:
             continue
+        # Display title: prefer user-input title, fallback to filename, then graph title.
+        user_title = p.get("title")
+        filename = p.get("filename") or ""
+        display_title = (
+            user_title or filename or result.get("graph", {}).get("title", "")
+        )
         items.append({
             "paper_id": p["paper_id"],
-            "title": p["title"] or result.get("graph", {}).get("title", ""),
+            "title": display_title,
+            "filename": filename,
             "defect_count": len(result.get("defects", [])),
             "edu_count": len(result.get("graph", {}).get("edus", [])),
             "finished_at": p.get("finished_at"),

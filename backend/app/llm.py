@@ -3,19 +3,40 @@ from __future__ import annotations
 
 import json
 import os
+import random
+import time
 from typing import Any
 
-from anthropic import Anthropic
+from anthropic import (
+    Anthropic,
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    InternalServerError,
+    RateLimitError,
+)
 
 from . import db
 
 _client: Anthropic | None = None
 
+# Transient errors worth retrying with exponential backoff.
+# 5xx = Anthropic-side issue; 429 = rate limit; connection/timeout = network blip.
+RETRYABLE_ERRORS = (
+    InternalServerError,   # 5xx
+    APIConnectionError,    # network
+    APITimeoutError,       # timeout
+    RateLimitError,        # 429
+)
+MAX_RETRIES = 4  # total attempts = MAX_RETRIES + 1
+
 
 def client() -> Anthropic:
     global _client
     if _client is None:
-        _client = Anthropic()
+        # max_retries is the SDK's own retry knob; we add our own outer retry too
+        # because the SDK doesn't always cover every 5xx and we want logging.
+        _client = Anthropic(max_retries=2)
     return _client
 
 
@@ -84,20 +105,54 @@ def call_with_tool(
         }
     ]
 
-    response = client().messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        system=system_blocks,
-        tools=[
-            {
-                "name": tool_name,
-                "description": tool_description,
-                "input_schema": tool_input_schema,
-            }
-        ],
-        tool_choice={"type": "tool", "name": tool_name},
-        messages=[{"role": "user", "content": user_content}],
-    )
+    # Retry transient Anthropic 5xx / rate-limit / network errors with exponential
+    # backoff + jitter. Final failure still raises so pipeline can fail loudly.
+    last_exc: Exception | None = None
+    response = None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            response = client().messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=system_blocks,
+                tools=[
+                    {
+                        "name": tool_name,
+                        "description": tool_description,
+                        "input_schema": tool_input_schema,
+                    }
+                ],
+                tool_choice={"type": "tool", "name": tool_name},
+                messages=[{"role": "user", "content": user_content}],
+            )
+            break  # success
+        except RETRYABLE_ERRORS as exc:
+            last_exc = exc
+            if attempt == MAX_RETRIES:
+                # Out of retries, re-raise so pipeline catches it.
+                print(
+                    f"[llm] {type(exc).__name__} on stage={stage} model={model} "
+                    f"after {MAX_RETRIES + 1} attempts — giving up: {exc!r}"
+                )
+                raise
+            # Backoff: 1.5s, 3s, 6s, 12s + jitter
+            backoff = (1.5 * (2 ** attempt)) + random.uniform(0, 0.5)
+            print(
+                f"[llm] {type(exc).__name__} on stage={stage} model={model} "
+                f"attempt {attempt + 1}/{MAX_RETRIES + 1} — retrying in {backoff:.1f}s"
+            )
+            time.sleep(backoff)
+        except APIStatusError as exc:
+            # 4xx other than 429 (bad request, auth, etc.) — don't retry, fail fast
+            print(
+                f"[llm] {type(exc).__name__} (status={exc.status_code}) on stage={stage} "
+                f"— non-retryable: {exc!r}"
+            )
+            raise
+
+    if response is None:
+        # Should never reach here (loop either returns or raises), but for type safety:
+        raise RuntimeError(f"LLM call failed without exception: {last_exc!r}")
 
     # Anthropic returns cache stats only if caching is in play.
     usage = response.usage

@@ -1,7 +1,9 @@
 "use client";
 
 import { MessageCircleIcon, SendIcon, SparklesIcon } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -268,25 +270,28 @@ function MessageBubble({
     <div
       className={cn(
         "rounded-lg px-3 py-2 text-sm leading-relaxed",
-        isUser
-          ? "ml-6 bg-primary/10"
-          : "mr-6 border bg-card"
+        isUser ? "ml-6 bg-primary/10" : "mr-6 border bg-card"
       )}
     >
       <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">
         {isUser ? "你" : "助手"}
       </div>
-      <RichText
-        text={message.content}
-        onEduClick={onEduClick}
-        onDefectClick={onDefectClick}
-      />
+      {isUser ? (
+        // User input is plain text — preserve whitespace, no markdown parsing.
+        <div className="whitespace-pre-wrap break-words">{message.content}</div>
+      ) : (
+        <AssistantMarkdown
+          text={message.content}
+          onEduClick={onEduClick}
+          onDefectClick={onDefectClick}
+        />
+      )}
     </div>
   );
 }
 
-/** Render text with [EDU:xxx] / [DEFECT:xxx] / [page:N] tokens as inline buttons. */
-function RichText({
+/** Render assistant reply as markdown + replace [EDU:xxx] / [DEFECT:xxx] / [page:N] inline. */
+function AssistantMarkdown({
   text,
   onEduClick,
   onDefectClick,
@@ -295,49 +300,112 @@ function RichText({
   onEduClick?: (eduId: string) => void;
   onDefectClick?: (defectId: string) => void;
 }) {
-  const parts = useMemo(() => splitCitations(text), [text]);
+  // Walk children of any block element; if a child is a string, split out citations.
+  const processChildren = (children: ReactNode): ReactNode => {
+    if (typeof children === "string") return renderCitations(children, onEduClick, onDefectClick);
+    if (Array.isArray(children)) {
+      return children.map((c, i) =>
+        typeof c === "string" ? (
+          <Fragment key={i}>{renderCitations(c, onEduClick, onDefectClick)}</Fragment>
+        ) : (
+          <Fragment key={i}>{c}</Fragment>
+        )
+      );
+    }
+    return children;
+  };
+
   return (
-    <div className="whitespace-pre-wrap break-words">
-      {parts.map((p, i) => {
-        if (p.kind === "text") return <Fragment key={i}>{p.value}</Fragment>;
-        if (p.kind === "edu") {
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => onEduClick?.(p.id)}
-              className="mx-0.5 rounded bg-primary/10 px-1 font-mono text-[10px] text-primary hover:bg-primary/20"
-              title={onEduClick ? "點擊跳到該段落" : ""}
-            >
-              EDU:{p.id}
-            </button>
-          );
-        }
-        if (p.kind === "defect") {
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => onDefectClick?.(p.id)}
-              className="mx-0.5 rounded bg-orange-100 px-1 font-mono text-[10px] text-orange-700 hover:bg-orange-200 dark:bg-orange-950 dark:text-orange-300"
-              title={onDefectClick ? "點擊聚焦該缺陷" : ""}
-            >
-              DEFECT:{p.id}
-            </button>
-          );
-        }
-        // page marker — just render visually, no click target
-        return (
-          <span
-            key={i}
-            className="mx-0.5 rounded bg-muted px-1 font-mono text-[10px] text-muted-foreground"
-          >
-            p.{p.id}
-          </span>
-        );
-      })}
+    <div
+      className={cn(
+        "break-words text-sm leading-relaxed",
+        // Compact prose styling (mirrors @tailwindcss/typography but inline so we
+        // don't add a dependency just for chat bubbles).
+        "[&_p]:my-1.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
+        "[&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-0.5",
+        "[&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:space-y-0.5",
+        "[&_li>p]:my-0",
+        "[&_h1]:mt-3 [&_h1]:mb-1.5 [&_h1]:text-base [&_h1]:font-semibold",
+        "[&_h2]:mt-3 [&_h2]:mb-1.5 [&_h2]:text-sm [&_h2]:font-semibold",
+        "[&_h3]:mt-2 [&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-semibold",
+        "[&_strong]:font-semibold [&_em]:italic",
+        "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[11px]",
+        "[&_pre]:my-1.5 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-zinc-950 [&_pre]:p-2 [&_pre]:text-[11px] [&_pre]:text-zinc-100",
+        "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
+        "[&_blockquote]:my-1.5 [&_blockquote]:border-l-2 [&_blockquote]:border-muted-foreground/30 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-muted-foreground",
+        "[&_a]:text-primary [&_a]:underline",
+        "[&_hr]:my-2 [&_hr]:border-border",
+        "[&_table]:my-2 [&_table]:w-full [&_table]:overflow-x-auto [&_table]:rounded [&_table]:border [&_table]:text-xs",
+        "[&_th]:border-b [&_th]:bg-muted/40 [&_th]:p-1.5 [&_th]:text-left [&_th]:font-medium",
+        "[&_td]:border-t [&_td]:p-1.5 [&_td]:align-top"
+      )}
+    >
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p>{processChildren(children)}</p>,
+          li: ({ children }) => <li>{processChildren(children)}</li>,
+          td: ({ children }) => <td>{processChildren(children)}</td>,
+          th: ({ children }) => <th>{processChildren(children)}</th>,
+          strong: ({ children }) => <strong>{processChildren(children)}</strong>,
+          em: ({ children }) => <em>{processChildren(children)}</em>,
+          h1: ({ children }) => <h1>{processChildren(children)}</h1>,
+          h2: ({ children }) => <h2>{processChildren(children)}</h2>,
+          h3: ({ children }) => <h3>{processChildren(children)}</h3>,
+          blockquote: ({ children }) => <blockquote>{processChildren(children)}</blockquote>,
+        }}
+      >
+        {text}
+      </ReactMarkdown>
     </div>
   );
+}
+
+/** Split a plain string on [EDU:xxx] / [DEFECT:xxx] / [page:N] tokens and render as chips. */
+function renderCitations(
+  text: string,
+  onEduClick?: (eduId: string) => void,
+  onDefectClick?: (defectId: string) => void
+): ReactNode {
+  const tokens = splitCitations(text);
+  if (tokens.length === 1 && tokens[0].kind === "text") return tokens[0].value;
+  return tokens.map((p, i) => {
+    if (p.kind === "text") return <Fragment key={i}>{p.value}</Fragment>;
+    if (p.kind === "edu") {
+      return (
+        <button
+          key={i}
+          type="button"
+          onClick={() => onEduClick?.(p.id)}
+          className="mx-0.5 rounded bg-primary/10 px-1 font-mono text-[10px] text-primary hover:bg-primary/20"
+          title={onEduClick ? "點擊跳到該段落" : ""}
+        >
+          EDU:{p.id}
+        </button>
+      );
+    }
+    if (p.kind === "defect") {
+      return (
+        <button
+          key={i}
+          type="button"
+          onClick={() => onDefectClick?.(p.id)}
+          className="mx-0.5 rounded bg-orange-100 px-1 font-mono text-[10px] text-orange-700 hover:bg-orange-200 dark:bg-orange-950 dark:text-orange-300"
+          title={onDefectClick ? "點擊聚焦該缺陷" : ""}
+        >
+          DEFECT:{p.id}
+        </button>
+      );
+    }
+    return (
+      <span
+        key={i}
+        className="mx-0.5 rounded bg-muted px-1 font-mono text-[10px] text-muted-foreground"
+      >
+        p.{p.id}
+      </span>
+    );
+  });
 }
 
 type Token =

@@ -330,7 +330,12 @@ def cross_section_pass(
         f"- {r['id']} ({r['name']}): {r['description']}" for r in selected
     )
 
-    model = os.getenv("ANTHROPIC_MODEL_OPUS_1M", "claude-opus-4-7[1m]")
+    # Default to model_heavy() (currently Sonnet 4.6, 200K context) which works on
+    # every account. If the user has 1M-context Opus access they can opt in via env:
+    #   ANTHROPIC_MODEL_CROSS_SECTION=claude-opus-4-7[1m]
+    # For typical academic papers (≤30K tokens) 200K Sonnet is plenty; the 1M
+    # variant is only needed for 200+ page documents.
+    model = os.getenv("ANTHROPIC_MODEL_CROSS_SECTION", model_heavy())
     out = call_with_tool(
         model=model,
         system=load_prompt("cross_section").format(rules_block=rules_block),

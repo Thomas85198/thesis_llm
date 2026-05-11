@@ -296,6 +296,58 @@ export async function fetchRuleStats(): Promise<RulesStats> {
   return get<RulesStats>("/api/rules/stats");
 }
 
+// ---------- Evaluation (LLM vs Human-as-judge) ----------
+
+export type EvalBucket = {
+  total: number;
+  correct: number;
+  wrong: number;
+  partial: number;
+  soft_precision: number | null;
+};
+
+export type EvalSummary = {
+  overall: EvalBucket;
+  by_rule: (EvalBucket & { rule_id: string })[];
+  by_severity: (EvalBucket & { severity: string })[];
+  by_confidence: (EvalBucket & { bucket: string })[];
+  orphan_judgments: number;
+};
+
+export async function fetchEvalSummary(): Promise<EvalSummary> {
+  return get<EvalSummary>("/api/eval/summary");
+}
+
+export type JudgmentExport = {
+  exported_at: string;
+  total_judgments: number;
+  items: {
+    paper_id: string;
+    paper_title: string | null;
+    defect_id: string;
+    rule_id: string;
+    verdict: "correct" | "wrong" | "partial";
+    note: string | null;
+    judged_at: string;
+    defect: {
+      id: string;
+      rule_id: string;
+      defect_type: string;
+      severity: string;
+      section: string;
+      confidence: number | null;
+      description: string;
+      suggestion: string;
+      evidence_edu_ids: string[];
+      evidence_texts: string[];
+    };
+  }[];
+};
+
+export async function fetchJudgmentExport(): Promise<JudgmentExport> {
+  return get<JudgmentExport>("/api/judgments/export");
+}
+
 // ---------- Paper-scoped chat ----------
 
 export type ChatRole = "user" | "assistant";

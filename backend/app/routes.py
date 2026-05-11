@@ -71,15 +71,23 @@ def _run_analysis(
         _set_job(job_id, status="checking", message="Running 13 REL rules…")
         defects, rule_meta = rules.check_all_rules(paper_id, paper_title=title)
 
-        # Cross-section second pass with Opus 1M (REL-04/08/12). Opt-in via env;
-        # default ON because the demo benefits from "the system also reasons across
-        # sections", and the cost is modest (~$0.20/paper with prompt cache).
+        # Cross-section second pass (REL-04/08/12). Opt-in via env; default ON.
+        # Wrapped in its own try/except so a model-access error (e.g. the user
+        # doesn't have 1M-context Opus) doesn't discard the per-section results
+        # — those already cost real money. We just skip the cross-section layer
+        # and surface a warning in the job message.
         if os.getenv("ENABLE_CROSS_SECTION_PASS", "1") == "1" and graph.edus:
-            cs_defects, cs_meta = rules.cross_section_pass(
-                paper_id, title, graph.edus
-            )
-            defects.extend(cs_defects)
-            rule_meta.append(cs_meta)
+            try:
+                cs_defects, cs_meta = rules.cross_section_pass(
+                    paper_id, title, graph.edus
+                )
+                defects.extend(cs_defects)
+                rule_meta.append(cs_meta)
+            except Exception as cs_exc:
+                _set_job(
+                    job_id,
+                    cross_section_warning=f"cross-section pass skipped: {cs_exc!r}",
+                )
 
         result = AnalysisResult(
             paper_id=paper_id, graph=graph, defects=defects, rule_meta=rule_meta
@@ -342,6 +350,18 @@ def delete_judgment(paper_id: str, defect_id: str) -> dict[str, str]:
 def judgments_summary() -> dict[str, Any]:
     """Per-rule + global precision based on accumulated human judgments."""
     return db.judgment_summary()
+
+
+@router.get("/api/judgments/export")
+def judgments_export() -> dict[str, Any]:
+    """Full JSON dump of all judgments + defect details. Used as ground-truth export."""
+    return db.export_judgments_with_defects()
+
+
+@router.get("/api/eval/summary")
+def eval_summary() -> dict[str, Any]:
+    """LLM vs Human-as-judge accuracy: overall, per-rule, per-severity, per-confidence."""
+    return db.evaluation_summary()
 
 
 # ---------- paper-scoped chat assistant ----------

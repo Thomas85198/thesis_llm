@@ -32,6 +32,12 @@ export function SiteHeader() {
           >
             規則統計
           </Link>
+          <Link
+            href="/about"
+            className={buttonVariants({ variant: "ghost", size: "sm" })}
+          >
+            系統說明
+          </Link>
         </nav>
       </div>
     </header>

@@ -143,4 +143,10 @@ npm run dev
 | ⭐ | 跨論文 Entity 對齊 | 1–2 天 | entity dedup 是研究級題目 |
 | ⭐ | Multi-agent (Claim/Evidence/Critic) | 2+ 天 | 需要重設計 pipeline |
 
-詳見 [docs/SYSTEM.md](docs/SYSTEM.md) 與 [docs/TODO.md](docs/TODO.md)（已完成項目 + 待辦明細）。
+詳見：
+- [docs/SYSTEM.md](docs/SYSTEM.md) — 完整系統設計
+- [docs/DEMO_REPORT.md](docs/DEMO_REPORT.md) — **Demo 完整報告（對齊 /about 網頁版內容，含 mermaid 圖、Vaswani 範例與英文原句）**
+- [docs/DB_SCHEMA.md](docs/DB_SCHEMA.md) — SQLite 4 張表中文說明 + ERD
+- [docs/SLIDES.md](docs/SLIDES.md) — Demo 投影片大綱與講稿（18 張）
+- [docs/REPORT_QA.md](docs/REPORT_QA.md) — Demo Q&A 速查 + Cypher / SQL 操作手冊
+- [docs/TODO.md](docs/TODO.md) — 已完成項目 + 待辦明細

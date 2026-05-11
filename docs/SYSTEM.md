@@ -70,37 +70,46 @@ flowchart LR
 
 ### 3.2 處理流程（時序圖）
 
+> 2026-05-10 更新：加入 Phase 2 few-shot 注入、cross-section second pass、SQLite 寫入步驟。
+
 ```mermaid
 sequenceDiagram
+    autonumber
     participant U as 使用者
     participant F as 前端
     participant B as 後端
     participant L as Claude
     participant N as Neo4j
+    participant S as SQLite
 
     U->>F: 上傳 PDF
     F->>B: POST /api/upload
-    B->>B: 計算 SHA-256
+    B->>B: 計算 SHA-256 (去重)
     alt 快取命中
+        B->>S: 讀回之前 result_json
         B-->>F: 直接回傳 paper_id (status=done)
     else 全新檔案
         B->>B: PyMuPDF 抽 spans (含 page+bbox)
-        B->>B: heuristic 切章節
+        B->>B: regex 切章節
         loop 每個章節
             B->>L: 切 EDU (Sonnet)
             B->>L: 抽 Entity + Relation (Sonnet)
-            B->>L: 標 RST + FRU (Opus)
+            B->>L: 標 RST + FRU (Sonnet)
         end
-        B->>N: 寫入 Knowledge Graph
+        B->>N: 寫入 Paper + EDU + Entity + FRU + RST
         loop 13 條 REL 規則
             B->>N: 執行 Cypher 撈候選子圖
-            B->>L: 判讀候選 → 是否違規 + 建議 (Opus)
+            Note right of B: 若該規則 ≥3 筆學長判定<br/>自動注入 Phase 2 few-shot
+            B->>L: 判讀候選 → 是否違規 + 建議 + confidence (Sonnet)
         end
-        B-->>F: 回傳 paper_id
+        B->>L: 跨章節 second pass (REL-04/08/12, Sonnet 200K 或 Opus 1M)
+        B->>S: 寫入 result_json + llm_calls + rule_meta
+        B-->>F: job done + paper_id
     end
     F->>B: GET /api/papers/{id}/result
-    B-->>F: 缺陷清單 + KG 摘要
-    F->>U: 顯示 PDF + 高亮 + 缺陷面板
+    B->>S: 讀 result_json
+    B-->>F: 完整 AnalysisResult (graph + defects + rule_meta)
+    F->>U: 顯示 PDF 高亮 + 缺陷面板 + ⚙️ Phase 2 badge
 ```
 
 ### 3.3 為什麼不直接全文丟給 LLM 找問題？
@@ -190,18 +199,19 @@ flowchart LR
 
 **驗證方法**：學長累積 ~50 筆後，跑 with vs without few-shot 的 ablation。預期 precision 上升 10-20%（這也是論文 main result）。詳見 [docs/TODO.md §1](TODO.md#1-立即優先學長標-50-筆--phase-2-ablation)。
 
-### 3.7 跨章節 second pass（Opus 1M）
+### 3.7 跨章節 second pass
 
 13 條規則中，**REL-04 / REL-08 / REL-12** 本質需要跨章節推理（例如 Conclusion 的 restatement vs Introduction 的 claim），per-section Cypher 抓不到。
 
 從 2026-05-10 起，每篇分析在 13 條規則跑完後會額外做一次 [cross_section_pass](../backend/app/rules.py)：
-- 模型：`claude-opus-4-7[1m]`（1M context）
+- 模型：預設 `model_heavy()`（目前 Sonnet 4.6，200K context）；想用 Opus 1M 設 `ANTHROPIC_MODEL_CROSS_SECTION=claude-opus-4-7[1m]`
 - 輸入：整篇 EDU 依 section 排好 + 三條規則描述
 - Schema 強制 `evidence_edu_ids ≥ 2`（必須引跨章節證據）
 - 缺陷類型加「（跨章節）」字樣與 per-section 結果區分
 - 預設開啟，`ENABLE_CROSS_SECTION_PASS=0` 可關掉
+- **失敗容忍**：cross-section pass throw 不會丟棄前面 13 條規則的結果，只記 warning（[routes.py](../backend/app/routes.py)）
 
-成本：一篇 ~10K input tokens × Opus 4.7 ≈ $0.15-0.30，比省這錢值得。
+成本：一篇 ~10K input tokens × Sonnet 4.6 ≈ $0.03-0.05；換 Opus 4.7 ≈ $0.15-0.30。
 
 ### 3.8 Prompt 集中化
 

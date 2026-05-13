@@ -1,3 +1,16 @@
+# Production-style stack: neo4j + backend + frontend.
+#
+# Usage:
+#   cp backend/.env.example backend/.env   # then fill OPENAI_API_KEY + NEO4J_PASSWORD
+#   docker compose up -d --build
+#
+# Volumes:
+#   app-data    — SQLite + uploaded PDFs (survives container rebuild)
+#   neo4j-data  — Neo4j graph storage
+#
+# For local dev you can still run `uvicorn` + `npm run dev` natively — this
+# compose only matters when you want the prod-style integrated environment.
+
 services:
   neo4j:
     image: neo4j:5.26-community
@@ -6,7 +19,54 @@ services:
       - "7474:7474"
       - "7687:7687"
     environment:
-      NEO4J_AUTH: neo4j/thesis_demo_pw
+      # Read NEO4J_PASSWORD from the same backend/.env so the two services
+      # never drift. Default keeps the legacy demo password for local-only.
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-thesis_demo_pw}
       NEO4J_PLUGINS: '["apoc"]'
     volumes:
-      - ./neo4j_data:/data
+      - neo4j-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p ${NEO4J_PASSWORD:-thesis_demo_pw} 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+    container_name: thesis_backend
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override Neo4j URI so backend reaches the compose-network hostname,
+      # not localhost. Keeps backend/.env usable for local dev (localhost).
+      NEO4J_URI: bolt://neo4j:7687
+      DATA_DIR: /data
+    volumes:
+      - app-data:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Browser talks to backend via host port-mapping, so localhost is right
+        # for local docker compose. Override to the deployed domain on a server:
+        #   NEXT_PUBLIC_API_BASE=https://api.lab.example.edu docker compose build
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8000}
+    container_name: thesis_frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  neo4j-data:

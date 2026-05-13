@@ -6,7 +6,6 @@ recent N correct + N wrong examples into the system prompt as few-shot calibrati
 from __future__ import annotations
 
 import json
-import os
 import uuid
 from pathlib import Path
 from typing import Any
@@ -15,7 +14,7 @@ import yaml
 
 from . import db
 from .kg import run_cypher
-from .llm import call_with_tool, model_heavy
+from .llm import call_with_tool, model_cross_section, model_heavy
 from .prompts import load_prompt
 from .schemas import EDU, Defect, RuleRunMeta, Severity
 
@@ -330,12 +329,11 @@ def cross_section_pass(
         f"- {r['id']} ({r['name']}): {r['description']}" for r in selected
     )
 
-    # Default to model_heavy() (currently Sonnet 4.6, 200K context) which works on
-    # every account. If the user has 1M-context Opus access they can opt in via env:
-    #   ANTHROPIC_MODEL_CROSS_SECTION=claude-opus-4-7[1m]
-    # For typical academic papers (≤30K tokens) 200K Sonnet is plenty; the 1M
-    # variant is only needed for 200+ page documents.
-    model = os.getenv("ANTHROPIC_MODEL_CROSS_SECTION", model_heavy())
+    # Cross-section pass needs long context. Default model is gpt-4.1 (1M context),
+    # which covers any normal thesis. Override via OPENAI_MODEL_CROSS_SECTION if the
+    # lab key only has access to GPT-4o (128K) — papers >100K tokens may then truncate.
+    # Setting ENABLE_CROSS_SECTION_PASS=0 in env skips this stage entirely.
+    model = model_cross_section()
     out = call_with_tool(
         model=model,
         system=load_prompt("cross_section").format(rules_block=rules_block),

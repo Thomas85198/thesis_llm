@@ -332,8 +332,8 @@ def extract_er(edus: list[EDU], paper_id: str) -> tuple[list[Entity], list[ERTri
     name_to_id: dict[str, str] = {}
     entities: list[Entity] = []
     for ent in out.get("entities", []):
-        name = ent["name"].strip()
-        if name in name_to_id:
+        name = (ent.get("name") or "").strip()
+        if not name or name in name_to_id:
             continue
         eid = f"{paper_id}:ent:{uuid.uuid4().hex[:8]}"
         name_to_id[name] = eid
@@ -343,7 +343,13 @@ def extract_er(edus: list[EDU], paper_id: str) -> tuple[list[Entity], list[ERTri
         entities.append(Entity(id=eid, name=name, type=ent_type))
     triples: list[ERTriple] = []
     for tr in out.get("triples", []):
-        s, t = tr["source"].strip(), tr["target"].strip()
+        # The schema marks source/predicate/target as required, but OpenAI's
+        # tool calling doesn't strictly enforce it — skip malformed triples
+        # rather than KeyError out of the whole pipeline.
+        src, tgt, pred = tr.get("source"), tr.get("target"), tr.get("predicate")
+        if not src or not tgt or not pred:
+            continue
+        s, t = src.strip(), tgt.strip()
         if s not in name_to_id or t not in name_to_id:
             continue
         idx = tr.get("evidence_edu_index", 0)
@@ -354,7 +360,7 @@ def extract_er(edus: list[EDU], paper_id: str) -> tuple[list[Entity], list[ERTri
                 id=f"{paper_id}:rel:{uuid.uuid4().hex[:8]}",
                 source_entity_id=name_to_id[s],
                 target_entity_id=name_to_id[t],
-                predicate=tr["predicate"],
+                predicate=pred,
                 evidence_edu_id=edus[idx].id,
             )
         )

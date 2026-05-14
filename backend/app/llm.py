@@ -53,16 +53,16 @@ def client() -> OpenAI:
 
 
 def model_heavy() -> str:
-    return os.getenv("OPENAI_MODEL_HEAVY", "gpt-4.1")
+    return os.getenv("OPENAI_MODEL_HEAVY", "gpt-5.4")
 
 
 def model_light() -> str:
-    return os.getenv("OPENAI_MODEL_LIGHT", "gpt-4.1-mini")
+    return os.getenv("OPENAI_MODEL_LIGHT", "gpt-5.4-mini")
 
 
 def model_cross_section() -> str:
-    # Cross-section pass needs long context; default to gpt-4.1 (1M).
-    return os.getenv("OPENAI_MODEL_CROSS_SECTION", "gpt-4.1")
+    # Cross-section pass needs long context to fit the whole paper.
+    return os.getenv("OPENAI_MODEL_CROSS_SECTION", "gpt-5.4")
 
 
 def llm_temperature() -> float:
@@ -71,9 +71,13 @@ def llm_temperature() -> float:
     return float(os.getenv("LLM_TEMPERATURE", "0"))
 
 
-# OpenAI list pricing (USD per 1M tokens). Approximate; updated 2026-Q1.
+# OpenAI list pricing (USD per 1M tokens). Approximate; updated 2026-05.
 # Each entry: (input, output, cached_input). OpenAI charges no cache-write fee.
 PRICING: dict[str, tuple[float, float, float]] = {
+    "gpt-5.5":          (5.00, 30.00, 0.50),
+    "gpt-5.4":          (2.50, 15.00, 0.25),
+    "gpt-5.4-mini":     (0.75,  4.50, 0.075),
+    "gpt-5.4-nano":     (0.20,  1.25, 0.02),
     "gpt-4.1":          (2.00,  8.00, 0.50),
     "gpt-4.1-mini":     (0.40,  1.60, 0.10),
     "gpt-4.1-nano":     (0.10,  0.40, 0.025),

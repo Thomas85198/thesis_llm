@@ -134,7 +134,10 @@ def call_with_tool(
     tool_description: str,
     tool_input_schema: dict[str, Any],
     cache_system: bool = True,  # kept for signature compat; OpenAI auto-caches.
-    max_tokens: int = 8192,
+    # gpt-5.x supports large outputs; a token-dense zh paper section can emit
+    # thousands of EDU tokens. This is a cap, not a reservation — you only pay
+    # for what's actually generated, so keep it generous to avoid truncation.
+    max_tokens: int = 32000,
     paper_id: str | None = None,
     stage: str = "unspecified",
 ) -> dict[str, Any]:

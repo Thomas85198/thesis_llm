@@ -13,7 +13,7 @@ from typing import Any
 import yaml
 
 from . import db
-from .kg import run_cypher
+from .kg import resolve_evidence_to_edus, run_cypher
 from .llm import call_with_tool, model_cross_section, model_heavy
 from .prompts import load_prompt
 from .schemas import EDU, Defect, RuleRunMeta, Severity
@@ -167,6 +167,10 @@ def check_rule(
     for v in out.get("verdicts", []):
         if not v.get("violates"):
             continue
+        # Candidate subgraphs are FRU-based, so the LLM frequently cites FRU
+        # node ids here — those don't resolve to a PDF location. Expand them to
+        # the concrete EDU ids they cover so "在 PDF 中查看" always works.
+        evidence_edu_ids = resolve_evidence_to_edus(v.get("evidence_edu_ids", []))
         defects.append(
             Defect(
                 id=f"defect:{uuid.uuid4().hex[:8]}",
@@ -174,7 +178,7 @@ def check_rule(
                 defect_type=rule["defect_label"],
                 severity=Severity(v["severity"]),
                 section=v["section"],
-                evidence_edu_ids=v.get("evidence_edu_ids", []),
+                evidence_edu_ids=evidence_edu_ids,
                 description=v["description"],
                 suggestion=v["suggestion"],
                 confidence=_clamp_confidence(v.get("confidence")),

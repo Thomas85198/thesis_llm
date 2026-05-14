@@ -61,6 +61,9 @@ services:
         #   NEXT_PUBLIC_API_BASE=https://api.lab.example.edu docker compose build
         NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8000}
     container_name: thesis_frontend
+    environment:
+      # SSR / server components fetch via the compose network, not localhost.
+      API_INTERNAL_BASE: http://backend:8000
     ports:
       - "3000:3000"
     depends_on:

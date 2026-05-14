@@ -65,6 +65,12 @@ def model_cross_section() -> str:
     return os.getenv("OPENAI_MODEL_CROSS_SECTION", "gpt-4.1")
 
 
+def llm_temperature() -> float:
+    # Defect detection wants reproducible verdicts, not creative variety —
+    # default to 0 (greedy decoding). Override via env for experiments.
+    return float(os.getenv("LLM_TEMPERATURE", "0"))
+
+
 # OpenAI list pricing (USD per 1M tokens). Approximate; updated 2026-Q1.
 # Each entry: (input, output, cached_input). OpenAI charges no cache-write fee.
 PRICING: dict[str, tuple[float, float, float]] = {
@@ -156,6 +162,7 @@ def call_with_tool(
         try:
             response = client().chat.completions.create(
                 model=model,
+                temperature=llm_temperature(),
                 max_completion_tokens=max_tokens,
                 messages=messages,
                 tools=tools,

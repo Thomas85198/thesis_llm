@@ -26,25 +26,31 @@ class Span:
     char_end: int
 
 
+# Optional leading section number before a heading word. Handles both
+# Arabic ("1." / "1 " / "1.2 ") and Chinese ("一、" / "二." / "（三）") numbering
+# common in zh-TW theses — without this, "一、緒論" never matches and the whole
+# paper collapses into one giant "Other" section.
+_SEC_NUM = r"(?:[（(]?\s*(?:\d+(?:\.\d+)*\.?|[一二三四五六七八九十百]+)\s*[)）、.．]?\s*)?"
+
 SECTION_PATTERNS: list[tuple[SectionName, re.Pattern[str]]] = [
     ("Abstract", re.compile(r"^\s*(摘要|abstract)\b", re.IGNORECASE | re.MULTILINE)),
     (
         "Introduction",
-        re.compile(r"^\s*(\d+\.?\s*)?(introduction|引言|緒論|前言)\b", re.IGNORECASE | re.MULTILINE),
+        re.compile(rf"^\s*{_SEC_NUM}(introduction|引言|緒論|前言)\b", re.IGNORECASE | re.MULTILINE),
     ),
-    ("Method", re.compile(r"^\s*(\d+\.?\s*)?(method(s|ology)?|方法)\b", re.IGNORECASE | re.MULTILINE)),
+    ("Method", re.compile(rf"^\s*{_SEC_NUM}(method(s|ology)?|方法|研究方法)\b", re.IGNORECASE | re.MULTILINE)),
     (
         "Experiment",
-        re.compile(r"^\s*(\d+\.?\s*)?(experiment(s)?|實驗)\b", re.IGNORECASE | re.MULTILINE),
+        re.compile(rf"^\s*{_SEC_NUM}(experiment(s)?|實驗)\b", re.IGNORECASE | re.MULTILINE),
     ),
-    ("Results", re.compile(r"^\s*(\d+\.?\s*)?(results?|結果)\b", re.IGNORECASE | re.MULTILINE)),
+    ("Results", re.compile(rf"^\s*{_SEC_NUM}(results?|結果)\b", re.IGNORECASE | re.MULTILINE)),
     (
         "Discussion",
-        re.compile(r"^\s*(\d+\.?\s*)?(discussion|討論|分析)\b", re.IGNORECASE | re.MULTILINE),
+        re.compile(rf"^\s*{_SEC_NUM}(discussion|討論|分析)\b", re.IGNORECASE | re.MULTILINE),
     ),
     (
         "Conclusion",
-        re.compile(r"^\s*(\d+\.?\s*)?(conclusion(s)?|結論|總結)\b", re.IGNORECASE | re.MULTILINE),
+        re.compile(rf"^\s*{_SEC_NUM}(conclusion(s)?|結論|總結)\b", re.IGNORECASE | re.MULTILINE),
     ),
 ]
 

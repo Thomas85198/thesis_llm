@@ -1,3 +1,6 @@
+# Env — root .env holds NEO4J_PASSWORD / PUBLIC_BASE for compose interpolation
+.env
+
 # Python
 backend/.venv
 backend/.venv/

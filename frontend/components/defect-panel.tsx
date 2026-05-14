@@ -278,9 +278,6 @@ function DefectCard({
       )}
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2">
-        <span className="text-[10px] font-medium text-muted-foreground">
-          學長判定：
-        </span>
         {VERDICT_OPTIONS.map((opt) => {
           const isActive = currentVerdict === opt.value;
           return (

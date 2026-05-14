@@ -1,0 +1,92 @@
+# Production stack for the lab server (140.115.54.48).
+#
+# The lab firewall exposes ONE external port: 8083. So unlike the local
+# docker-compose.yml (which publishes 3000/8000 separately), here ONLY Caddy
+# binds a host port — neo4j / backend / frontend stay on the internal compose
+# network. This also dodges the host's already-occupied port 8000.
+#
+# Usage on the server:
+#   cp backend/.env.example backend/.env   # fill OPENAI_API_KEY
+#   echo 'NEO4J_PASSWORD=<strong-pw>'      >> .env   # root .env, compose interpolation
+#   echo 'PUBLIC_BASE=http://140.115.54.48:8083' >> .env
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Volumes:
+#   app-data    — SQLite + uploaded PDFs
+#   neo4j-data  — Neo4j graph storage
+#   caddy-data  — Caddy internal state
+
+services:
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: thesis_neo4j
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-thesis_demo_pw}
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p ${NEO4J_PASSWORD:-thesis_demo_pw} 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    container_name: thesis_backend
+    env_file:
+      - ./backend/.env
+    environment:
+      # Reach Neo4j over the compose network, not localhost.
+      NEO4J_URI: bolt://neo4j:7687
+      # Single source of truth for the password is the root .env, so the
+      # backend and neo4j containers can never drift apart.
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-thesis_demo_pw}
+      DATA_DIR: /data
+      # Browser hits Caddy on one origin, so CORS only needs that origin.
+      CORS_ORIGIN_REGEX: ${CORS_ORIGIN_REGEX:-^http://140\.115\.54\.48:8083$}
+      FRONTEND_URL: ${PUBLIC_BASE:-http://140.115.54.48:8083}
+    volumes:
+      - app-data:/data
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Browser-facing API base. Same origin as the frontend because Caddy
+        # routes /api/* to the backend — baked in at build time.
+        NEXT_PUBLIC_API_BASE: ${PUBLIC_BASE:-http://140.115.54.48:8083}
+    container_name: thesis_frontend
+    environment:
+      # SSR / server components fetch via the compose network, not localhost.
+      API_INTERNAL_BASE: http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    container_name: thesis_caddy
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  neo4j-data:
+  caddy-data:
+  caddy-config:

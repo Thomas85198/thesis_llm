@@ -251,7 +251,16 @@ def list_papers() -> list[dict[str, Any]]:
 
 
 def delete_paper(paper_id: str) -> None:
+    """Fully remove a paper and ALL rows associated with it.
+
+    `results` cascades automatically via its FK. `defect_judgments` and
+    `llm_calls` have no FK (SQLite can't add one without a table rebuild),
+    so wipe them explicitly — in the same transaction — so /stats precision
+    and /api/cost totals only ever reflect papers that still exist.
+    """
     with connect() as c:
+        c.execute("DELETE FROM defect_judgments WHERE paper_id=?", (paper_id,))
+        c.execute("DELETE FROM llm_calls WHERE paper_id=?", (paper_id,))
         c.execute("DELETE FROM papers WHERE paper_id=?", (paper_id,))
 
 
@@ -559,9 +568,10 @@ def evaluation_summary() -> dict[str, Any]:
     - per-confidence-bucket breakdown (calibration check — high confidence
       defects should have higher precision than low confidence ones)
 
-    Note on軟關聯: if a paper was deleted (kg.clear_paper + db.delete_paper),
-    its result_json is gone but judgments remain. Those orphan judgments still
-    contribute to overall / per-rule stats, but not to per-severity /
+    Note on orphans: delete_paper() now wipes a paper's judgments too, so
+    fresh deletes leave no orphans. But a DB may still hold orphan judgments
+    from before that change — judgments whose result_json is gone. Those
+    still contribute to overall / per-rule stats, but not to per-severity /
     per-confidence (where we need defect details from the JSON).
     """
     # Step 1: all judgments (for overall + per-rule, doesn't need result JSON)

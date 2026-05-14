@@ -57,7 +57,13 @@ export default function PapersPage() {
   async function handleBulkDelete() {
     if (selected.size === 0) return;
     const count = selected.size;
-    if (!window.confirm(`確定刪除 ${count} 篇論文？此動作無法復原。`)) return;
+    if (
+      !window.confirm(
+        `確定刪除 ${count} 篇論文？\n` +
+          `會一併清除其分析結果、學長判定與成本紀錄，此動作無法復原。`
+      )
+    )
+      return;
 
     setDeleting(true);
     const ids = Array.from(selected);

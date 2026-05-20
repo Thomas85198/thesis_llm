@@ -1,0 +1,21 @@
+# Single-port reverse proxy for the lab deployment.
+#
+# The lab firewall only exposes ONE external port (8083), but the app has a
+# separate frontend (Next.js) and backend (FastAPI). Caddy multiplexes both
+# onto that single port by path:
+#
+#   /api/*  -> backend  (every FastAPI route lives under /api)
+#   /*      -> frontend (Next.js)
+#
+# Because the browser then talks to one origin only, CORS is a non-issue.
+# Plain HTTP (`:8083`, no hostname) — campus IP, no domain, so no auto-TLS.
+
+:8083 {
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

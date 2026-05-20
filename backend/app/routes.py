@@ -35,8 +35,30 @@ class ChatIn(BaseModel):
 
 router = APIRouter()
 
-UPLOAD_DIR = Path(__file__).parent.parent / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
+
+def _resolve_upload_dir() -> Path:
+    # Env-controlled for Docker / lab server. Order: UPLOAD_DIR > DATA_DIR/uploads
+    # > backend/uploads (local-dev fallback).
+    explicit = os.getenv("UPLOAD_DIR")
+    if explicit:
+        return Path(explicit)
+    data_dir = os.getenv("DATA_DIR")
+    if data_dir:
+        return Path(data_dir) / "uploads"
+    return Path(__file__).parent.parent / "uploads"
+
+
+UPLOAD_DIR = _resolve_upload_dir()
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _resolve_pdf_path(pdf_path: str | None) -> Path | None:
+    """DB stores pdf_path as basename (e.g. 'paper_3ecdd642.pdf') going forward.
+    Legacy rows may contain absolute paths — accept those too for backward compat."""
+    if not pdf_path:
+        return None
+    p = Path(pdf_path)
+    return p if p.is_absolute() else UPLOAD_DIR / p
 
 JobStatus = Literal["queued", "extracting", "checking", "done", "error"]
 
@@ -61,9 +83,30 @@ def _run_analysis(
     job_id: str,
     paper_id: str,
     title: str,
-    spans: list[pipeline.Span],
+    raw: bytes,
+    filename: str,
 ) -> None:
     try:
+        # Extraction moved here from the upload handler so the OCR fallback
+        # (used when the PDF has no ToUnicode CMap) doesn't block the HTTP
+        # request — OCR on a 30-page paper can take minutes.
+        _set_job(job_id, status="extracting", message="PDF 解析中…")
+
+        def _on_ocr_fallback() -> None:
+            # Flipped once the native extractor returns glyph-cipher garbage
+            # and the pipeline falls back to tesseract — gives the user a
+            # reason for the long wait instead of an indefinite spinner.
+            _set_job(
+                job_id,
+                message="PDF 字型無法直接讀取，改用 OCR 辨識中（約需 3-5 分鐘）",
+            )
+
+        spans = pipeline.extract_spans_from_bytes(
+            raw, filename, on_ocr_fallback=_on_ocr_fallback
+        )
+        if not spans:
+            raise ValueError("empty document")
+
         _set_job(job_id, status="extracting", message="Building EDU/ER/RST/FRU…")
         graph = pipeline.build_paper_graph(spans, title=title, paper_id=paper_id)
         kg.write_graph(graph)
@@ -150,22 +193,20 @@ async def upload(
 
     paper_id = f"paper:{uuid.uuid4().hex[:8]}"
     suffix = Path(file.filename).suffix or ".pdf"
-    saved_path = UPLOAD_DIR / f"{paper_id.replace(':', '_')}{suffix}"
+    pdf_filename = f"{paper_id.replace(':', '_')}{suffix}"
+    saved_path = UPLOAD_DIR / pdf_filename
     saved_path.write_bytes(raw)
     # 把 user-input title 跟原始 filename 分開存：title 可為空（fallback 顯示
     # filename），但 filename 永遠記錄原檔名。
+    # pdf_path 只存 basename（不存絕對路徑），讀取時用 _resolve_pdf_path() 拼回。
+    # 這擋掉資料夾搬移 / Docker 掛載點不同造成的「檔案找不到」災難。
     db.upsert_paper(
         paper_id,
         title.strip(),
         file.filename,
         content_hash,
-        str(saved_path),
+        pdf_filename,
     )
-
-    spans = pipeline.extract_spans_from_bytes(raw, file.filename)
-    if not spans:
-        db.delete_paper(paper_id)
-        raise HTTPException(400, "empty document")
 
     job_id = f"job:{uuid.uuid4().hex[:8]}"
     _set_job(
@@ -181,7 +222,8 @@ async def upload(
         job_id,
         paper_id,
         title or file.filename,
-        spans,
+        raw,
+        file.filename,
     )
     return {"job_id": job_id, "paper_id": paper_id, "cached": False}
 
@@ -206,9 +248,10 @@ def delete_paper(paper_id: str) -> dict[str, str]:
     except Exception:
         pass  # Neo4j may already be empty for this paper
     db.delete_paper(paper_id)
-    if pdf_path:
+    resolved = _resolve_pdf_path(pdf_path)
+    if resolved:
         try:
-            Path(pdf_path).unlink(missing_ok=True)
+            resolved.unlink(missing_ok=True)
         except Exception:
             pass
     return {"status": "deleted", "paper_id": paper_id}
@@ -219,8 +262,8 @@ def paper_pdf(paper_id: str) -> FileResponse:
     paper = db.get_paper(paper_id)
     if paper is None or not paper.get("pdf_path"):
         raise HTTPException(404, "PDF not found for this paper")
-    path = Path(paper["pdf_path"])
-    if not path.exists():
+    path = _resolve_pdf_path(paper["pdf_path"])
+    if not path or not path.exists():
         raise HTTPException(404, "PDF file missing on disk")
     return FileResponse(path, media_type="application/pdf")
 

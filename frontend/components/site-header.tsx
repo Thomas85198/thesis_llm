@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { CURRENT_VERSION } from "@/lib/version-log";
 
 export function SiteHeader() {
   return (
@@ -12,8 +13,13 @@ export function SiteHeader() {
           className="flex items-center gap-2 font-semibold tracking-tight"
         >
           <span className="text-base sm:text-lg">論文檢核系統</span>
-          <Badge variant="secondary" className="font-mono text-[10px]">
-            v3
+        </Link>
+        <Link href="/changelog" title="版本紀錄">
+          <Badge
+            variant="secondary"
+            className="font-mono text-[10px] transition-colors hover:bg-accent"
+          >
+            v{CURRENT_VERSION}
           </Badge>
         </Link>
         <nav className="ml-auto flex items-center gap-1">
@@ -37,6 +43,12 @@ export function SiteHeader() {
             className={buttonVariants({ variant: "ghost", size: "sm" })}
           >
             系統說明
+          </Link>
+          <Link
+            href="/changelog"
+            className={buttonVariants({ variant: "ghost", size: "sm" })}
+          >
+            版本紀錄
           </Link>
         </nav>
       </div>

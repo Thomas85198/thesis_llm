@@ -1,5 +1,12 @@
+// Browser fetches use NEXT_PUBLIC_API_BASE (baked in at build time).
+// SSR fetches run inside the Next.js container, where `localhost` is the
+// frontend itself — use API_INTERNAL_BASE (compose network hostname) instead.
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+  typeof window === "undefined"
+    ? process.env.API_INTERNAL_BASE ??
+      process.env.NEXT_PUBLIC_API_BASE ??
+      "http://localhost:8000"
+    : process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 export const apiBase = API_BASE;
 

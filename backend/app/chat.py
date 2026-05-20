@@ -187,35 +187,21 @@ def chat(
     system_text = load_prompt("chat").format(paper_context=paper_context)
     system_text += _injection_warning(truncated)
 
-    model = llm.model_light()  # Sonnet is plenty for chat; cheaper than Opus.
-    response = llm.client().messages.create(
+    model = llm.model_light()  # gpt-4.1-mini is plenty for chat; cheaper than heavy.
+    # OpenAI auto-caches prompts ≥1024 tokens — no explicit cache_control needed.
+    response = llm.client().chat.completions.create(
         model=model,
-        max_tokens=MAX_OUTPUT_TOKENS,
-        system=[
-            {
-                "type": "text",
-                "text": system_text,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
+        max_completion_tokens=MAX_OUTPUT_TOKENS,
         messages=[
-            {"role": m["role"], "content": m["content"]} for m in truncated
+            {"role": "system", "content": system_text},
+            *({"role": m["role"], "content": m["content"]} for m in truncated),
         ],
     )
 
-    # Extract reply text.
-    reply_parts: list[str] = []
-    for block in response.content:
-        if getattr(block, "type", None) == "text":
-            reply_parts.append(block.text)
-    reply = "".join(reply_parts).strip()
+    reply = (response.choices[0].message.content or "").strip()
 
-    # Cost logging.
-    usage = response.usage
-    in_tok = getattr(usage, "input_tokens", 0) or 0
-    out_tok = getattr(usage, "output_tokens", 0) or 0
-    cr_tok = getattr(usage, "cache_read_input_tokens", 0) or 0
-    cw_tok = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    # Cost logging — split cached tokens out of prompt_tokens for consistent math.
+    in_tok, out_tok, cr_tok, cw_tok = llm._extract_usage(response)
     cost = llm.calc_cost_usd(model, in_tok, out_tok, cr_tok, cw_tok)
     try:
         db.log_llm_call(

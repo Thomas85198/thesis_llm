@@ -1,4 +1,11 @@
-"""Claude API wrapper with prompt caching, structured tool-use output, cost logging."""
+"""OpenAI API wrapper with structured tool-use output, cost logging, retry.
+
+Migrated from Anthropic in feat/openai-deploy. Key differences vs the old wrapper:
+- Anthropic tool_use → OpenAI function calling (tool args come back as JSON string).
+- Anthropic explicit cache_control → OpenAI automatic prompt caching (≥1024 tokens).
+- Token usage: OpenAI's prompt_tokens INCLUDES the cached portion, so we split
+  cached_tokens out of input_tokens before logging, to keep cost math consistent.
+"""
 from __future__ import annotations
 
 import json
@@ -7,21 +14,21 @@ import random
 import time
 from typing import Any
 
-from anthropic import (
-    Anthropic,
+from openai import (
     APIConnectionError,
     APIStatusError,
     APITimeoutError,
     InternalServerError,
+    OpenAI,
     RateLimitError,
 )
 
 from . import db
 
-_client: Anthropic | None = None
+_client: OpenAI | None = None
 
 # Transient errors worth retrying with exponential backoff.
-# 5xx = Anthropic-side issue; 429 = rate limit; connection/timeout = network blip.
+# 5xx = OpenAI-side issue; 429 = rate limit; connection/timeout = network blip.
 RETRYABLE_ERRORS = (
     InternalServerError,   # 5xx
     APIConnectionError,    # network
@@ -31,36 +38,59 @@ RETRYABLE_ERRORS = (
 MAX_RETRIES = 4  # total attempts = MAX_RETRIES + 1
 
 
-def client() -> Anthropic:
+def client() -> OpenAI:
     global _client
     if _client is None:
+        # OPENAI_BASE_URL supports Azure / lab self-hosted proxies / vLLM endpoints.
         # max_retries is the SDK's own retry knob; we add our own outer retry too
-        # because the SDK doesn't always cover every 5xx and we want logging.
-        _client = Anthropic(max_retries=2)
+        # because we want stage-aware logging and custom backoff.
+        kwargs: dict[str, Any] = {"max_retries": 2}
+        base = os.getenv("OPENAI_BASE_URL")
+        if base:
+            kwargs["base_url"] = base
+        _client = OpenAI(**kwargs)
     return _client
 
 
 def model_heavy() -> str:
-    return os.getenv("ANTHROPIC_MODEL_HEAVY", "claude-opus-4-7")
+    return os.getenv("OPENAI_MODEL_HEAVY", "gpt-5.4")
 
 
 def model_light() -> str:
-    return os.getenv("ANTHROPIC_MODEL_LIGHT", "claude-sonnet-4-6")
+    return os.getenv("OPENAI_MODEL_LIGHT", "gpt-5.4-mini")
 
 
-# Anthropic list pricing (USD per 1M tokens). Approximate; updated 2026-Q1.
-# Each entry: (input, output, cache_read, cache_write).
-PRICING: dict[str, tuple[float, float, float, float]] = {
-    "claude-opus-4-7":              (15.00, 75.00, 1.50, 18.75),
-    "claude-opus-4-7[1m]":          (15.00, 75.00, 1.50, 18.75),
-    "claude-sonnet-4-6":            ( 3.00, 15.00, 0.30,  3.75),
-    "claude-haiku-4-5-20251001":    ( 1.00,  5.00, 0.10,  1.25),
+def model_cross_section() -> str:
+    # Cross-section pass needs long context to fit the whole paper.
+    return os.getenv("OPENAI_MODEL_CROSS_SECTION", "gpt-5.4")
+
+
+def llm_temperature() -> float:
+    # Defect detection wants reproducible verdicts, not creative variety —
+    # default to 0 (greedy decoding). Override via env for experiments.
+    return float(os.getenv("LLM_TEMPERATURE", "0"))
+
+
+# OpenAI list pricing (USD per 1M tokens). Approximate; updated 2026-05.
+# Each entry: (input, output, cached_input). OpenAI charges no cache-write fee.
+PRICING: dict[str, tuple[float, float, float]] = {
+    "gpt-5.5":          (5.00, 30.00, 0.50),
+    "gpt-5.4":          (2.50, 15.00, 0.25),
+    "gpt-5.4-mini":     (0.75,  4.50, 0.075),
+    "gpt-5.4-nano":     (0.20,  1.25, 0.02),
+    "gpt-4.1":          (2.00,  8.00, 0.50),
+    "gpt-4.1-mini":     (0.40,  1.60, 0.10),
+    "gpt-4.1-nano":     (0.10,  0.40, 0.025),
+    "gpt-4o":           (2.50, 10.00, 1.25),
+    "gpt-4o-mini":      (0.15,  0.60, 0.075),
+    "o1":               (15.00, 60.00, 7.50),
+    "o3-mini":          (1.10,  4.40, 0.55),
 }
 
 
-def _price(model: str) -> tuple[float, float, float, float]:
+def _price(model: str) -> tuple[float, float, float]:
     base = model.split("[", 1)[0]
-    return PRICING.get(base) or PRICING.get(model) or (0.0, 0.0, 0.0, 0.0)
+    return PRICING.get(base) or PRICING.get(model) or (0.0, 0.0, 0.0)
 
 
 def calc_cost_usd(
@@ -70,13 +100,29 @@ def calc_cost_usd(
     cache_read_tokens: int = 0,
     cache_write_tokens: int = 0,
 ) -> float:
-    in_p, out_p, cr_p, cw_p = _price(model)
+    """Compute USD cost. cache_write_tokens is accepted for DB-schema compat
+    but always 0 on OpenAI (no cache-write fee)."""
+    in_p, out_p, cr_p = _price(model)
     return (
         input_tokens * in_p
         + output_tokens * out_p
         + cache_read_tokens * cr_p
-        + cache_write_tokens * cw_p
     ) / 1_000_000
+
+
+def _extract_usage(response: Any) -> tuple[int, int, int, int]:
+    """Parse OpenAI usage into (input_excl_cache, output, cache_read, cache_write).
+
+    OpenAI's prompt_tokens INCLUDES cached tokens, so we subtract cached_tokens
+    to get the truly-billed-as-fresh input count.
+    """
+    usage = response.usage
+    prompt_tok = getattr(usage, "prompt_tokens", 0) or 0
+    out_tok = getattr(usage, "completion_tokens", 0) or 0
+    details = getattr(usage, "prompt_tokens_details", None)
+    cr_tok = (getattr(details, "cached_tokens", 0) or 0) if details else 0
+    in_tok = max(prompt_tok - cr_tok, 0)
+    return in_tok, out_tok, cr_tok, 0
 
 
 def call_with_tool(
@@ -87,55 +133,57 @@ def call_with_tool(
     tool_name: str,
     tool_description: str,
     tool_input_schema: dict[str, Any],
-    cache_system: bool = True,
-    max_tokens: int = 8192,
+    cache_system: bool = True,  # kept for signature compat; OpenAI auto-caches.
+    # gpt-5.x supports large outputs; a token-dense zh paper section can emit
+    # thousands of EDU tokens. This is a cap, not a reservation — you only pay
+    # for what's actually generated, so keep it generous to avoid truncation.
+    max_tokens: int = 32000,
     paper_id: str | None = None,
     stage: str = "unspecified",
 ) -> dict[str, Any]:
-    """Call Claude with a single forced tool — returns the tool input dict.
+    """Call OpenAI with a single forced function tool — returns the parsed args dict.
 
-    System prompt is cached. Token usage is logged to SQLite via db.log_llm_call
-    so /api/cost endpoints can summarize per-paper / per-stage spending.
+    System prompt is auto-cached by OpenAI when ≥1024 tokens. Token usage is logged
+    to SQLite via db.log_llm_call so /api/cost endpoints can summarize spending.
     """
-    system_blocks: list[dict[str, Any]] = [
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user_content},
+    ]
+    tools = [
         {
-            "type": "text",
-            "text": system,
-            **({"cache_control": {"type": "ephemeral"}} if cache_system else {}),
+            "type": "function",
+            "function": {
+                "name": tool_name,
+                "description": tool_description,
+                "parameters": tool_input_schema,
+            },
         }
     ]
 
-    # Retry transient Anthropic 5xx / rate-limit / network errors with exponential
-    # backoff + jitter. Final failure still raises so pipeline can fail loudly.
+    # Retry transient 5xx / rate-limit / network errors with exponential backoff +
+    # jitter. Final failure re-raises so the pipeline fails loudly.
     last_exc: Exception | None = None
     response = None
     for attempt in range(MAX_RETRIES + 1):
         try:
-            response = client().messages.create(
+            response = client().chat.completions.create(
                 model=model,
-                max_tokens=max_tokens,
-                system=system_blocks,
-                tools=[
-                    {
-                        "name": tool_name,
-                        "description": tool_description,
-                        "input_schema": tool_input_schema,
-                    }
-                ],
-                tool_choice={"type": "tool", "name": tool_name},
-                messages=[{"role": "user", "content": user_content}],
+                temperature=llm_temperature(),
+                max_completion_tokens=max_tokens,
+                messages=messages,
+                tools=tools,
+                tool_choice={"type": "function", "function": {"name": tool_name}},
             )
             break  # success
         except RETRYABLE_ERRORS as exc:
             last_exc = exc
             if attempt == MAX_RETRIES:
-                # Out of retries, re-raise so pipeline catches it.
                 print(
                     f"[llm] {type(exc).__name__} on stage={stage} model={model} "
                     f"after {MAX_RETRIES + 1} attempts — giving up: {exc!r}"
                 )
                 raise
-            # Backoff: 1.5s, 3s, 6s, 12s + jitter
             backoff = (1.5 * (2 ** attempt)) + random.uniform(0, 0.5)
             print(
                 f"[llm] {type(exc).__name__} on stage={stage} model={model} "
@@ -143,7 +191,7 @@ def call_with_tool(
             )
             time.sleep(backoff)
         except APIStatusError as exc:
-            # 4xx other than 429 (bad request, auth, etc.) — don't retry, fail fast
+            # 4xx other than 429 (bad request, auth, etc.) — don't retry, fail fast.
             print(
                 f"[llm] {type(exc).__name__} (status={exc.status_code}) on stage={stage} "
                 f"— non-retryable: {exc!r}"
@@ -151,15 +199,9 @@ def call_with_tool(
             raise
 
     if response is None:
-        # Should never reach here (loop either returns or raises), but for type safety:
         raise RuntimeError(f"LLM call failed without exception: {last_exc!r}")
 
-    # Anthropic returns cache stats only if caching is in play.
-    usage = response.usage
-    in_tok = getattr(usage, "input_tokens", 0) or 0
-    out_tok = getattr(usage, "output_tokens", 0) or 0
-    cr_tok = getattr(usage, "cache_read_input_tokens", 0) or 0
-    cw_tok = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    in_tok, out_tok, cr_tok, cw_tok = _extract_usage(response)
     cost = calc_cost_usd(model, in_tok, out_tok, cr_tok, cw_tok)
     try:
         db.log_llm_call(
@@ -176,11 +218,19 @@ def call_with_tool(
         # Logging must never block the analysis pipeline.
         pass
 
-    for block in response.content:
-        if block.type == "tool_use" and block.name == tool_name:
-            return block.input  # type: ignore[return-value]
+    choice = response.choices[0]
+    tool_calls = choice.message.tool_calls or []
+    for tc in tool_calls:
+        if tc.function.name == tool_name:
+            try:
+                return json.loads(tc.function.arguments)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    f"OpenAI returned invalid JSON for {tool_name}: "
+                    f"{tc.function.arguments[:500]}"
+                ) from exc
 
     raise RuntimeError(
-        f"Claude did not return tool_use for {tool_name}. "
-        f"Got: {json.dumps([b.model_dump() for b in response.content])[:500]}"
+        f"OpenAI did not return tool_call for {tool_name}. "
+        f"finish_reason={choice.finish_reason} content={choice.message.content!r}"
     )

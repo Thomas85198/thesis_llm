@@ -1,11 +1,16 @@
 """SQLite persistence: papers, results, content-hash cache, LLM call log.
 
-Single-file DB at backend/data.db. Uses stdlib sqlite3 (no extra dep).
-Concurrent FastAPI handlers access via short-lived connections.
+Single-file DB. Path is env-controlled for Docker / lab server deployment:
+  SQLITE_PATH=...     # full path wins
+  DATA_DIR=...        # else <DATA_DIR>/data.db
+  (else)              # else backend/data.db (local dev fallback)
+WAL journal mode is enabled in connect() so multiple FastAPI workers can read
+while one writes without blocking each other.
 """
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -13,7 +18,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-DB_PATH = Path(__file__).parent.parent / "data.db"
+
+def _resolve_db_path() -> Path:
+    explicit = os.getenv("SQLITE_PATH")
+    if explicit:
+        return Path(explicit)
+    data_dir = os.getenv("DATA_DIR")
+    if data_dir:
+        return Path(data_dir) / "data.db"
+    return Path(__file__).parent.parent / "data.db"
+
+
+DB_PATH = _resolve_db_path()
 
 _init_lock = threading.Lock()
 _initialized = False
@@ -25,14 +41,16 @@ SCHEMA = """
 -- ----------------------------------------------------------------
 -- 每筆代表使用者上傳過的一篇論文。content_hash 是 SHA-256，
 -- 用來偵測「同一份檔案是否上傳過」，命中即直接回傳之前的 paper_id
--- 不重跑 LLM。pdf_path 記錄原檔在 backend/uploads/ 的位置。
+-- 不重跑 LLM。pdf_path 記錄的是相對於 UPLOAD_DIR 的 basename
+-- (e.g. "paper_3ecdd642.pdf")，讀取時 routes._resolve_pdf_path() 會
+-- 接上 UPLOAD_DIR。舊資料若還是絕對路徑，resolver 會 fallback 直接回傳。
 -- ============================================================
 CREATE TABLE IF NOT EXISTS papers (
     paper_id      TEXT PRIMARY KEY,    -- 論文唯一識別 (格式 'paper:xxxxxxxx')
     title         TEXT,                -- 論文標題（使用者上傳時填的；可為空）
     filename      TEXT,                -- 原始檔名 (e.g. "2017_Vaswani.pdf")，永遠記下
     content_hash  TEXT,                -- 檔案 SHA-256，用於上傳去重
-    pdf_path      TEXT,                -- PDF 在本地磁碟的絕對路徑
+    pdf_path      TEXT,                -- PDF basename 相對於 UPLOAD_DIR
     created_at    TEXT NOT NULL        -- 建立時間 (ISO 8601 UTC)
 );
 CREATE INDEX IF NOT EXISTS idx_papers_hash ON papers(content_hash);
@@ -137,7 +155,15 @@ def _ensure_init() -> None:
     with _init_lock:
         if _initialized:
             return
+        # Make sure the parent dir exists when SQLITE_PATH points at /data/data.db
+        # on a freshly-mounted Docker volume.
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(DB_PATH) as conn:
+            # WAL allows readers and one writer concurrently — safer for multi-worker
+            # uvicorn / reload than the default rollback journal. Set once on first
+            # connection; it's a persistent file-level setting.
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
             conn.executescript(SCHEMA)
             _migrate(conn)
             conn.commit()
@@ -225,7 +251,16 @@ def list_papers() -> list[dict[str, Any]]:
 
 
 def delete_paper(paper_id: str) -> None:
+    """Fully remove a paper and ALL rows associated with it.
+
+    `results` cascades automatically via its FK. `defect_judgments` and
+    `llm_calls` have no FK (SQLite can't add one without a table rebuild),
+    so wipe them explicitly — in the same transaction — so /stats precision
+    and /api/cost totals only ever reflect papers that still exist.
+    """
     with connect() as c:
+        c.execute("DELETE FROM defect_judgments WHERE paper_id=?", (paper_id,))
+        c.execute("DELETE FROM llm_calls WHERE paper_id=?", (paper_id,))
         c.execute("DELETE FROM papers WHERE paper_id=?", (paper_id,))
 
 
@@ -533,9 +568,10 @@ def evaluation_summary() -> dict[str, Any]:
     - per-confidence-bucket breakdown (calibration check — high confidence
       defects should have higher precision than low confidence ones)
 
-    Note on軟關聯: if a paper was deleted (kg.clear_paper + db.delete_paper),
-    its result_json is gone but judgments remain. Those orphan judgments still
-    contribute to overall / per-rule stats, but not to per-severity /
+    Note on orphans: delete_paper() now wipes a paper's judgments too, so
+    fresh deletes leave no orphans. But a DB may still hold orphan judgments
+    from before that change — judgments whose result_json is gone. Those
+    still contribute to overall / per-rule stats, but not to per-severity /
     per-confidence (where we need defect details from the JSON).
     """
     # Step 1: all judgments (for overall + per-rule, doesn't need result JSON)

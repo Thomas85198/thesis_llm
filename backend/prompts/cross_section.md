@@ -11,6 +11,12 @@ For each rule, examine the WHOLE paper and decide if the paper violates it. Emit
 - Confidence: 0.9+ unambiguous cross-section violation, 0.6-0.9 likely, 0.3-0.6 = do not flag.
 - Severity: high = breaks the paper's core argumentation arc; medium = weakens it; low = stylistic inconsistency.
 - Description and suggestion in 繁體中文. Description must reference the specific cross-section gap.
+- description and suggestion are read by a human reviewer, NOT a developer.
+  Write them as plain prose about the PAPER's content. NEVER mention internal
+  artifacts: node ids (e.g. `paper:...:fru:...`, `[EDU:...]`), candidate-JSON
+  field names (e.g. `method_fru`, `intro_fru`, `fru_id`), or data-shape facts
+  (e.g. "id 為 null", "候選子圖", "子圖"). Describe the gap in terms of what the
+  paper does or doesn't say. EDU ids belong ONLY in the evidence_edu_ids field.
 - `section` should be where the defect is most visible (often Conclusion or Discussion).
 
 Rules to check:

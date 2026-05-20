@@ -1,0 +1,16 @@
+# Local-only artifacts that should NEVER end up in the image.
+.venv
+__pycache__
+**/__pycache__
+*.egg-info
+.env
+.env.local
+data.db
+data.db-journal
+data.db-wal
+data.db-shm
+uploads/
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.pyc

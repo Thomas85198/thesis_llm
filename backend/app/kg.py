@@ -173,6 +173,37 @@ def run_cypher(query: str, **params: Any) -> list[dict[str, Any]]:
         return [r.data() for r in s.run(query, **params)]
 
 
+def resolve_evidence_to_edus(ids: list[str]) -> list[str]:
+    """Map a mix of EDU / FRU node ids to concrete EDU ids.
+
+    Rule candidate subgraphs are FRU-based, so the checker LLM often cites FRU
+    node ids as evidence. Those don't resolve to a PDF location. Expand each FRU
+    id to the EDU ids it COVERS; pass through ids that are already EDUs; drop
+    anything that matches neither. Order-preserving, de-duplicated.
+    """
+    if not ids:
+        return []
+    rows = run_cypher(
+        """
+        UNWIND $ids AS cid
+        OPTIONAL MATCH (e:EDU {id: cid})
+        OPTIONAL MATCH (:FRU {id: cid})-[:COVERS]->(fe:EDU)
+        WITH cid, e, collect(DISTINCT fe.id) AS fru_edus
+        RETURN cid AS cid,
+               CASE WHEN e IS NOT NULL THEN [cid] ELSE fru_edus END AS edu_ids
+        """,
+        ids=ids,
+    )
+    out: list[str] = []
+    seen: set[str] = set()
+    for r in rows:
+        for eid in r["edu_ids"]:
+            if eid and eid not in seen:
+                seen.add(eid)
+                out.append(eid)
+    return out
+
+
 def fetch_graph_for_viz(paper_id: str) -> dict[str, Any]:
     """Return nodes + edges for the frontend visualization."""
     nodes = run_cypher(

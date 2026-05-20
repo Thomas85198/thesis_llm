@@ -148,16 +148,19 @@ export default function AboutPage() {
         {/* 3. Pipeline 時序圖 */}
         <Section id="pipeline" title="3. Pipeline 時序圖">
           <p>
-            從上傳到結果回來大概 1–3 分鐘。SHA-256 hash 命中快取則秒回。
+            分析時間主要花在 ~30–40 次 LLM 呼叫上。這些呼叫大多彼此獨立，因此會用
+            thread pool 平行送出（預設最多 6 條，<code>OPENAI_MAX_WORKERS</code> 可調），
+            把原本序列約 9 分鐘的分析壓到約 1/3。文字抽取與分析都在背景任務執行，
+            上傳請求會立刻回 <code>job_id</code>，前端再輪詢進度。SHA-256 hash 命中快取則秒回。
           </p>
           <MermaidDiagram
-            caption="圖 3-1：上傳論文後的完整處理流程（簡化版）"
+            caption="圖 3-1：上傳論文後的完整處理流程（含 OCR fallback 與平行化）"
             code={`sequenceDiagram
     autonumber
     participant U as 使用者
     participant F as 前端
     participant B as 後端
-    participant C as Claude API
+    participant O as OpenAI API
     participant N as Neo4j
     participant S as SQLite
 
@@ -167,19 +170,26 @@ export default function AboutPage() {
     alt hash 命中
         B-->>F: 直接回傳之前 paper_id
     else 新檔案
+        B-->>F: 立即回 job_id（背景處理）
+        Note over B: 以下皆在背景任務執行
         B->>B: PyMuPDF 抽 spans + page+bbox
+        alt 偵測到亂碼（無 ToUnicode CMap）
+            B->>B: tesseract OCR fallback (chi_tra+eng)
+        end
         B->>B: regex 切 sections
-        loop 每個 section
-            B->>C: EDU 抽取 (Sonnet)
-            B->>C: ER 抽取 (Sonnet)
-            B->>C: RST/FRU 標註 (Sonnet)
+        par 各 section 平行 (thread pool ≤ OPENAI_MAX_WORKERS=6)
+            B->>O: section A：EDU→ER (gpt-5.4-mini) → RST/FRU (gpt-5.4)
+        and
+            B->>O: section B：同上
+        and
+            B->>O: section …：同上
         end
         B->>N: 寫入 Paper + EDU + Entity + FRU + RST
-        loop 13 條 REL 規則
+        par 13 條 REL 規則平行 (同一 thread pool)
             B->>N: Cypher 找候選
-            B->>C: LLM 判讀 (含 Phase 2 few-shot)
+            B->>O: LLM 判讀 (gpt-5.4, 含 Phase 2 few-shot)
         end
-        B->>C: 跨章節 second pass (REL-04/08/12)
+        B->>O: 跨章節 second pass (REL-04/08/12)
         B->>S: 寫 result_json + llm_calls
         B-->>F: job done + paper_id
     end

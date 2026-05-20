@@ -48,11 +48,10 @@
 # 1. SSH 進伺服器
 ssh luchienlin@140.115.54.48
 
-# 2. clone 並切到部署 branch
+# 2. clone（部署直接用 main，feat/openai-deploy 已合併並刪除）
 cd ~
 git clone https://github.com/Thomas85198/thesis_llm.git
 cd thesis_llm
-git checkout feat/openai-deploy
 
 # 3. 設定 backend/.env（OpenAI key 等）
 cp backend/.env.example backend/.env

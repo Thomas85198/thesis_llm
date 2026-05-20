@@ -36,3 +36,9 @@ testpaths = ["tests"]
 # Unit tests must not touch the network/LLM/Neo4j. Anything that does belongs
 # behind a marker and is opt-in.
 addopts = "-q"
+# Silence PyMuPDF's SWIG-binding DeprecationWarnings (C-extension noise emitted
+# on import under newer Python; nothing to do with our code). Targeted so real
+# deprecations from our own code still surface.
+filterwarnings = [
+    "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
+]

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import pymupdf
@@ -59,24 +60,58 @@ EXCLUDED_SECTIONS: set[SectionName] = set()
 
 # ---------- PDF / text extraction ----------
 
-def extract_spans_from_bytes(data: bytes, filename: str) -> list[Span]:
+def extract_spans_from_bytes(
+    data: bytes,
+    filename: str,
+    on_ocr_fallback: Callable[[], None] | None = None,
+) -> list[Span]:
     """Read a PDF (or plain text) into Spans with page+bbox.
 
     For .txt input we synthesize a single span per line (page=0, dummy bbox).
+
+    `on_ocr_fallback` fires right before the OCR pass starts, so the upload
+    handler can flip the job status message to warn the user about the long
+    wait. Only called for PDFs that fail garble detection.
     """
     if filename.lower().endswith(".pdf"):
-        return _extract_pdf_spans(data)
+        return _extract_pdf_spans(data, on_ocr_fallback=on_ocr_fallback)
     return _extract_text_spans(data.decode("utf-8", errors="replace"))
 
 
-def _extract_pdf_spans(data: bytes) -> list[Span]:
+def _extract_pdf_spans(
+    data: bytes,
+    on_ocr_fallback: Callable[[], None] | None = None,
+) -> list[Span]:
+    """Native PDF text extraction, with OCR fallback when output is garbled.
+
+    Some LaTeX-built PDFs embed Type 3 fonts without a ToUnicode CMap. PyMuPDF
+    then returns raw glyph indices (looks like "*?Ti2`" instead of "Chapter").
+    We detect that and re-run via tesseract — slow, but the only path that
+    recovers readable text.
+    """
+    spans = _extract_pdf_spans_native(data)
+    if _looks_garbled(spans):
+        if on_ocr_fallback is not None:
+            on_ocr_fallback()
+        ocr_spans = _extract_pdf_spans_ocr(data)
+        if ocr_spans:
+            return ocr_spans
+    return spans
+
+
+def _extract_pdf_spans_native(data: bytes, textpage_fn=None) -> list[Span]:
     spans: list[Span] = []
     cursor = 0
     doc = pymupdf.open(stream=data, filetype="pdf")
     try:
         for page_num in range(len(doc)):
             page = doc[page_num]
-            blocks = page.get_text("dict").get("blocks", [])
+            if textpage_fn is not None:
+                tp = textpage_fn(page)
+                page_dict = page.get_text("dict", textpage=tp)
+            else:
+                page_dict = page.get_text("dict")
+            blocks = page_dict.get("blocks", [])
             for block in blocks:
                 if block.get("type") != 0:  # 0 = text block
                     continue
@@ -101,6 +136,56 @@ def _extract_pdf_spans(data: bytes) -> list[Span]:
     finally:
         doc.close()
     return spans
+
+
+# Punctuation that's near-zero in natural prose but dominates the substitution-
+# cipher-style output of LaTeX PDFs with broken/missing ToUnicode CMaps.
+# (PyMuPDF can leak glyph indices as e.g. "*?Ti2`" for what should be "Chapter".)
+_GARBLE_HINT_CHARS = frozenset("`*~^|")
+
+
+def _looks_garbled(spans: list[Span]) -> bool:
+    """True when extracted text looks like glyph-index leakage rather than
+    real characters. Drives the OCR fallback in `_extract_pdf_spans`.
+
+    The signal we rely on: in natural English/CJK prose, backtick + asterisk
+    + tilde + caret + pipe together occupy well under 1% of characters. In
+    glyph-cipher output they routinely occupy 5–15%. That's a >10x gap, so a
+    single threshold is enough — earlier attempts that also gated on a
+    "real letter ratio" missed this PDF because the cipher rotates letters
+    to *other* letters, keeping the alphabetic ratio high.
+    """
+    sample = "".join(s.text for s in spans[:80])[:4000]
+    if len(sample) < 200:
+        # Too little text to judge confidently; skip OCR (avoids OCR-ing
+        # legitimately tiny one-page docs).
+        return False
+    hint = sum(1 for c in sample if c in _GARBLE_HINT_CHARS)
+    return (hint / len(sample)) > 0.03
+
+
+def _extract_pdf_spans_ocr(data: bytes) -> list[Span]:
+    """OCR fallback for PDFs whose native text layer is unusable.
+
+    Uses PyMuPDF's tesseract integration (`page.get_textpage_ocr`) so we keep
+    the same bbox-preserving Span output. Requires tesseract + chi_tra/eng
+    traineddata in the runtime image (installed via the Dockerfile).
+
+    DPI 200 is a balance — 300 is sharper but ~2x slower per page; 150 starts
+    losing CJK strokes.
+    """
+    def _ocr_textpage(page):
+        return page.get_textpage_ocr(language="chi_tra+eng", dpi=200, full=True)
+
+    try:
+        return _extract_pdf_spans_native(data, textpage_fn=_ocr_textpage)
+    except Exception as exc:  # tesseract missing, bad lang pack, etc.
+        # Bubble up a clear error so the upload endpoint surfaces it instead of
+        # silently returning the original garbled spans.
+        raise RuntimeError(
+            "PDF text is garbled and OCR fallback failed. "
+            "Check that tesseract + chi_tra are installed in the backend image."
+        ) from exc
 
 
 def _extract_text_spans(text: str) -> list[Span]:

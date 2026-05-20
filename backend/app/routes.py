@@ -83,9 +83,30 @@ def _run_analysis(
     job_id: str,
     paper_id: str,
     title: str,
-    spans: list[pipeline.Span],
+    raw: bytes,
+    filename: str,
 ) -> None:
     try:
+        # Extraction moved here from the upload handler so the OCR fallback
+        # (used when the PDF has no ToUnicode CMap) doesn't block the HTTP
+        # request — OCR on a 30-page paper can take minutes.
+        _set_job(job_id, status="extracting", message="PDF 解析中…")
+
+        def _on_ocr_fallback() -> None:
+            # Flipped once the native extractor returns glyph-cipher garbage
+            # and the pipeline falls back to tesseract — gives the user a
+            # reason for the long wait instead of an indefinite spinner.
+            _set_job(
+                job_id,
+                message="PDF 字型無法直接讀取，改用 OCR 辨識中（約需 3-5 分鐘）",
+            )
+
+        spans = pipeline.extract_spans_from_bytes(
+            raw, filename, on_ocr_fallback=_on_ocr_fallback
+        )
+        if not spans:
+            raise ValueError("empty document")
+
         _set_job(job_id, status="extracting", message="Building EDU/ER/RST/FRU…")
         graph = pipeline.build_paper_graph(spans, title=title, paper_id=paper_id)
         kg.write_graph(graph)
@@ -187,11 +208,6 @@ async def upload(
         pdf_filename,
     )
 
-    spans = pipeline.extract_spans_from_bytes(raw, file.filename)
-    if not spans:
-        db.delete_paper(paper_id)
-        raise HTTPException(400, "empty document")
-
     job_id = f"job:{uuid.uuid4().hex[:8]}"
     _set_job(
         job_id,
@@ -206,7 +222,8 @@ async def upload(
         job_id,
         paper_id,
         title or file.filename,
-        spans,
+        raw,
+        file.filename,
     )
     return {"job_id": job_id, "paper_id": paper_id, "cached": False}
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from contextlib import contextmanager
 from typing import Any, Iterator
 
@@ -10,18 +11,23 @@ from neo4j import Driver, GraphDatabase
 from .schemas import PaperGraph
 
 _driver: Driver | None = None
+_driver_lock = threading.Lock()
 
 
 def driver() -> Driver:
+    # Double-checked locking so concurrent rule-check threads can't each build a
+    # separate driver during cold init. Steady state is a lockless read.
     global _driver
     if _driver is None:
-        _driver = GraphDatabase.driver(
-            os.getenv("NEO4J_URI", "bolt://localhost:7687"),
-            auth=(
-                os.getenv("NEO4J_USER", "neo4j"),
-                os.getenv("NEO4J_PASSWORD", "thesis_demo_pw"),
-            ),
-        )
+        with _driver_lock:
+            if _driver is None:
+                _driver = GraphDatabase.driver(
+                    os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+                    auth=(
+                        os.getenv("NEO4J_USER", "neo4j"),
+                        os.getenv("NEO4J_PASSWORD", "thesis_demo_pw"),
+                    ),
+                )
     return _driver
 
 

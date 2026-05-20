@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ import yaml
 
 from . import db
 from .kg import resolve_evidence_to_edus, run_cypher
-from .llm import call_with_tool, model_cross_section, model_heavy
+from .llm import call_with_tool, llm_max_workers, model_cross_section, model_heavy
 from .prompts import load_prompt
 from .schemas import EDU, Defect, RuleRunMeta, Severity
 
@@ -205,12 +206,22 @@ def _clamp_confidence(value: Any) -> float | None:
 def check_all_rules(
     paper_id: str, paper_title: str = ""
 ) -> tuple[list[Defect], list[RuleRunMeta]]:
+    rules = load_rules()
     defects: list[Defect] = []
     metas: list[RuleRunMeta] = []
-    for rule in load_rules():
-        rule_defects, meta = check_rule(rule, paper_id, paper_title)
-        defects.extend(rule_defects)
-        metas.append(meta)
+
+    # The 13 REL rules are independent (each runs its own Cypher + one LLM
+    # judgment), so fan them out across a bounded thread pool — this is the
+    # single biggest latency win in the pipeline. pool.map preserves rule
+    # order, so metas/defects stay in a stable, reproducible order.
+    if rules:
+        with ThreadPoolExecutor(max_workers=llm_max_workers()) as pool:
+            results = pool.map(
+                lambda r: check_rule(r, paper_id, paper_title), rules
+            )
+            for rule_defects, meta in results:
+                defects.extend(rule_defects)
+                metas.append(meta)
     return defects, metas
 
 

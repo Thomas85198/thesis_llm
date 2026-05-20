@@ -71,6 +71,21 @@ def llm_temperature() -> float:
     return float(os.getenv("LLM_TEMPERATURE", "0"))
 
 
+def llm_max_workers() -> int:
+    """Thread-pool size for fanning out independent LLM calls (sections, rules).
+
+    The pipeline makes ~30-40 LLM calls that are mostly independent; running
+    them concurrently is the main latency win. Bounded to avoid hammering the
+    OpenAI rate limit — call_with_tool already retries 429s with backoff, but a
+    smaller pool wastes fewer retries. Default 6; raise via OPENAI_MAX_WORKERS
+    on a higher tier, drop to 1 to force the old sequential behaviour.
+    """
+    try:
+        return max(1, int(os.getenv("OPENAI_MAX_WORKERS", "6")))
+    except ValueError:
+        return 6
+
+
 # OpenAI list pricing (USD per 1M tokens). Approximate; updated 2026-05.
 # Each entry: (input, output, cached_input). OpenAI charges no cache-write fee.
 PRICING: dict[str, tuple[float, float, float]] = {

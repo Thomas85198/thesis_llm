@@ -7,12 +7,13 @@ from __future__ import annotations
 import re
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import pymupdf
 from rapidfuzz import fuzz
 
-from .llm import call_with_tool, model_heavy, model_light
+from .llm import call_with_tool, llm_max_workers, model_heavy, model_light
 from .prompts import load_prompt
 from .schemas import EDU, ERTriple, Entity, FRUNode, PaperGraph, RSTNode, SectionName
 
@@ -602,11 +603,34 @@ def extract_rst_fru(
 
 # ---------- Orchestration ----------
 
+_SectionResult = tuple[
+    list[EDU], list[Entity], list[ERTriple], list[RSTNode], list[FRUNode]
+]
+
+
+def _process_section(
+    section: SectionName, section_spans: list[Span], paper_id: str
+) -> _SectionResult | None:
+    """Run the full EDU→ER→RST/FRU extraction for one section.
+
+    These three calls are dependent (ER and RST/FRU both consume the EDUs), so
+    they stay sequential within a section. Sections themselves are independent
+    and run concurrently — see build_paper_graph.
+    """
+    edus = extract_edus(section, section_spans, paper_id)
+    if not edus:
+        return None
+    entities, triples = extract_er(edus, paper_id)
+    rst, fru = extract_rst_fru(edus, paper_id)
+    return edus, entities, triples, rst, fru
+
+
 def build_paper_graph(
     spans: list[Span], title: str = "", paper_id: str | None = None
 ) -> PaperGraph:
     paper_id = paper_id or f"paper:{uuid.uuid4().hex[:8]}"
     sections = split_sections_with_spans(spans)
+    work = [(s, sp) for s, sp in sections if s not in EXCLUDED_SECTIONS]
 
     all_edus: list[EDU] = []
     all_entities: list[Entity] = []
@@ -614,19 +638,24 @@ def build_paper_graph(
     all_rst: list[RSTNode] = []
     all_fru: list[FRUNode] = []
 
-    for section, section_spans in sections:
-        if section in EXCLUDED_SECTIONS:
-            continue
-        edus = extract_edus(section, section_spans, paper_id)
-        if not edus:
-            continue
-        entities, triples = extract_er(edus, paper_id)
-        rst, fru = extract_rst_fru(edus, paper_id)
-        all_edus.extend(edus)
-        all_entities.extend(entities)
-        all_triples.extend(triples)
-        all_rst.extend(rst)
-        all_fru.extend(fru)
+    # Sections are independent → fan out across a bounded thread pool. The
+    # OpenAI client, SQLite logging, and Neo4j sessions are all thread-safe
+    # (fresh connection/session per call). pool.map preserves input order, so
+    # the assembled graph is deterministic regardless of completion order.
+    if work:
+        with ThreadPoolExecutor(max_workers=llm_max_workers()) as pool:
+            results = pool.map(
+                lambda a: _process_section(a[0], a[1], paper_id), work
+            )
+            for res in results:
+                if res is None:
+                    continue
+                edus, entities, triples, rst, fru = res
+                all_edus.extend(edus)
+                all_entities.extend(entities)
+                all_triples.extend(triples)
+                all_rst.extend(rst)
+                all_fru.extend(fru)
 
     return PaperGraph(
         paper_id=paper_id,

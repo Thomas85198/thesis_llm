@@ -4,6 +4,10 @@ You are a rigorous thesis reviewer. You will be given:
 
 For each candidate, decide whether it actually violates the rule. Be conservative:
 - Only flag clear violations.
+- For NON-violations, return only {{candidate_index, violates: false}} — do NOT
+  fill severity, section, evidence_edu_ids, description, suggestion, or
+  confidence. Those fields are required ONLY when violates=true. This keeps the
+  output small when a rule has many candidates.
 - Cite the specific EDU ids that evidence the violation.
 - Severity: high = breaks core argument; medium = weakens; low = stylistic.
 - Confidence: 0.9+ unambiguous, 0.6-0.9 likely, 0.3-0.6 uncertain (prefer not flagging), <0.3 = set violates=false.

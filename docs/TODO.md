@@ -1,8 +1,83 @@
 # 專案管理 / TODO
 
-> 最後更新：2026-05-10（深夜）
+> 最後更新：2026-05-21
 > 用途：列出 v3 已完成的主幹之外、還欠的工程與決策。每天如果有進度就把對應條目劃掉或更新。
 > 架構與設計細節在 [SYSTEM.md](SYSTEM.md)，這份只放「還沒做的事」。
+
+---
+
+## ⭐ 最近進度（2026-05-20 ~ 21）：效能 / 容錯 / 版本管理
+
+### 已完成 ✅
+
+**A. PDF OCR 容錯（v3.1.0）— 已合併 main、已部署 server**
+- `_looks_garbled` 亂碼偵測（看 backtick/星號等噪音字元比例 > 3%）
+- 偵測到亂碼 → tesseract OCR fallback（chi_tra + eng），保留頁碼/bbox
+- 文字抽取移到背景任務，OCR 不阻塞上傳請求；job 進度顯示「改用 OCR 辨識中」
+- Dockerfile 裝 tesseract + chi-tra/chi-sim/eng，設 TESSDATA_PREFIX
+- 修了一個 bug：第一版閾值（雙條件）漏判置換式亂碼 → 改單一噪音比例
+
+**B. 版本紀錄頁 + 三碼語意化版本（v3.2.0）— branch `feat/version-update-banner`，未 push**
+- `frontend/lib/version-log.ts` 單一版本來源（CURRENT_VERSION + VERSION_LOG）
+- `/changelog` 頁、header 版本徽章 + 導覽
+
+**C. 新版自動偵測橫幅（v3.2.0）— 同上 branch**
+- `/version` route handler 回報部署版本；`VersionWatcher` 比對 bundle 版本
+- 不一致 → 底部不可關閉橫幅 +「立即更新」；focus + 每 60s 檢查
+
+**D. 分析 pipeline 平行化 — branch `feat/parallel-pipeline`，未 push**
+- thread pool（`OPENAI_MAX_WORKERS`，預設 6），`build_paper_graph` 跨章節、`check_all_rules` 跨規則平行
+- `pool.map` 保序 → 結果 deterministic；DB/Neo4j 已確認 thread-safe
+
+**E. 規則輸出瘦身 — 同上 branch**
+- verdict schema 只在「違規」時填細節欄位（非違規本來就丟掉）
+- REL-06：7069→1554 token、101s→20s；check_all_rules：288s→25.5s
+
+**F. thread-safe singleton — 同上 branch**
+- `client()` / `driver()` 改 double-checked lock，消掉冷啟動的 lazy-init race
+
+**G. 單元測試 + pytest 設定 — 同上 branch**
+- 11 個測試：亂碼偵測(6)、抽取路由(3)、singleton 併發(2)；用「紅→綠」驗證抓得到亂碼 bug
+- pyproject `[test]` extra + SWIG DeprecationWarning filter
+
+**H. 時序圖 + 效能說明頁 — 同上 branch**
+- about 頁時序圖更新（背景任務/OCR/平行/gpt-5.4）+ 新增「11. 效能與穩定性」章節
+
+**I. 部署運維**
+- server（140.115.54.48:8083）從 `feat/openai-deploy` 切到 `main` 並重建
+- `feat/openai-deploy` 已合併 main 並刪除（本地+遠端）；DEPLOY.md 改成從 main 部署
+
+### 效能數據（同一篇論文，前後對比）
+| 階段 | 原本 | 現在 |
+|---|---|---|
+| build_paper_graph | ~246s | ~67s |
+| check_all_rules | ~288s | ~26s |
+| 合計 | ~9 分鐘 | ~1.8 分鐘（約 5×） |
+
+### 待辦 📋（依優先序）
+
+1. **整合測試「偵測上傳會不會掛」** — 目前完全沒有端到端測試，只有 runtime try/except 事後接住。
+   - A.（推薦）mock LLM 的整合測試：跑完整 build_paper_graph→write_graph→check_all_rules，斷言不丟例外 + 結構合理。免費、可每次跑，抓接縫型 bug（如 prompt `{}` format 崩那種）
+   - B. 真 LLM smoke test → 掛 CI 當「部署前 gate」
+   - C. 啟動自檢：Neo4j 連得到、OPENAI key 在、rules.yaml/prompts load 得了
+2. **規則瘦身那段補單元測試**（目前 verdict schema 改動沒有測試守著）
+3. **版本號協調**：兩條未合併分支都要「下一版號」。合併時定先後（先合的 3.2.0、後合的 3.3.0），合併時補對應 changelog
+4. **`analysis_runs` 表**：持久化每次 upload→done 的效能（總時間、是否 OCR、各階段 token/秒、候選數），不隨論文刪除/重傳消失
+5. **`llm_calls` 加 `duration_ms`**：平行化後 created_at 間隔不再等於單次耗時，要真實 per-call 延遲就得記
+6. **測試基建**：pytest 烤進 backend image / `make test` / GitHub Actions 自動跑
+7. **文件**：README/DEPLOY 寫上 venv + `python -m pytest` 跑法（避免又用系統 Python 撞 ModuleNotFound）
+8. **上線**：兩條 feature 分支驗收穩定後 → push → 合併 main → 重新部署 server（**目前 server 仍是 3.1.0，沒有平行化/版本頁**）
+9. pool 大小 vs OpenAI tier 調校（目前保守 6，tier 夠可往上）
+10. （可選）DBeaver 改 bind-mount 即時看 SQLite，取代目前的快照匯出
+
+### 分支與部署現況
+| 分支 | 內容 | 狀態 |
+|---|---|---|
+| `main` | OCR(3.1.0) + 部署文件 | 已 push、**已部署 server** |
+| `feat/version-update-banner` | 版本頁 + 自動偵測橫幅(3.2.0) | 3 commit，**未 push/未合併** |
+| `feat/parallel-pipeline` | 平行化+瘦schema+singleton+測試+文件 | 8 commit，**未 push/未合併** |
+- 本機 docker：跑最新平行化 code（backend 已重啟）
+- `docs/EDITING_MODE_PLAN.md`：另一個大功能規劃（編輯模式/可 merge 建議），untracked，與本段無關
 
 ---
 

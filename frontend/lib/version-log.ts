@@ -38,6 +38,23 @@ export const CHANGE_TYPE_META: Record<
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "3.2.0",
+    date: "2026-05-20",
+    title: "新版本自動偵測與更新提示",
+    summary:
+      "已開啟的分頁若停留在舊版前端，會自動偵測到新版部署並跳出更新橫幅，避免使用者一直用到舊版。",
+    changes: [
+      {
+        type: "feat",
+        text: "新增 /version 端點與前端版本 watcher：以 bundle 內建版本比對伺服器當前部署版本，偵測到不一致時於畫面底部顯示不可關閉的更新橫幅，使用者點「立即更新」即重新整理。",
+      },
+      {
+        type: "feat",
+        text: "版本檢查時機：分頁重新聚焦（focus / visibilitychange）時立即檢查，平常每 60 秒輪詢一次。",
+      },
+    ],
+  },
+  {
     version: "3.1.0",
     date: "2026-05-20",
     title: "PDF OCR 容錯與版本紀錄頁",

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import threading
 import time
 from typing import Any
 
@@ -26,6 +27,7 @@ from openai import (
 from . import db
 
 _client: OpenAI | None = None
+_client_lock = threading.Lock()
 
 # Transient errors worth retrying with exponential backoff.
 # 5xx = OpenAI-side issue; 429 = rate limit; connection/timeout = network blip.
@@ -39,16 +41,22 @@ MAX_RETRIES = 4  # total attempts = MAX_RETRIES + 1
 
 
 def client() -> OpenAI:
+    # Double-checked locking: the fast path is a lockless read once initialized
+    # (zero overhead in steady state); the lock only guards the one-time cold
+    # init so concurrent worker threads (section/rule fan-out) can't each build
+    # a separate client.
     global _client
     if _client is None:
-        # OPENAI_BASE_URL supports Azure / lab self-hosted proxies / vLLM endpoints.
-        # max_retries is the SDK's own retry knob; we add our own outer retry too
-        # because we want stage-aware logging and custom backoff.
-        kwargs: dict[str, Any] = {"max_retries": 2}
-        base = os.getenv("OPENAI_BASE_URL")
-        if base:
-            kwargs["base_url"] = base
-        _client = OpenAI(**kwargs)
+        with _client_lock:
+            if _client is None:
+                # OPENAI_BASE_URL supports Azure / lab self-hosted proxies / vLLM.
+                # max_retries is the SDK's own retry knob; we add our own outer
+                # retry too for stage-aware logging and custom backoff.
+                kwargs: dict[str, Any] = {"max_retries": 2}
+                base = os.getenv("OPENAI_BASE_URL")
+                if base:
+                    kwargs["base_url"] = base
+                _client = OpenAI(**kwargs)
     return _client
 
 
@@ -69,6 +77,21 @@ def llm_temperature() -> float:
     # Defect detection wants reproducible verdicts, not creative variety —
     # default to 0 (greedy decoding). Override via env for experiments.
     return float(os.getenv("LLM_TEMPERATURE", "0"))
+
+
+def llm_max_workers() -> int:
+    """Thread-pool size for fanning out independent LLM calls (sections, rules).
+
+    The pipeline makes ~30-40 LLM calls that are mostly independent; running
+    them concurrently is the main latency win. Bounded to avoid hammering the
+    OpenAI rate limit — call_with_tool already retries 429s with backoff, but a
+    smaller pool wastes fewer retries. Default 6; raise via OPENAI_MAX_WORKERS
+    on a higher tier, drop to 1 to force the old sequential behaviour.
+    """
+    try:
+        return max(1, int(os.getenv("OPENAI_MAX_WORKERS", "6")))
+    except ValueError:
+        return 6
 
 
 # OpenAI list pricing (USD per 1M tokens). Approximate; updated 2026-05.

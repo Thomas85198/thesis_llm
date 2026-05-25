@@ -27,3 +27,6 @@ neo4j_data/
 
 # Claude Code local plans / memory (user-specific, do not share)
 .claude/
+
+# 本機 SQLite 快照（DBeaver 用，勿 commit）
+thesis-data.db

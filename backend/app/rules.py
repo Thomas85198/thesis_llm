@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ import yaml
 
 from . import db
 from .kg import resolve_evidence_to_edus, run_cypher
-from .llm import call_with_tool, model_cross_section, model_heavy
+from .llm import call_with_tool, llm_max_workers, model_cross_section, model_heavy
 from .prompts import load_prompt
 from .schemas import EDU, Defect, RuleRunMeta, Severity
 
@@ -59,11 +60,16 @@ VERDICT_SCHEMA = {
                     },
                     "description": {
                         "type": "string",
-                        "description": "Why it violates the rule, in 繁體中文.",
+                        "description": (
+                            "Why it violates the rule, in 繁體中文. "
+                            "Only fill when violates=true."
+                        ),
                     },
                     "suggestion": {
                         "type": "string",
-                        "description": "Concrete fix in 繁體中文.",
+                        "description": (
+                            "Concrete fix in 繁體中文. Only fill when violates=true."
+                        ),
                     },
                     "confidence": {
                         "type": "number",
@@ -77,15 +83,15 @@ VERDICT_SCHEMA = {
                         ),
                     },
                 },
+                # Only index + violates are always required. The detail fields
+                # (severity/section/evidence/description/suggestion/confidence)
+                # are filled ONLY for violations — non-violations are discarded
+                # in check_rule, so forcing the model to write 繁體中文 prose for
+                # every non-violating candidate was pure token waste (e.g. REL-06
+                # with 62 candidates but 5 violations emitted ~7k output tokens).
                 "required": [
                     "candidate_index",
                     "violates",
-                    "severity",
-                    "evidence_edu_ids",
-                    "section",
-                    "description",
-                    "suggestion",
-                    "confidence",
                 ],
             },
         }
@@ -167,20 +173,30 @@ def check_rule(
     for v in out.get("verdicts", []):
         if not v.get("violates"):
             continue
+        # A violation with no description is useless to the reviewer (and now
+        # that the detail fields are schema-optional, a misbehaving model could
+        # omit them). Skip rather than crash the whole rule.
+        description = v.get("description")
+        if not description:
+            continue
         # Candidate subgraphs are FRU-based, so the LLM frequently cites FRU
         # node ids here — those don't resolve to a PDF location. Expand them to
         # the concrete EDU ids they cover so "在 PDF 中查看" always works.
         evidence_edu_ids = resolve_evidence_to_edus(v.get("evidence_edu_ids", []))
+        try:
+            severity = Severity(v.get("severity", "medium"))
+        except ValueError:
+            severity = Severity("medium")
         defects.append(
             Defect(
                 id=f"defect:{uuid.uuid4().hex[:8]}",
                 rule_id=rule["id"],
                 defect_type=rule["defect_label"],
-                severity=Severity(v["severity"]),
-                section=v["section"],
+                severity=severity,
+                section=v.get("section", "Other"),
                 evidence_edu_ids=evidence_edu_ids,
-                description=v["description"],
-                suggestion=v["suggestion"],
+                description=description,
+                suggestion=v.get("suggestion", ""),
                 confidence=_clamp_confidence(v.get("confidence")),
             )
         )
@@ -205,12 +221,22 @@ def _clamp_confidence(value: Any) -> float | None:
 def check_all_rules(
     paper_id: str, paper_title: str = ""
 ) -> tuple[list[Defect], list[RuleRunMeta]]:
+    rules = load_rules()
     defects: list[Defect] = []
     metas: list[RuleRunMeta] = []
-    for rule in load_rules():
-        rule_defects, meta = check_rule(rule, paper_id, paper_title)
-        defects.extend(rule_defects)
-        metas.append(meta)
+
+    # The 13 REL rules are independent (each runs its own Cypher + one LLM
+    # judgment), so fan them out across a bounded thread pool — this is the
+    # single biggest latency win in the pipeline. pool.map preserves rule
+    # order, so metas/defects stay in a stable, reproducible order.
+    if rules:
+        with ThreadPoolExecutor(max_workers=llm_max_workers()) as pool:
+            results = pool.map(
+                lambda r: check_rule(r, paper_id, paper_title), rules
+            )
+            for rule_defects, meta in results:
+                defects.extend(rule_defects)
+                metas.append(meta)
     return defects, metas
 
 

@@ -17,6 +17,12 @@ dependencies = [
     "rapidfuzz>=3.10",
 ]
 
+[project.optional-dependencies]
+# Dev/test only — install with: pip install -e ".[test]"
+test = [
+    "pytest>=8.0",
+]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
@@ -24,3 +30,15 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 packages = ["app"]
 py-modules = ["main"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Unit tests must not touch the network/LLM/Neo4j. Anything that does belongs
+# behind a marker and is opt-in.
+addopts = "-q"
+# Silence PyMuPDF's SWIG-binding DeprecationWarnings (C-extension noise emitted
+# on import under newer Python; nothing to do with our code). Targeted so real
+# deprecations from our own code still surface.
+filterwarnings = [
+    "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
+]

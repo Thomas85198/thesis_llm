@@ -46,7 +46,7 @@
 | **學長判定 (Human-as-judge)** | 每個缺陷三個按鈕（✅判對 / 🤔部分對 / ❌誤判），即時存 SQLite。**Phase 2 已啟用**：≥3 筆判定後自動 inject 為 LLM few-shot calibration（見 §3.6） |
 | **論文助手聊天** | 右下角浮動抽屜，限定本篇 scope，強制 cite `[EDU:xxx]` / `[DEFECT:xxx]`（可點擊跳 PDF）；Guardrails 含 prompt-injection 偵測 + rate limit 15/min |
 | **規則統計頁 `/stats`** | 13 條規則跨論文命中率、precision、Phase 2 樣本充足度，狀態 badge（🌑 從未觸發 / ⚠️ 需檢討 / ✅ 表現良好 / 🔥 高頻） |
-| **跨章節 second pass** | 每篇分析另跑 Opus 4.7 1M 全篇掃 REL-04/08/12（per-section 抓不到的） |
+| **跨章節 second pass** | 每篇分析另跑 gpt-5.4 1M 全篇掃 REL-04/08/12（per-section 抓不到的） |
 | **LLM Confidence 分數** | 每個 defect 帶 0–1 信心分，前端用色塊顯示 |
 | **Prompt 集中化** | 所有 system prompt 在 `backend/prompts/*.md`，學長改不用碰 Python |
 | **成本即時顯示** | 結果頁 header 標 `$X.XXX`，全域 `/api/cost` 統計每階段花費 |
@@ -61,7 +61,7 @@
 flowchart LR
     User[使用者] -->|上傳 PDF| Frontend
     Frontend[Next.js 16<br/>+ Tailwind 4<br/>+ shadcn/ui] -->|HTTP/JSON| Backend
-    Backend[FastAPI + Python] -->|抽取 / 判讀| Claude[Claude API]
+    Backend[FastAPI + Python] -->|抽取 / 判讀| LLM[OpenAI gpt-5.4]
     Backend -->|KG 結構| Neo4j[(Neo4j<br/>Knowledge Graph)]
     Backend -->|metadata / results /<br/>cost log / judgments| SQLite[(SQLite<br/>data.db)]
     Backend -->|PDF 原檔| Disk[backend/uploads]
@@ -70,7 +70,7 @@ flowchart LR
 
 ### 3.2 處理流程（時序圖）
 
-> 2026-05-10 更新：加入 Phase 2 few-shot 注入、cross-section second pass、SQLite 寫入步驟。
+> 2026-05-25 更新：文字抽取移到背景任務、PDF 字型亂碼走 OCR fallback、章節抽取與 13 條規則改 thread pool 平行、模型換成 OpenAI gpt-5.4 / gpt-5.4-mini。效能細節見 [§3.9](#39-效能平行化--規則瘦身)。
 
 ```mermaid
 sequenceDiagram
@@ -78,7 +78,7 @@ sequenceDiagram
     participant U as 使用者
     participant F as 前端
     participant B as 後端
-    participant L as Claude
+    participant L as OpenAI (gpt-5.4)
     participant N as Neo4j
     participant S as SQLite
 
@@ -89,22 +89,25 @@ sequenceDiagram
         B->>S: 讀回之前 result_json
         B-->>F: 直接回傳 paper_id (status=done)
     else 全新檔案
+        B-->>F: 立即回 job_id (status=queued)
+        Note over B: 以下都在背景任務跑<br/>前端輪詢 GET /api/jobs/{id} 看進度
         B->>B: PyMuPDF 抽 spans (含 page+bbox)
+        opt 偵測到字型亂碼
+            B->>B: tesseract OCR fallback (chi_tra+eng，保留頁碼/bbox)
+        end
         B->>B: regex 切章節
-        loop 每個章節
-            B->>L: 切 EDU (Sonnet)
-            B->>L: 抽 Entity + Relation (Sonnet)
-            B->>L: 標 RST + FRU (Sonnet)
+        par 各 section 平行 (thread pool ≤ OPENAI_MAX_WORKERS，預設 6)
+            B->>L: 切 EDU → 抽 Entity+Relation → 標 RST+FRU<br/>（章節內三步有依賴，仍序列）
         end
         B->>N: 寫入 Paper + EDU + Entity + FRU + RST
-        loop 13 條 REL 規則
+        par 13 條 REL 規則平行 (同一 thread pool)
             B->>N: 執行 Cypher 撈候選子圖
             Note right of B: 若該規則 ≥3 筆學長判定<br/>自動注入 Phase 2 few-shot
-            B->>L: 判讀候選 → 是否違規 + 建議 + confidence (Sonnet)
+            B->>L: 判讀候選 → 是否違規 + 建議 + confidence
         end
-        B->>L: 跨章節 second pass (REL-04/08/12, Sonnet 200K 或 Opus 1M)
+        B->>L: 跨章節 second pass (REL-04/08/12, 1M context)
         B->>S: 寫入 result_json + llm_calls + rule_meta
-        B-->>F: job done + paper_id
+        B->>B: 記憶體 job 狀態轉 done
     end
     F->>B: GET /api/papers/{id}/result
     B->>S: 讀 result_json
@@ -114,7 +117,7 @@ sequenceDiagram
 
 ### 3.3 為什麼不直接全文丟給 LLM 找問題？
 
-技術上 Claude 的 context 夠（200K tokens 容得下整篇論文），但這樣做有三個缺點：
+技術上 LLM 的 context 夠（gpt-5.4 容得下整篇論文），但這樣做有三個缺點：
 
 1. **不可重現** — 同樣的論文跑兩次答案可能不同，沒法做學術 evaluation
 2. **沒有結構支撐** — LLM 隨意輸出哪邊有問題，無法保證涵蓋所有規則
@@ -138,10 +141,10 @@ flowchart TD
 |---|---|
 | 前端 | Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · shadcn/ui · React Flow · react-pdf · sonner |
 | 後端 | Python 3.11+ · FastAPI · Pydantic v2 · PyMuPDF · rapidfuzz |
-| LLM | Anthropic Claude API（Opus 4.7 / Sonnet 4.6 / Haiku 4.5） |
-| 知識圖譜 | Neo4j 5.26 (Community) · Cypher |
+| LLM | OpenAI API（gpt-5.4 heavy / gpt-5.4-mini light / gpt-5.4 cross-section）；`OPENAI_BASE_URL` 可指向 Azure / 自架 proxy / vLLM。早期版本用 Anthropic Claude，已於 `feat/openai-deploy` 遷移 |
+| 知識圖譜 | Neo4j 5.26 (Community) · Cypher · neo4j Python driver |
 | 持久化 | SQLite (stdlib `sqlite3`)：metadata、results、hash 快取、LLM 成本 log、人工判定 |
-| 容器化 | Docker Compose（用於 Neo4j） |
+| 容器化 | Docker Compose（本機只起 Neo4j；生產為 neo4j+backend+frontend+caddy 整套單一 port，見 [DEPLOY.md](../DEPLOY.md)） |
 
 ### 3.5 資料持久化分工
 
@@ -204,14 +207,14 @@ flowchart LR
 13 條規則中，**REL-04 / REL-08 / REL-12** 本質需要跨章節推理（例如 Conclusion 的 restatement vs Introduction 的 claim），per-section Cypher 抓不到。
 
 從 2026-05-10 起，每篇分析在 13 條規則跑完後會額外做一次 [cross_section_pass](../backend/app/rules.py)：
-- 模型：預設 `model_heavy()`（目前 Sonnet 4.6，200K context）；想用 Opus 1M 設 `ANTHROPIC_MODEL_CROSS_SECTION=claude-opus-4-7[1m]`
+- 模型：`model_cross_section()`，由 `OPENAI_MODEL_CROSS_SECTION` 設定（目前 `gpt-5.4`，1M context）
 - 輸入：整篇 EDU 依 section 排好 + 三條規則描述
 - Schema 強制 `evidence_edu_ids ≥ 2`（必須引跨章節證據）
 - 缺陷類型加「（跨章節）」字樣與 per-section 結果區分
 - 預設開啟，`ENABLE_CROSS_SECTION_PASS=0` 可關掉
 - **失敗容忍**：cross-section pass throw 不會丟棄前面 13 條規則的結果，只記 warning（[routes.py](../backend/app/routes.py)）
 
-成本：一篇 ~10K input tokens × Sonnet 4.6 ≈ $0.03-0.05；換 Opus 4.7 ≈ $0.15-0.30。
+成本：一篇 ~10K input tokens，量級約 $0.05-0.30（依當前 gpt-5.4 定價）。
 
 ### 3.8 Prompt 集中化
 
@@ -220,6 +223,36 @@ flowchart LR
 - 載入器：[backend/app/prompts.py](../backend/app/prompts.py) `load_prompt(name)`（lru_cache，呼叫 `prompts.reload()` 可清快取）
 - 學長改 prompt 重啟 backend 即生效，不用碰 Python
 - Git diff 也能看到 prompt 演進史
+
+### 3.9 效能：平行化 + 規則瘦身
+
+> 狀態：在 `feat/parallel-pipeline` 分支，尚未合併 main / 尚未上線（.62 跑的還是序列版）。前端對應說明在 about 頁「11. 效能與穩定性」。
+
+**為什麼原本很慢（~9 分鐘）**
+一篇論文的分析會發出 ~30–40 次 LLM 呼叫（每章節 EDU→ER→RST/FRU 三次 × N 章節，加 13 條規則各一次，再加跨章節）。這些呼叫原本**一個接一個序列執行**，token 密集的中文段落單次就要 4–10 秒，整篇常常要 ~9 分鐘。瓶頸是「等待」而非「運算」——絕大多數時間花在等 OpenAI 回應。
+
+**怎麼改（三件事）**
+1. **平行化**（`pipeline.py` / `rules.py`）：章節之間、13 條規則之間本來就互相獨立，改用 `ThreadPoolExecutor`（`OPENAI_MAX_WORKERS`，預設 6）整批送出。
+   - 章節內 EDU→ER→RST/FRU 仍序列（ER、RST 都吃 EDU，有依賴）；章節之間才平行。
+   - 13 條規則直接整批平行——這是最大的單點收益。
+   - `pool.map` **保留輸入順序** → 組出來的 graph / defects 仍 deterministic，可重現。
+   - thread-safe：OpenAI client 與 Neo4j driver 是 process 級 singleton（double-checked locking，見下）、SQLite 每次開新連線、Neo4j 寫入排在平行區段之後才做；`call_with_tool` 也內建 429/5xx 指數退避。
+2. **規則 verdict 瘦身**（`rules.py`）：原本 schema 強制每個候選都填 `description/suggestion/severity/...`，但 `check_rule` 只保留「違規」的候選、非違規直接丟掉——等於逼模型對一堆非違規候選寫了一大段沒用的中文。改成只有 `candidate_index + violates` 必填，細節欄位只在 `violates=true` 才填；`check_rule` 改防禦式讀取（欄位變 optional，缺 description 就跳過該筆）。
+3. **thread-safe singleton**（`llm.py` / `kg.py`）：平行化後多執行緒會同時撞 `client()`/`driver()` 的 lazy init，改 double-checked locking（穩定後是 lockless 快路徑，只鎖一次性冷啟動）。
+
+**改完的數據（同一篇論文）**
+
+| 階段 | 原本（序列＋肥 schema） | 現在（平行＋瘦 schema） |
+|---|---|---|
+| build_paper_graph | ~246s | ~67s |
+| check_all_rules | ~288s | ~26s |
+| **合計** | **~538s（~9 分鐘）** | **~93s（~1.8 分鐘，約 5×）** |
+
+拆解來看：
+- 只做平行化（schema 還沒瘦）：534s → 182s（**2.9×**）。
+- 再疊上規則瘦身：單條 REL-06 從 7069→1554 output token、101s→20s（同樣抓到 5 個違規）；check_all_rules 段整體再降到 ~26s，合計來到 **~5×**。
+
+> 量測能成立是因為每次 LLM 呼叫的 stage / 模型 / token / 時間都寫進 SQLite `llm_calls`（見 [DB_SCHEMA.md](DB_SCHEMA.md)）。註：平行化後 `created_at` 間隔不再等於單次耗時，要精確 per-call 延遲需另記 `duration_ms`（TODO 待辦）。
 
 ---
 
@@ -353,12 +386,16 @@ flowchart TB
 - **Human-as-judge 標註介面** — 每個缺陷可標 ✅/🤔/❌，累積評估資料
 - **Phase 2：Judgment → LLM Few-shot 回饋迴路**（2026-05-10）— ≥3 筆判定後自動 inject 為 calibration，閉合 §3.6 的迴路
 - **Prompt 集中化** — 全部 system prompt 在 `backend/prompts/*.md`，學長改不用碰 Python
-- **跨章節 second pass** — Opus 4.7 1M context 全篇掃 REL-04/08/12
+- **跨章節 second pass** — gpt-5.4 1M context 全篇掃 REL-04/08/12
 - **LLM Confidence 分數** — 每個 defect 帶 0–1 信心分
 - **規則統計頁 `/stats`** — 13 條規則跨論文命中率、precision、Phase 2 樣本充足度
 - **論文助手聊天抽屜** — 限定本篇 scope + Guardrails（injection / rate limit / 強制 cite）
 - **缺陷分組顯示 + hover 完整 evidence**
 - **歷史頁批次刪除**（同步清 SQLite + Neo4j + PDF）
+- **PDF OCR 容錯（v3.1.0）** — 字型亂碼自動轉 tesseract OCR，文字抽取移到背景任務
+- **版本紀錄頁 + 三碼語意化版本** — `/changelog` 頁 + header 版本徽章
+- **分析 pipeline 平行化 + 規則瘦身**（branch `feat/parallel-pipeline`，未合併）— ~9 分鐘 → ~1.8 分鐘（約 5×），見 [§3.9](#39-效能平行化--規則瘦身)
+- **正式部署上線** — OpenAI 版部署於實驗室伺服器 `140.115.54.62:8083`（單一 port，Caddy 反代分流，見 [DEPLOY.md](../DEPLOY.md)）
 
 ### 短期（demo 後 1–2 週）
 
@@ -370,15 +407,16 @@ flowchart TB
 
 ### 中期（1 個月）
 
-- **Anthropic Batch API**：跑大規模實驗時 50% 折扣（pipeline 需改 async）
+- **OpenAI Batch API**：跑大規模實驗時 50% 折扣（pipeline 需改 async）
 - **Prompt 版本化**：每個 prompt 變更記到 SQLite + 跑回歸看 precision 變化
 - **Inter-annotator agreement**：學長 + 你各標 5 篇 overlap，算 Cohen's kappa（強化論文方法章節）
 
 ### 長期（投論文前 — 老師說先不嘗試）
 
-- **Hybrid Local + Cloud**：EDU/ER 用 Ollama (Qwen 2.5 32B/72B) 本地，RST/規則用 Claude，成本降 60%
+- **Hybrid Local + Cloud**：EDU/ER 用 Ollama (Qwen 2.5 32B/72B) 本地，RST/規則用雲端 gpt-5.4，成本降 60%
 - **跨論文 Entity 對齊**：同一個 method 在多篇對齊，做引用網絡分析
 - **Multi-agent (Claim/Evidence/Critic)**：拆 prompt 細分職責，但需要重設計 pipeline
+- **編輯模式 + 可 merge 缺失建議**：匯入 LaTeX/.md/Word → 系統內編輯 → 像 git commit 同意 merge 修改建議。完整規劃見 [TODO.md §3.1](TODO.md#31-編輯模式--可-merge-的缺失建議大功能規劃)
 
 ---
 
@@ -416,7 +454,7 @@ flowchart TB
 | KG | Knowledge Graph | 知識圖譜，由節點與邊組成的結構化知識 |
 | MECE | Mutually Exclusive, Collectively Exhaustive | 互斥且窮盡，麥肯錫的分類原則 |
 | REL | Rule | 本系統 13 條規則的命名前綴（REL-01 ~ REL-13） |
-| LLM | Large Language Model | 大型語言模型（如 Claude） |
+| LLM | Large Language Model | 大型語言模型（目前用 OpenAI gpt-5.4） |
 
 ---
 

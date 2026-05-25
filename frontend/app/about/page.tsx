@@ -18,6 +18,7 @@ const SECTIONS = [
   { id: "phase2", label: "8. Phase 2 回饋迴路" },
   { id: "guards", label: "9. 聊天 Guardrails" },
   { id: "literature", label: "10. 理論文獻" },
+  { id: "perf", label: "11. 效能與穩定性" },
 ];
 
 export default function AboutPage() {
@@ -148,16 +149,19 @@ export default function AboutPage() {
         {/* 3. Pipeline 時序圖 */}
         <Section id="pipeline" title="3. Pipeline 時序圖">
           <p>
-            從上傳到結果回來大概 1–3 分鐘。SHA-256 hash 命中快取則秒回。
+            分析時間主要花在 ~30–40 次 LLM 呼叫上。這些呼叫大多彼此獨立，因此會用
+            thread pool 平行送出（預設最多 6 條，<code>OPENAI_MAX_WORKERS</code> 可調），
+            把原本序列約 9 分鐘的分析壓到約 1/3。文字抽取與分析都在背景任務執行，
+            上傳請求會立刻回 <code>job_id</code>，前端再輪詢進度。SHA-256 hash 命中快取則秒回。
           </p>
           <MermaidDiagram
-            caption="圖 3-1：上傳論文後的完整處理流程（簡化版）"
+            caption="圖 3-1：上傳論文後的完整處理流程（含 OCR fallback 與平行化）"
             code={`sequenceDiagram
     autonumber
     participant U as 使用者
     participant F as 前端
     participant B as 後端
-    participant C as Claude API
+    participant O as OpenAI API
     participant N as Neo4j
     participant S as SQLite
 
@@ -167,19 +171,26 @@ export default function AboutPage() {
     alt hash 命中
         B-->>F: 直接回傳之前 paper_id
     else 新檔案
+        B-->>F: 立即回 job_id（背景處理）
+        Note over B: 以下皆在背景任務執行
         B->>B: PyMuPDF 抽 spans + page+bbox
+        alt 偵測到亂碼（無 ToUnicode CMap）
+            B->>B: tesseract OCR fallback (chi_tra+eng)
+        end
         B->>B: regex 切 sections
-        loop 每個 section
-            B->>C: EDU 抽取 (Sonnet)
-            B->>C: ER 抽取 (Sonnet)
-            B->>C: RST/FRU 標註 (Sonnet)
+        par 各 section 平行 (thread pool ≤ OPENAI_MAX_WORKERS=6)
+            B->>O: section A：EDU→ER (gpt-5.4-mini) → RST/FRU (gpt-5.4)
+        and
+            B->>O: section B：同上
+        and
+            B->>O: section …：同上
         end
         B->>N: 寫入 Paper + EDU + Entity + FRU + RST
-        loop 13 條 REL 規則
+        par 13 條 REL 規則平行 (同一 thread pool)
             B->>N: Cypher 找候選
-            B->>C: LLM 判讀 (含 Phase 2 few-shot)
+            B->>O: LLM 判讀 (gpt-5.4, 含 Phase 2 few-shot)
         end
-        B->>C: 跨章節 second pass (REL-04/08/12)
+        B->>O: 跨章節 second pass (REL-04/08/12)
         B->>S: 寫 result_json + llm_calls
         B-->>F: job done + paper_id
     end
@@ -714,6 +725,146 @@ export default function AboutPage() {
               ))}
             </tbody>
           </table>
+        </Section>
+
+        {/* 11. 效能與穩定性 */}
+        <Section id="perf" title="11. 效能與穩定性：平行化、成本優化與測試">
+          <p>
+            一篇正常論文的分析會送出約 <strong>30–40 次 LLM 呼叫</strong>
+            （每章節 3 次：EDU / ER / RST·FRU；13 條 REL 規則各 1 次；跨章節 1 次）。
+            這些呼叫原本是「一個接一個」序列執行，token 密集的中文段落單次就要
+            4–10 秒，整篇分析常常要 <strong>~9 分鐘</strong>。下面三項改動把它壓到約
+            1/5。
+          </p>
+
+          <h3>11.1 瓶頸診斷（用真實數據，不靠猜）</h3>
+          <p>
+            系統把每次 LLM 呼叫的 stage、模型、token、時間都記到 SQLite
+            （<code>llm_calls</code> 表）。用同一篇論文的實測拆解，時間幾乎平均分布在
+            兩個區塊，而且各自內部都是序列：
+          </p>
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-xs">
+              <tr>
+                <th className="p-2 text-left">區塊</th>
+                <th className="p-2 text-left">呼叫數</th>
+                <th className="p-2 text-left">序列耗時</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t">
+                <td className="p-2">段落抽取（EDU/ER/RST·FRU × 各章節）</td>
+                <td className="p-2">~18–24</td>
+                <td className="p-2">~246s</td>
+              </tr>
+              <tr className="border-t">
+                <td className="p-2">13 條 REL 規則檢核</td>
+                <td className="p-2">13</td>
+                <td className="p-2">~288s</td>
+              </tr>
+              <tr className="border-t">
+                <td className="p-2">跨章節 second pass</td>
+                <td className="p-2">1</td>
+                <td className="p-2">~13s</td>
+              </tr>
+              <tr className="border-t font-medium">
+                <td className="p-2">合計</td>
+                <td className="p-2">~32–38</td>
+                <td className="p-2">~538s（9 分鐘）</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>11.2 平行化：把獨立的呼叫同時送出</h3>
+          <p>
+            各章節彼此獨立、13 條規則也彼此獨立，所以用一個有上限的 thread pool
+            把它們同時送出（<code>OPENAI_MAX_WORKERS</code>，預設 6）。為什麼用 thread
+            而不改 async：這些都是 I/O-bound 的 API 等待，OpenAI client 是同步的，
+            thread pool 就足夠且改動最小。
+          </p>
+          <ul>
+            <li>
+              <strong>跨章節平行</strong>：每個章節的 EDU→ER→RST·FRU 三步仍有先後依賴
+              （ER、RST 都吃 EDU），所以章節內維持序列；章節之間才平行。
+            </li>
+            <li>
+              <strong>跨規則平行</strong>：13 條規則直接整批平行——這是最大的單點收益。
+            </li>
+            <li>
+              <strong>為何安全</strong>：SQLite 每次呼叫開新連線 + WAL 模式、Neo4j 每次
+              開新 session（driver 本身 thread-safe）、Neo4j 寫入在平行區段之後才做；
+              <code>pool.map</code> 保留輸入順序，所以結果組裝是 deterministic 的。
+            </li>
+            <li>
+              <strong>rate limit</strong>：pool 有上限避免狂撞 OpenAI 限流，底層的
+              <code>call_with_tool</code> 也已內建 429／5xx 的指數退避重試。
+            </li>
+          </ul>
+
+          <h3>11.3 輸出瘦身：只有「真的違規」才寫理由</h3>
+          <p>
+            規則檢核原本要求 LLM 對<strong>每一個</strong>候選都回傳
+            severity / section / description / suggestion 等欄位——但系統其實只留
+            違規的、其餘全部丟掉。對候選很多的規則，這等於逼模型寫一大堆繁體中文然後
+            扔掉。例如 REL-06（Concept-Formalization）一篇就有 60–70 個候選、只有 5 個
+            違規，卻吐了 ~7000 個 output token、花 ~100 秒。
+          </p>
+          <p>
+            改成「非違規只回 <code>{`{candidate_index, violates:false}`}</code>，
+            細節欄位只有違規時才填」。缺陷結果完全不變（非違規本來就丟掉），但
+            REL-06 從 7069 → 1554 token、101s → 20s。
+          </p>
+
+          <h3>11.4 量測結果（同一篇論文，前後對比）</h3>
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-xs">
+              <tr>
+                <th className="p-2 text-left">階段</th>
+                <th className="p-2 text-left">原本（序列＋胖 schema）</th>
+                <th className="p-2 text-left">現在（平行＋瘦 schema）</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t">
+                <td className="p-2">build_paper_graph</td>
+                <td className="p-2">~246s</td>
+                <td className="p-2">~67s</td>
+              </tr>
+              <tr className="border-t">
+                <td className="p-2">check_all_rules</td>
+                <td className="p-2">~288s</td>
+                <td className="p-2">~26s</td>
+              </tr>
+              <tr className="border-t">
+                <td className="p-2">cross_section</td>
+                <td className="p-2">~13s</td>
+                <td className="p-2">~13s</td>
+              </tr>
+              <tr className="border-t font-medium">
+                <td className="p-2">合計</td>
+                <td className="p-2">~9 分鐘</td>
+                <td className="p-2">~1.8 分鐘（約 5×）</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>11.5 PDF OCR 容錯</h3>
+          <p>
+            部分 LaTeX 論文用了沒有 ToUnicode CMap 的字型，複製／抽取出來是亂碼
+            （<code>*?Ti2`</code> 其實是 <code>Chapter</code>）。系統會在原生抽取後做一個
+            輕量偵測（看 backtick／星號等噪音字元比例），若判定為亂碼就自動 fallback
+            到 tesseract OCR（繁中＋英文），並保留每段文字的頁碼與 bbox 座標。文字抽取
+            移到背景任務，OCR（30 頁約 3–5 分鐘）不會卡住上傳請求。
+          </p>
+
+          <h3>11.6 單元測試守住這些機制</h3>
+          <p>
+            這些重構改了不少 orchestration 邏輯，所以加了一組毫秒級、不碰
+            網路／LLM／Neo4j 的單元測試（<code>backend/tests/</code>）：亂碼偵測（真實
+            亂碼樣本、乾淨中英文、統計符號多的文字防誤判）與原生→OCR 路由（mock 掉
+            抽取器只測決策）。亂碼偵測這條本來就出過一次 bug，測試也用「紅→綠」驗證
+            過確實抓得到該 bug。
+          </p>
         </Section>
 
         {/* Footer */}

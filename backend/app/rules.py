@@ -6,6 +6,7 @@ recent N correct + N wrong examples into the system prompt as few-shot calibrati
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -221,11 +222,22 @@ def _clamp_confidence(value: Any) -> float | None:
 def check_all_rules(
     paper_id: str, paper_title: str = ""
 ) -> tuple[list[Defect], list[RuleRunMeta]]:
-    rules = load_rules()
+    # REL-04 / REL-12 judge whole-paper structure — their candidate_query exposes
+    # no EDU ids, so per-section verdicts can never cite a PDF location (the
+    # "在 PDF 中查看" button would go nowhere). The cross-section pass handles
+    # both with full-paper context + forced evidence (always locatable, higher
+    # confidence), so when it's enabled (default) run them ONLY there. If
+    # cross-section is disabled, fall back to per-section so they still run.
+    skip = (
+        {"REL-04", "REL-12"}
+        if os.getenv("ENABLE_CROSS_SECTION_PASS", "1") == "1"
+        else set()
+    )
+    rules = [r for r in load_rules() if r["id"] not in skip]
     defects: list[Defect] = []
     metas: list[RuleRunMeta] = []
 
-    # The 13 REL rules are independent (each runs its own Cypher + one LLM
+    # The remaining REL rules are independent (each runs its own Cypher + one LLM
     # judgment), so fan them out across a bounded thread pool — this is the
     # single biggest latency win in the pipeline. pool.map preserves rule
     # order, so metas/defects stay in a stable, reproducible order.

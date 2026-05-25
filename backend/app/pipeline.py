@@ -602,6 +602,45 @@ def extract_rst_fru(
 
 # ---------- Orchestration ----------
 
+TITLE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {
+            "type": "string",
+            "description": (
+                "The paper's title verbatim, original language. "
+                "Empty string if no clear title is present."
+            ),
+        }
+    },
+    "required": ["title"],
+}
+
+
+def detect_paper_title(spans: list[Span], paper_id: str | None = None) -> str:
+    """Ask a light model for the paper's real title from its opening text.
+
+    Academic papers put the title at the very top, so the first ~1500 chars are
+    enough — one cheap gpt-5.4-mini call (~few hundred tokens). Returns "" when
+    nothing title-like is found, so the caller can fall back to the filename.
+    """
+    head = spans_to_text(spans).strip()[:1500]
+    if not head:
+        return ""
+    out = call_with_tool(
+        model=model_light(),
+        system=load_prompt("title"),
+        user_content=f"<paper-opening>\n{head}\n</paper-opening>",
+        tool_name="emit_title",
+        tool_description="Emit the paper's title.",
+        tool_input_schema=TITLE_SCHEMA,
+        max_tokens=200,
+        paper_id=paper_id,
+        stage="title",
+    )
+    return str(out.get("title", "")).strip()
+
+
 def build_paper_graph(
     spans: list[Span], title: str = "", paper_id: str | None = None
 ) -> PaperGraph:

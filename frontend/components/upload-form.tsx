@@ -123,11 +123,14 @@ export function UploadForm() {
             <Label htmlFor="title">標題（選填）</Label>
             <Input
               id="title"
-              placeholder="My Awesome Paper"
+              placeholder="留空則自動從論文內容偵測標題"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               disabled={isProcessing}
             />
+            <p className="text-xs text-muted-foreground">
+              通常不用填，系統會自動讀出論文標題；想覆寫再手動輸入。
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="file">檔案</Label>

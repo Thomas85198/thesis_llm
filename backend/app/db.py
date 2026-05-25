@@ -211,6 +211,12 @@ def upsert_paper(
         )
 
 
+def update_paper_title(paper_id: str, title: str) -> None:
+    """Set the paper's title after LLM auto-detection (when the user left it blank)."""
+    with connect() as c:
+        c.execute("UPDATE papers SET title=? WHERE paper_id=?", (title, paper_id))
+
+
 def get_paper(paper_id: str) -> dict[str, Any] | None:
     with connect() as c:
         row = c.execute(

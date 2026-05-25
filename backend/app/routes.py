@@ -107,12 +107,26 @@ def _run_analysis(
         if not spans:
             raise ValueError("empty document")
 
+        # Title resolution: prefer what the user typed; otherwise have the LLM
+        # read the real title off the paper's first page (cheap mini call),
+        # falling back to the filename. Saves users from retyping / renaming.
+        resolved_title = title.strip()
+        if not resolved_title:
+            _set_job(job_id, message="辨識論文標題中…")
+            resolved_title = (
+                pipeline.detect_paper_title(spans, paper_id=paper_id) or filename
+            )
+            _set_job(job_id, title=resolved_title)
+            db.update_paper_title(paper_id, resolved_title)
+
         _set_job(job_id, status="extracting", message="Building EDU/ER/RST/FRU…")
-        graph = pipeline.build_paper_graph(spans, title=title, paper_id=paper_id)
+        graph = pipeline.build_paper_graph(
+            spans, title=resolved_title, paper_id=paper_id
+        )
         kg.write_graph(graph)
 
         _set_job(job_id, status="checking", message="Running 13 REL rules…")
-        defects, rule_meta = rules.check_all_rules(paper_id, paper_title=title)
+        defects, rule_meta = rules.check_all_rules(paper_id, paper_title=resolved_title)
 
         # Cross-section second pass (REL-04/08/12). Opt-in via env; default ON.
         # Wrapped in its own try/except so a model-access error (e.g. the user
@@ -122,7 +136,7 @@ def _run_analysis(
         if os.getenv("ENABLE_CROSS_SECTION_PASS", "1") == "1" and graph.edus:
             try:
                 cs_defects, cs_meta = rules.cross_section_pass(
-                    paper_id, title, graph.edus
+                    paper_id, resolved_title, graph.edus
                 )
                 defects.extend(cs_defects)
                 rule_meta.append(cs_meta)
@@ -221,7 +235,7 @@ async def upload(
         _run_analysis,
         job_id,
         paper_id,
-        title or file.filename,
+        title,  # raw user title (may be empty) — _run_analysis auto-detects if blank
         raw,
         file.filename,
     )

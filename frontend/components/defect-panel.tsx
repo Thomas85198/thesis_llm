@@ -175,6 +175,11 @@ function DefectCard({
     .map((eid) => eduMap.get(eid)?.text)
     .filter((t): t is string => Boolean(t));
 
+  // 跨章節 / 全局類缺陷常常沒有可解析的證據 EDU（evidence_edu_ids 為空或對不到
+  // 圖譜節點），這時 PDF 跳轉沒有目標。沒有定位就不要給「在 PDF 中查看」按鈕，
+  // 避免使用者點了沒反應。
+  const hasPdfLocation = d.evidence_edu_ids.some((eid) => eduMap.has(eid));
+
   // 點 card 時若使用者剛選了文字（drag-select），不要 toggle 選取 —
   // 讓使用者能正常複製文字 / 點右鍵 context menu，不會被 click handler 搶走。
   const handleCardClick = () => {
@@ -260,7 +265,7 @@ function DefectCard({
         </div>
       </div>
 
-      {isSelected && onJumpToPdf && (
+      {isSelected && onJumpToPdf && hasPdfLocation && (
         <button
           type="button"
           onClick={(e) => {

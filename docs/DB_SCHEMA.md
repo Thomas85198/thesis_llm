@@ -90,11 +90,11 @@ WHERE paper_id = 'paper:xxx'
 
 ## 表 3：`llm_calls` — 每次 LLM 呼叫的 token / cost log
 
-**用途**：Pipeline 每呼叫 Anthropic API 一次就 INSERT 一筆。
+**用途**：Pipeline 每呼叫 OpenAI API 一次就 INSERT 一筆。
 
 **三個用途**：
 1. `/api/cost` 結算每篇論文 / 全域累積成本
-2. 監控 context window 使用率（見 [REPORT_QA.md §Q6](REPORT_QA.md)）
+2. 監控 context window 使用率
 3. 找最貴的 stage / 最貴的論文 outlier
 
 **為什麼 paper_id 允許 NULL**：未來可能有非論文相關的 system 呼叫（例如系統健康檢查、prompt validation）。
@@ -104,7 +104,7 @@ WHERE paper_id = 'paper:xxx'
 | `id` | INTEGER PRIMARY KEY AUTOINCREMENT | 流水號 |
 | `paper_id` | TEXT | 屬於哪篇論文（可 NULL） |
 | `stage` | TEXT NOT NULL | pipeline 階段；格式 `階段:section`，例如 `edu:Method` / `er:Introduction` / `rst_fru:Conclusion` / `rule_check:REL-09` / `cross_section_pass` / `chat` |
-| `model` | TEXT NOT NULL | 使用的 Claude model id（如 `claude-sonnet-4-6`） |
+| `model` | TEXT NOT NULL | 使用的 OpenAI model id（如 `gpt-5.4` / `gpt-5.4-mini`） |
 | `input_tokens` | INTEGER NOT NULL | 此次 input token 數 |
 | `output_tokens` | INTEGER NOT NULL | 此次 output token 數 |
 | `cache_read_tokens` | INTEGER DEFAULT 0 | 從 prompt cache 讀取的 token（便宜，每 1M 比 input 便宜 10x） |

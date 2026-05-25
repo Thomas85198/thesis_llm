@@ -80,10 +80,10 @@ npm run dev
 **Pipeline**
 - ✅ PDF/TXT 上傳與抽取 (PyMuPDF，含 page+bbox)
 - ✅ EDU 切分 + 回映原始座標 (rapidfuzz)
-- ✅ ER / RST / FRU 標註 (Claude tool use)
+- ✅ ER / RST / FRU 標註 (OpenAI function calling)
 - ✅ Neo4j Knowledge Graph 寫入
 - ✅ 13 條 REL 規則檢核 (Cypher 候選 + LLM 判讀)
-- ✅ **跨章節 second pass** (Opus 4.7 1M context) 補強 REL-04/08/12 — `ENABLE_CROSS_SECTION_PASS=0` 可關
+- ✅ **跨章節 second pass** (gpt-5.4 1M context) 補強 REL-04/08/12 — `ENABLE_CROSS_SECTION_PASS=0` 可關
 - ✅ **Prompt 集中化**到 `backend/prompts/*.md` — 學長改 prompt 不用碰 Python
 - ✅ **LLM Confidence 分數** — 每個 defect 帶 0–1 信心分，前端用色塊顯示
 
@@ -138,15 +138,14 @@ npm run dev
 |---|---|---|---|
 | ⭐⭐⭐ | 學長累積 ~50 筆判定 → 跑 with/without few-shot ablation | 學長 0.5–1 day labeling | Phase 2 已就緒 |
 | ⭐⭐ | Pre-annotation 評估工具 + F1 計算 | 1–2 天 | 等 50 筆 judgments 才有意義 |
-| ⭐⭐ | Anthropic Batch API（51 篇實驗 50% 折扣） | 1–2 天 | 需要 pipeline async rewrite |
+| ⭐⭐ | OpenAI Batch API（51 篇實驗 50% 折扣） | 1–2 天 | 需要 pipeline async rewrite |
 | ⭐ | Hybrid Local + Cloud（Ollama 跑 EDU/ER） | 2 天 | M1 Max 64GB 可行 |
 | ⭐ | 跨論文 Entity 對齊 | 1–2 天 | entity dedup 是研究級題目 |
 | ⭐ | Multi-agent (Claim/Evidence/Critic) | 2+ 天 | 需要重設計 pipeline |
 
-詳見：
-- [docs/SYSTEM.md](docs/SYSTEM.md) — 完整系統設計
-- [docs/DEMO_REPORT.md](docs/DEMO_REPORT.md) — **Demo 完整報告（對齊 /about 網頁版內容，含 mermaid 圖、Vaswani 範例與英文原句）**
+詳見（文件已精簡為三份核心）：
+- [docs/SYSTEM.md](docs/SYSTEM.md) — 完整系統設計（架構、處理流程、效能、KG 語意、操作）
 - [docs/DB_SCHEMA.md](docs/DB_SCHEMA.md) — SQLite 4 張表中文說明 + ERD
-- [docs/SLIDES.md](docs/SLIDES.md) — Demo 投影片大綱與講稿（18 張）
-- [docs/REPORT_QA.md](docs/REPORT_QA.md) — Demo Q&A 速查 + Cypher / SQL 操作手冊
-- [docs/TODO.md](docs/TODO.md) — 已完成項目 + 待辦明細
+- [docs/TODO.md](docs/TODO.md) — 近況、已完成項目、待辦明細、未來規劃
+
+> Demo 報告 / 投影片 / Q&A 速查（`DEMO_REPORT.md` / `SLIDES.md` / `REPORT_QA.md`）已移除以精簡文件；舊版仍可從 git 歷史取回。網頁版說明見 `/about` 頁。

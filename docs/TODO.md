@@ -1,12 +1,12 @@
 # 專案管理 / TODO
 
-> 最後更新：2026-05-21
+> 最後更新：2026-05-25
 > 用途：列出 v3 已完成的主幹之外、還欠的工程與決策。每天如果有進度就把對應條目劃掉或更新。
-> 架構與設計細節在 [SYSTEM.md](SYSTEM.md)，這份只放「還沒做的事」。
+> 架構與設計細節在 [SYSTEM.md](SYSTEM.md)，DB 結構在 [DB_SCHEMA.md](DB_SCHEMA.md)，這份只放「還沒做的事」與近況。
 
 ---
 
-## ⭐ 最近進度（2026-05-20 ~ 21）：效能 / 容錯 / 版本管理
+## ⭐ 最近進度（2026-05-20 ~ 25）：效能 / 容錯 / 版本管理 / 部署
 
 ### 已完成 ✅
 
@@ -17,42 +17,48 @@
 - Dockerfile 裝 tesseract + chi-tra/chi-sim/eng，設 TESSDATA_PREFIX
 - 修了一個 bug：第一版閾值（雙條件）漏判置換式亂碼 → 改單一噪音比例
 
-**B. 版本紀錄頁 + 三碼語意化版本（v3.2.0）— branch `feat/version-update-banner`，未 push**
+**B. 版本紀錄頁 + 三碼語意化版本 — ✅ 已合併 main（commit 829ea75）**
 - `frontend/lib/version-log.ts` 單一版本來源（CURRENT_VERSION + VERSION_LOG）
 - `/changelog` 頁、header 版本徽章 + 導覽
 
-**C. 新版自動偵測橫幅（v3.2.0）— 同上 branch**
+**C. 新版自動偵測橫幅 — branch `feat/version-update-banner`，⚠️ 未 push、未合併（只在本機）**
 - `/version` route handler 回報部署版本；`VersionWatcher` 比對 bundle 版本
 - 不一致 → 底部不可關閉橫幅 +「立即更新」；focus + 每 60s 檢查
+- 補了 3.2.0 changelog entry；1 commit
 
-**D. 分析 pipeline 平行化 — branch `feat/parallel-pipeline`，未 push**
+**D. 分析 pipeline 平行化 — branch `feat/parallel-pipeline`，已 push、未合併**
 - thread pool（`OPENAI_MAX_WORKERS`，預設 6），`build_paper_graph` 跨章節、`check_all_rules` 跨規則平行
 - `pool.map` 保序 → 結果 deterministic；DB/Neo4j 已確認 thread-safe
 
 **E. 規則輸出瘦身 — 同上 branch**
-- verdict schema 只在「違規」時填細節欄位（非違規本來就丟掉）
-- REL-06：7069→1554 token、101s→20s；check_all_rules：288s→25.5s
+- verdict schema 只在「違規」時填細節欄位（非違規本來就丟掉）；`check_rule` 改防禦式讀取（欄位變 optional）
+- REL-06：7069→1554 token、101s→20s；check_all_rules 段：288s→~26s
 
 **F. thread-safe singleton — 同上 branch**
-- `client()` / `driver()` 改 double-checked lock，消掉冷啟動的 lazy-init race
+- `client()` / `driver()` 改 double-checked lock，消掉冷啟動的 lazy-init race（含 32 執行緒競態測試）
 
 **G. 單元測試 + pytest 設定 — 同上 branch**
 - 11 個測試：亂碼偵測(6)、抽取路由(3)、singleton 併發(2)；用「紅→綠」驗證抓得到亂碼 bug
 - pyproject `[test]` extra + SWIG DeprecationWarning filter
 
-**H. 時序圖 + 效能說明頁 — 同上 branch**
+**H. 時序圖 + 效能說明 — 同上 branch**
 - about 頁時序圖更新（背景任務/OCR/平行/gpt-5.4）+ 新增「11. 效能與穩定性」章節
+- 效能敘事也搬進 [SYSTEM.md](SYSTEM.md) §3.9（docs 端單一事實來源）
 
-**I. 部署運維**
-- server（140.115.54.48:8083）從 `feat/openai-deploy` 切到 `main` 並重建
-- `feat/openai-deploy` 已合併 main 並刪除（本地+遠端）；DEPLOY.md 改成從 main 部署
+**I. 部署運維（2026-05-22 ~ 25）**
+- 部署機台幾經更換：舊機 `.48`（repo 文件寫死）→ 試 `.58`（hostname `widm`、SSH port 122、NAT 後面且 8083 未轉發 → 對外不通、棄用）→ **現行 `140.115.54.62:8083`（hostname `widm-rs720`、SSH port 22、公網 IP 直連）**
+- `.62` 已用 main 完成首次部署；流程：`git clone` main → `scp` 本機 `backend/.env`(OPENAI key) → 根目錄 `.env` 以 `PUBLIC_BASE` / `CORS_ORIGIN_REGEX` 覆寫成 .62（**不改 repo**）→ compose build
+- 已知坑：全新部署（fresh volume）後第一篇上傳易撞 neo4j `TransientError()`（暖機/建 constraint），**重傳即成功**
+- `feat/openai-deploy` 早已合併 main 並刪除；DEPLOY.md 從 main 部署
 
-### 效能數據（同一篇論文，前後對比）
+### 效能數據（同一篇論文：序列＋肥 schema → 平行＋瘦 schema）
 | 階段 | 原本 | 現在 |
 |---|---|---|
 | build_paper_graph | ~246s | ~67s |
 | check_all_rules | ~288s | ~26s |
-| 合計 | ~9 分鐘 | ~1.8 分鐘（約 5×） |
+| 合計 | ~538s（~9 分鐘） | ~93s（~1.8 分鐘，約 5×） |
+
+> 中間檢查點：只做平行化是 534→182s（2.9×）；再疊瘦 schema 才到 ~5×。完整「為何慢 → 怎麼改 → 改完」敘事見 [SYSTEM.md](SYSTEM.md) §3.9。
 
 ### 待辦 📋（依優先序）
 
@@ -61,23 +67,24 @@
    - B. 真 LLM smoke test → 掛 CI 當「部署前 gate」
    - C. 啟動自檢：Neo4j 連得到、OPENAI key 在、rules.yaml/prompts load 得了
 2. **規則瘦身那段補單元測試**（目前 verdict schema 改動沒有測試守著）
-3. **版本號協調**：兩條未合併分支都要「下一版號」。合併時定先後（先合的 3.2.0、後合的 3.3.0），合併時補對應 changelog
+3. **版本號協調**：banner 那條已佔 3.2.0；平行化這條還沒加版本/changelog → 合併時定為 **3.3.0** 並補對應 changelog
 4. **`analysis_runs` 表**：持久化每次 upload→done 的效能（總時間、是否 OCR、各階段 token/秒、候選數），不隨論文刪除/重傳消失
 5. **`llm_calls` 加 `duration_ms`**：平行化後 created_at 間隔不再等於單次耗時，要真實 per-call 延遲就得記
 6. **測試基建**：pytest 烤進 backend image / `make test` / GitHub Actions 自動跑
 7. **文件**：README/DEPLOY 寫上 venv + `python -m pytest` 跑法（避免又用系統 Python 撞 ModuleNotFound）
-8. **上線**：兩條 feature 分支驗收穩定後 → push → 合併 main → 重新部署 server（**目前 server 仍是 3.1.0，沒有平行化/版本頁**）
-9. pool 大小 vs OpenAI tier 調校（目前保守 6，tier 夠可往上）
-10. （可選）DBeaver 改 bind-mount 即時看 SQLite，取代目前的快照匯出
+8. **首傳 transient 根治（選配）**：`write_graph` / `init_schema` 加「等 neo4j ready + 自訂 retry」，免掉全新部署第一篇要重傳
+9. **上線**：兩條 feature 分支驗收穩定後 → push → 合併 main → 重新部署 .62（**目前 .62 跑的是 main：含 OCR + 版本紀錄頁，但沒有平行化/更新橫幅**）
+10. pool 大小 vs OpenAI tier 調校（目前保守 6，tier 夠可往上）
+11. （可選）DBeaver 改 bind-mount 即時看 SQLite，取代目前的快照匯出
 
 ### 分支與部署現況
 | 分支 | 內容 | 狀態 |
 |---|---|---|
-| `main` | OCR(3.1.0) + 部署文件 | 已 push、**已部署 server** |
-| `feat/version-update-banner` | 版本頁 + 自動偵測橫幅(3.2.0) | 3 commit，**未 push/未合併** |
-| `feat/parallel-pipeline` | 平行化+瘦schema+singleton+測試+文件 | 8 commit，**未 push/未合併** |
-- 本機 docker：跑最新平行化 code（backend 已重啟）
-- `docs/EDITING_MODE_PLAN.md`：另一個大功能規劃（編輯模式/可 merge 建議），untracked，與本段無關
+| `main` | OCR(3.1.0) + 版本紀錄頁 + 部署文件 | 已 push、**已部署 .62** |
+| `feat/version-update-banner` | 新版自動偵測橫幅(3.2.0) | 1 commit，**未 push/未合併**（只在本機）|
+| `feat/parallel-pipeline` | 平行化 + 瘦 schema + singleton + 測試 + 文件 + docs 整理 | 已 push、**未合併** |
+- 兩條 feature 對 main 都可**乾淨合併**（merge-base = 目前 main、`git merge-tree` 無衝突），且彼此不重疊檔案
+- 編輯模式大功能規劃 → 見下方 [§3.1](#31-編輯模式--可-merge-的缺失建議大功能規劃)（原 `docs/EDITING_MODE_PLAN.md` 已濃縮收錄、原檔移除）
 
 ---
 
@@ -178,6 +185,27 @@
 | 跨論文 Entity 對齊 | 同一作者多篇連動；對畢業論文系列特別有用 | 1-2 天 | entity dedup 是研究級題目，demo 不需要 |
 | Multi-agent (Claim / Evidence / Critic) | 比單 prompt 細分職責 | 2+ 天 | 需要重設計 pipeline，demo 先不動 |
 
+### 3.1 編輯模式 + 可 merge 的缺失建議（大功能規劃）
+
+> 原 `docs/EDITING_MODE_PLAN.md` 濃縮收錄於此（該檔已移除）。目標：把現在「對寫好的論文做唯讀審查」擴成「可匯入 LaTeX / .md / Word / txt、在系統內編輯、像 git commit 一樣同意 merge 缺失建議」的協作編輯系統。
+
+**四個核心設計決策**
+- **A 定位模型**：`EDU` 除了 PDF 的 `(page, bbox)`，再帶 `char_start / char_end` 指向原始碼字元位置。`pipeline.py` 的 `Span` 與 `_locate_edu_in_spans()` 已算出 `approx_char`，一併回傳即可；兩種定位並存、向後相容。
+- **B 可編輯來源變一等公民**：PDF 維持唯讀審查（現有產品不動）；LaTeX / .md / docx / txt 進編輯模式，前端依 `papers.format` 分流檢視器。
+- **C `suggestion`（散文）→ `proposed_edit`（結構化 patch）**：`Defect` 加 `ProposedEdit`（`edit_type` / `anchor_edu_ids` / `original_text` / `replacement_text` / `is_generative` / `rationale`）。**offset 由後端從 EDU 推導，不信任 LLM 給的數字**。
+- **D merge / 版本語意**：同意 merge ＝ 套 patch → 版本號 +1 → 寫版本表（不用真 git，版本表即可 diff/revert）；每個版本各自擁有一份 `AnalysisResult`。
+
+**分階段（每階段可獨立交付）**
+- **Phase 0 定位地基**：EDU 加 char offset（`results.result_json` 是 schemaless JSON，免 DB migration）
+- **Phase 1 多格式匯入**：`.md / .tex / .docx`；LaTeX **不硬剝 macro**，用既有 fuzzy matcher 把 EDU 錨回原始 .tex 的 offset；section splitter 加 `\section{}` / Markdown `#`
+- **Phase 2 可編輯來源 + 版本歷史**：新 `document_versions` 表、`results` 主鍵改 `(paper_id, version)`、`defect_judgments` 加 `version`；前端 editable 格式改 CodeMirror 6（取代 PdfViewer）
+- **Phase 3 結構化 patch**：`Defect` 加 `proposed_edit`，`VERDICT_SCHEMA` / `CROSS_SECTION_SCHEMA` 擴充；prompt 區分「機械可改 `is_generative=false`」vs「待補草稿骨架 `is_generative=true`」
+- **Phase 4 merge 工作流**：apply / reject 端點（reject 直接複用 `defect_judgments` 的 wrong verdict）；多重 merge 用 `original_text` 在當前來源 fuzzy 重新定位以避開 cascading offset，對不上回 `409 conflict`
+- **Phase 5 增量重分析**：section 級快取（文字 hash 變才重跑該章節），否則每輪編輯 ＝ 一次完整 pipeline 費用
+
+**最小可動 demo = Phase 0 → 4**；Phase 5 是讓它好用的關鍵但可後補。
+**主要風險**：LaTeX offset 錨定（重用 fuzzy matcher）、多重 merge 連鎖位移（用 `original_text` 重定位）、多數規則是「缺東西」無法乾淨 merge（用 `is_generative` 旗標 + 不同按鈕文案）。
+
 ---
 
 ## 4. UX polish（剩餘）
@@ -227,9 +255,10 @@
 
 ---
 
-## 6. 待決策（明天討論）
+## 6. 待決策
 
 - [ ] 學長願不願意一週內標 50 篇？沒這個 Phase 2 跑不出 ablation
 - [ ] Phase 2 的 example 是 per-rule 累積還是全域？目前是 per-rule，但若某規則一直沒樣本要不要 fallback 全域？
 - [ ] benchmark 是否真的進論文？影響是否花 1-2 天跑 PeerRead/AAEC
 - [ ] Cross-section pass 在 demo 要不要 highlight？目前 defect 標「（跨章節）」，可以做成獨立區塊
+- [ ] 兩條 feature 分支的合併順序與版本號（banner→3.2.0、parallel→3.3.0）— 見 ⭐ 待辦 #3

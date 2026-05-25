@@ -38,6 +38,23 @@ export const CHANGE_TYPE_META: Record<
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "3.4.0",
+    date: "2026-05-25",
+    title: "論文標題自動偵測",
+    summary:
+      "上傳時不必再手動輸入標題：系統會用 LLM 從論文首頁讀出真正的標題，使用者留空即可（想覆寫再手動填）。",
+    changes: [
+      {
+        type: "feat",
+        text: "標題自動偵測：抽取後以 gpt-5.4-mini 讀論文第一頁前約 1500 字取得標題（一次極輕量呼叫，成本可忽略），使用者未填標題時自動套用，偵測失敗才退回檔名。",
+      },
+      {
+        type: "feat",
+        text: "上傳表單標題欄改為選填覆寫，提示「留空則自動偵測」。",
+      },
+    ],
+  },
+  {
     version: "3.3.0",
     date: "2026-05-25",
     title: "分析效能大幅優化：平行化 + 規則瘦身",

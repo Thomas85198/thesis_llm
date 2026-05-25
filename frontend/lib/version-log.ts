@@ -38,6 +38,27 @@ export const CHANGE_TYPE_META: Record<
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "3.3.0",
+    date: "2026-05-25",
+    title: "分析效能大幅優化：平行化 + 規則瘦身",
+    summary:
+      "章節抽取與 13 條規則檢核改為平行執行，並精簡規則判定輸出，整篇分析從約 9 分鐘降到約 2 分鐘、成本同步下降；判定結果與舊版一致（已用固定圖譜 A/B 跨 4 篇驗證無退步）。",
+    changes: [
+      {
+        type: "perf",
+        text: "分析 pipeline 平行化：章節抽取（EDU/ER/RST·FRU）與 13 條 REL 規則改用 thread pool 同時送出（OPENAI_MAX_WORKERS，預設 6），整篇處理時間約 9 分鐘 → 約 2 分鐘（約 5×），結果保序可重現。",
+      },
+      {
+        type: "perf",
+        text: "規則判定輸出瘦身：verdict schema 只在「違規」時才填細節欄位，非違規不再產生廢棄文字，rule_check 階段 output token 約 −43%、時間約 −35%。",
+      },
+      {
+        type: "chore",
+        text: "新增單元測試（亂碼偵測 / 抽取路由 / singleton 併發）與 thread-safe singleton；文件精簡為 SYSTEM / DB_SCHEMA / TODO 三份核心並補效能說明。",
+      },
+    ],
+  },
+  {
     version: "3.2.0",
     date: "2026-05-20",
     title: "新版本自動偵測與更新提示",

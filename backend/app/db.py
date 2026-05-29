@@ -382,68 +382,6 @@ def list_judgments(paper_id: str) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-def get_judgment_examples(
-    rule_id: str, limit_per_verdict: int = 4
-) -> list[dict[str, Any]]:
-    """Recent human judgments for ONE rule, joined with the original defect text.
-
-    Returns up to `limit_per_verdict` correct + `limit_per_verdict` wrong examples,
-    each shaped as:
-        {verdict, description, suggestion, evidence_texts: [str], note}
-    Used to build few-shot calibration examples in rules.check_rule().
-    """
-    with connect() as c:
-        rows = c.execute(
-            """
-            SELECT j.paper_id, j.defect_id, j.verdict, j.note, j.created_at,
-                   r.result_json
-            FROM defect_judgments j
-            JOIN results r ON r.paper_id = j.paper_id
-            WHERE j.rule_id = ? AND j.verdict IN ('correct', 'wrong')
-            ORDER BY j.created_at DESC
-            """,
-            (rule_id,),
-        ).fetchall()
-
-    bucket: dict[str, list[dict[str, Any]]] = {"correct": [], "wrong": []}
-    for r in rows:
-        v = r["verdict"]
-        if len(bucket[v]) >= limit_per_verdict:
-            continue
-        try:
-            result = json.loads(r["result_json"])
-        except Exception:
-            continue
-        defect = next(
-            (d for d in result.get("defects", []) if d.get("id") == r["defect_id"]),
-            None,
-        )
-        if defect is None:
-            continue
-        edu_map = {
-            e["id"]: e.get("text", "")
-            for e in result.get("graph", {}).get("edus", [])
-        }
-        evidence_texts = [
-            (edu_map.get(eid) or "").strip()
-            for eid in defect.get("evidence_edu_ids", [])
-        ]
-        evidence_texts = [t for t in evidence_texts if t]
-        bucket[v].append(
-            {
-                "verdict": v,
-                "description": defect.get("description", ""),
-                "suggestion": defect.get("suggestion", ""),
-                "evidence_texts": evidence_texts,
-                "note": r["note"],
-            }
-        )
-        if len(bucket["correct"]) >= limit_per_verdict and len(bucket["wrong"]) >= limit_per_verdict:
-            break
-
-    return bucket["correct"] + bucket["wrong"]
-
-
 def judgment_summary() -> dict[str, Any]:
     """Per-rule + global counts of correct/wrong/partial judgments + precision."""
     with connect() as c:

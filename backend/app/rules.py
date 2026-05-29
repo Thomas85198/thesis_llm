@@ -1,8 +1,4 @@
-"""Load 13 REL rules and run them against a Paper KG to detect defects.
-
-Phase 2 addition: when past human judgments exist for a rule, inject the most
-recent N correct + N wrong examples into the system prompt as few-shot calibration.
-"""
+"""Load 13 REL rules and run them against a Paper KG to detect defects."""
 from __future__ import annotations
 
 import json
@@ -14,16 +10,12 @@ from typing import Any
 
 import yaml
 
-from . import db
 from .kg import resolve_evidence_to_edus, run_cypher
 from .llm import call_with_tool, llm_max_workers, model_cross_section, model_heavy
 from .prompts import load_prompt
 from .schemas import EDU, Defect, RuleRunMeta, Severity
 
 RULES_FILE = Path(__file__).parent.parent / "rules.yaml"
-
-EXAMPLES_PER_VERDICT = 4
-MIN_EXAMPLES_TO_INJECT = 3  # below this, examples are too few to be reliable
 
 
 def load_rules() -> list[dict[str, Any]]:
@@ -101,47 +93,13 @@ VERDICT_SCHEMA = {
 }
 
 
-def _build_examples_block(examples: list[dict[str, Any]]) -> str:
-    """Format past human judgments as few-shot calibration. Empty if too few."""
-    if len(examples) < MIN_EXAMPLES_TO_INJECT:
-        return ""
-
-    lines: list[str] = [
-        "\n\nPast human judgments on THIS rule (calibrate to these):",
-    ]
-    for ex in examples:
-        marker = (
-            "✓ CORRECT (real defect)"
-            if ex["verdict"] == "correct"
-            else "✗ FALSE POSITIVE (do NOT flag again)"
-        )
-        evidence = " | ".join((t or "")[:200] for t in ex["evidence_texts"][:2])
-        lines.append(f"\n[{marker}]")
-        if evidence:
-            lines.append(f"  evidence: «{evidence[:400]}»")
-        if ex.get("description"):
-            lines.append(f"  why-flagged: {ex['description'][:200]}")
-        if ex.get("note"):
-            lines.append(f"  reviewer note: {ex['note'][:200]}")
-    lines.append(
-        "\nUse these to recalibrate your threshold. If a new candidate closely "
-        "resembles a FALSE POSITIVE pattern above, set violates=false."
-    )
-    return "".join(lines)
-
-
 def check_rule(
     rule: dict[str, Any], paper_id: str, paper_title: str = ""
 ) -> tuple[list[Defect], RuleRunMeta]:
     candidates = run_cypher(rule["candidate_query"], pid=paper_id)
 
-    examples = db.get_judgment_examples(rule["id"], EXAMPLES_PER_VERDICT)
-    examples_block = _build_examples_block(examples)
-    examples_used = len(examples) if examples_block else 0
-
     meta = RuleRunMeta(
         rule_id=rule["id"],
-        examples_used=examples_used,
         candidate_count=len(candidates),
         defect_count=0,
     )
@@ -160,7 +118,6 @@ def check_rule(
             rule_id=rule["id"],
             rule_name=rule["name"],
             rule_description=rule["description"],
-            examples_block=examples_block,
         ),
         user_content=json.dumps(payload, ensure_ascii=False, default=str)[:120_000],
         tool_name="emit_verdicts",
@@ -343,7 +300,6 @@ def cross_section_pass(
     selected = [rules_dict[rid] for rid in rule_ids if rid in rules_dict]
     meta = RuleRunMeta(
         rule_id="cross_section",
-        examples_used=0,
         candidate_count=1 if (selected and edus) else 0,
         defect_count=0,
     )

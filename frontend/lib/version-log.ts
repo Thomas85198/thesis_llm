@@ -38,6 +38,27 @@ export const CHANGE_TYPE_META: Record<
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "3.5.0",
+    date: "2026-05-30",
+    title: "移除 Phase 2 few-shot 回饋迴路，改為純人工評估",
+    summary:
+      "拿掉「同規則累積 ≥3 筆判定就注入 prompt 當 few-shot 範例」的回饋迴路。學長的人工判定（correct / partial / wrong）保留，但只用於量化 precision 與匯出 ground truth，不再回寫進 prompt——每次檢核都是獨立 zero-shot，結果可重現。",
+    changes: [
+      {
+        type: "feat",
+        text: "移除 few-shot 注入：rules.check_rule 不再讀取過去判定組 examples_block，checker prompt 拿掉 {examples_block}，並刪除 db.get_judgment_examples 與 rules._build_examples_block。規則檢核一律 zero-shot。",
+      },
+      {
+        type: "feat",
+        text: "人工檢查機制保留：缺陷標註（✅判對 / 🤔部分對 / ❌誤判）、per-rule soft precision 統計、judgments 匯出（ground truth）、eval summary 全數不變。",
+      },
+      {
+        type: "docs",
+        text: "stats 頁移除「Phase 2」欄與 few-shot / zero-shot 說明；about 頁第 8 節由「Phase 2 回饋迴路」改為「人工評估機制」，移除回饋迴路時序圖與 in-context learning 文獻條目。",
+      },
+    ],
+  },
+  {
     version: "3.4.0",
     date: "2026-05-25",
     title: "論文標題自動偵測",

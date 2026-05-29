@@ -124,9 +124,8 @@ class PaperGraph(BaseModel):
 
 
 class RuleRunMeta(BaseModel):
-    """Per-rule run statistics (few-shot examples used, candidate count, etc)."""
+    """Per-rule run statistics (candidate count, defect count)."""
     rule_id: str
-    examples_used: int = 0  # number of past human judgments injected into prompt
     candidate_count: int = 0  # how many Cypher candidates the LLM was asked to judge
     defect_count: int = 0  # how many candidates the LLM marked as violating
 

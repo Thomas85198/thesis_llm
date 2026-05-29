@@ -22,4 +22,4 @@ For each candidate, decide whether it actually violates the rule. Be conservativ
 Rule:
   id: {rule_id}
   name: {rule_name}
-  description: {rule_description}{examples_block}
+  description: {rule_description}

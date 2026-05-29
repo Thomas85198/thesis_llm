@@ -15,7 +15,7 @@ const SECTIONS = [
   { id: "rds", label: "5. SQLite 資料結構" },
   { id: "rules", label: "6. 13 條 REL 規則" },
   { id: "example", label: "7. 範例走查（Vaswani 2017）" },
-  { id: "phase2", label: "8. Phase 2 回饋迴路" },
+  { id: "phase2", label: "8. 人工評估機制" },
   { id: "guards", label: "9. 聊天 Guardrails" },
   { id: "literature", label: "10. 理論文獻" },
   { id: "perf", label: "11. 效能與穩定性" },
@@ -60,7 +60,7 @@ export default function AboutPage() {
           <p className="max-w-3xl text-sm leading-relaxed">
             上傳論文 → 抽取 EDU / Entity / RST / FRU 四層結構並寫入 Neo4j Knowledge Graph
             → 用 13 條 REL 規則檢核（Cypher 找候選 + LLM 判讀）→ 輸出邏輯缺陷與修改建議。
-            搭配 Human-as-judge 標註介面與 Phase 2 few-shot 回饋，閉合人工標註迴路。
+            搭配 Human-as-judge 標註介面，由人工逐一檢查每個缺陷並量化系統 precision。
           </p>
           <a
             href="#intro"
@@ -188,7 +188,7 @@ export default function AboutPage() {
         B->>N: 寫入 Paper + EDU + Entity + FRU + RST
         par 13 條 REL 規則平行 (同一 thread pool)
             B->>N: Cypher 找候選
-            B->>O: LLM 判讀 (gpt-5.4, 含 Phase 2 few-shot)
+            B->>O: LLM 判讀 (gpt-5.4, zero-shot)
         end
         B->>O: 跨章節 second pass (REL-04/08/12)
         B->>S: 寫 result_json + llm_calls
@@ -454,14 +454,14 @@ export default function AboutPage() {
 
           <TableSchema
             name="defect_judgments"
-            purpose="Human-as-judge 標註（Phase 2 燃料）"
-            keyDesign="複合主鍵 (paper_id, defect_id) 確保同缺陷一個 verdict；verdict CHECK 限定三選一防髒資料污染 Phase 2 注入"
+            purpose="Human-as-judge 標註（人工評估）"
+            keyDesign="複合主鍵 (paper_id, defect_id) 確保同缺陷一個 verdict；verdict CHECK 限定三選一防髒資料"
             columns={[
               { col: "paper_id", type: "TEXT PK", desc: "缺陷所屬論文" },
               { col: "defect_id", type: "TEXT PK", desc: "缺陷 id，對應 results.result_json 內 defects[].id" },
               { col: "rule_id", type: "TEXT NOT NULL", desc: "該缺陷觸發的規則 (REL-01 ~ REL-13)" },
               { col: "verdict", type: "TEXT CHECK", desc: "必為 correct (✅判對) / wrong (❌誤判) / partial (🤔部分對) 三選一" },
-              { col: "note", type: "TEXT", desc: "學長補充說明（選填，會跟著 verdict 餵給 Phase 2 LLM）" },
+              { col: "note", type: "TEXT", desc: "學長補充說明（選填）" },
               { col: "created_at", type: "TEXT NOT NULL", desc: "標註時間 (ISO 8601 UTC)" },
             ]}
           />
@@ -489,7 +489,7 @@ export default function AboutPage() {
               <tr className="border-t">
                 <td className="p-2 font-mono text-xs">papers ↔ judgments</td>
                 <td className="p-2">軟關聯</td>
-                <td className="p-2">judgments 是 Phase 2 燃料，刪 paper 不該丟</td>
+                <td className="p-2">judgments 是人工評估資料，刪 paper 不該丟</td>
               </tr>
               <tr className="border-t">
                 <td className="p-2 font-mono text-xs">judgments ↔ results.json</td>
@@ -512,8 +512,7 @@ export default function AboutPage() {
     Y[rules.yaml<br/>13 條<br/>學長維護] --> S1
     S1[Step 1<br/>Cypher 候選查詢<br/>純 graph pattern<br/>確定性, 不用 LLM] --> C[候選子圖列表]
     C --> S2[Step 2<br/>LLM 判讀<br/>tool use 強制 JSON<br/>verdict + severity + confidence]
-    S2 --> D[Defect<br/>含 evidence_edu_ids]
-    J[(SQLite<br/>defect_judgments)] -. Phase 2 ≥3 筆<br/>注入 few-shot .-> S2`}
+    S2 --> D[Defect<br/>含 evidence_edu_ids]`}
           />
           <h3>13 條規則一覽（含 Vaswani 2017 範例）</h3>
           <p className="text-xs text-muted-foreground">
@@ -638,7 +637,7 @@ export default function AboutPage() {
             </p>
           </ExampleStep>
 
-          <ExampleStep n={6} title="學長判定 → 系統越用越聰明">
+          <ExampleStep n={6} title="學長判定 → 量化系統品質">
             <p>
               學長看到這條缺陷後可以按三個鈕：
               <strong>✅ 判對</strong> / <strong>🤔 部分對</strong> /{" "}
@@ -646,39 +645,34 @@ export default function AboutPage() {
               判定會存到 SQLite。
             </p>
             <p>
-              當同一條規則累積到 3 筆以上判定後，系統下次檢核這條規則時，
-              <strong>會自動把學長過去的判定當作範例給 LLM 看</strong>，
-              讓 LLM 越來越貼近學長的判斷標準。不需要重新訓練模型，純粹靠「給範例」就能學。
-            </p>
-            <p className="text-xs text-muted-foreground">
-              理論基礎：GPT-3 論文（Brown et al. 2020）證明 LLM 看幾個範例就能調整行為，
-              這叫 in-context learning。我們的 Phase 2 就是這個原理。
+              這些判定用來計算每條規則的 soft precision（correct + 0.5 × partial），
+              也能匯出成 ground truth。
+              <strong>判定只用於評估與分析，不會回寫進 prompt 影響後續判讀</strong>，
+              每次檢核都是獨立的 zero-shot，結果可重現。
             </p>
           </ExampleStep>
         </Section>
 
-        {/* 8. Phase 2 回饋迴路 */}
-        <Section id="phase2" title="8. Phase 2 — 閉合人工標註迴路">
+        {/* 8. 人工評估機制 */}
+        <Section id="phase2" title="8. 人工評估機制">
           <p>
-            從 2026-05-10 起，迴路已閉合：學長判定 → SQLite → 下次檢核自動注入 → LLM 判讀越來越貼近學長口味。
+            系統判讀完後，由學長對每個缺陷做人工檢查（✅判對 / 🤔部分對 / ❌誤判），用來量化系統品質。
+            判定資料只用於評估與匯出 ground truth，<strong>不會回饋進 prompt</strong>——
+            每次檢核都是獨立 zero-shot，結果可重現。
           </p>
           <MermaidDiagram
-            caption="圖 8-1：Phase 2 回饋迴路"
+            caption="圖 8-1：人工評估流程"
             code={`flowchart LR
     A[新論文] --> B[Cypher 候選]
-    B --> C{該規則<br/>已有 3 筆<br/>以上判定?}
-    C -- 否 --> D[LLM zero-shot 判讀]
-    C -- 是 --> E["db.get_judgment_examples<br/>(取最近 4 correct + 4 wrong)"]
-    E --> F[LLM few-shot 判讀<br/>system prompt 含學長範例]
+    B --> D[LLM zero-shot 判讀]
     D --> G[Defect 清單<br/>含 confidence + rule_meta]
-    F --> G
     G -. 手動標 correct / partial / wrong .-> H[("SQLite<br/>defect_judgments")]
-    H --> E
-    H --> I["GET /api/judgments/summary<br/>per-rule precision 統計"]`}
+    H --> I["GET /api/judgments/summary<br/>per-rule soft precision"]
+    H --> J["GET /api/judgments/export<br/>匯出 ground truth"]`}
           />
           <p>
-            前端 result 頁會顯示綠色 badge 「⚙️ 參考 N 筆學長判定」，使用者直觀看到迴路在運作。
-            可作為論文 ablation 主結果：with vs without few-shot 的 precision 變化。
+            人工判定提供量化指標（per-rule soft precision =（correct + 0.5 × partial）/ 已判數），
+            可作為論文的評估結果與 ground truth，佐證規則品質。
           </p>
         </Section>
 
@@ -1519,10 +1513,6 @@ const LITERATURE: { feature: string; work: string }[] = [
   {
     feature: "Neurosymbolic AI",
     work: "Garcez & Lamb 2020 — Neurosymbolic AI: The 3rd Wave",
-  },
-  {
-    feature: "In-context Learning (Phase 2 基礎)",
-    work: "Brown et al. 2020 — Language Models are Few-Shot Learners (GPT-3)",
   },
   {
     feature: "Tool Use 強制 schema",

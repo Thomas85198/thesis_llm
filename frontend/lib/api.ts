@@ -91,7 +91,6 @@ export type Defect = {
 
 export type RuleRunMeta = {
   rule_id: string;
-  examples_used: number;
   candidate_count: number;
   defect_count: number;
 };

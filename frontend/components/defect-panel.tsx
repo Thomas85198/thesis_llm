@@ -30,27 +30,23 @@ const SEVERITY_RANK: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
 const VERDICT_OPTIONS: {
   value: Verdict;
   label: string;
-  emoji: string;
   active: string;
 }[] = [
   {
     value: "correct",
     label: "判對",
-    emoji: "✅",
     active:
       "bg-green-100 text-green-800 ring-2 ring-green-500 dark:bg-green-950 dark:text-green-200",
   },
   {
     value: "partial",
     label: "部分對",
-    emoji: "🤔",
     active:
       "bg-yellow-100 text-yellow-800 ring-2 ring-yellow-500 dark:bg-yellow-950 dark:text-yellow-200",
   },
   {
     value: "wrong",
     label: "誤判",
-    emoji: "❌",
     active:
       "bg-red-100 text-red-800 ring-2 ring-red-500 dark:bg-red-950 dark:text-red-200",
   },
@@ -87,7 +83,7 @@ export function DefectPanel({
   if (defects.length === 0) {
     return (
       <div className="flex h-full items-center justify-center rounded-md border bg-muted/30 p-6 text-center">
-        <p className="text-sm text-muted-foreground">沒有發現缺陷 🎉</p>
+        <p className="text-sm text-muted-foreground">沒有發現缺陷</p>
       </div>
     );
   }
@@ -278,7 +274,7 @@ function DefectCard({
           )}
           title="跳到 PDF 中對應位置並高亮"
         >
-          📄 在 PDF 中查看
+          在 PDF 中查看
         </button>
       )}
 
@@ -300,7 +296,6 @@ function DefectCard({
               )}
               title={isActive ? "點擊取消" : `標為 ${opt.label}`}
             >
-              <span className="mr-0.5">{opt.emoji}</span>
               {opt.label}
             </button>
           );

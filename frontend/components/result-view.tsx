@@ -225,7 +225,7 @@ export function ResultView({ result }: { result: AnalysisResult }) {
                 {judgedCount > 0 && (
                   <>
                     {" "}
-                    （✅{correctCount} 🤔{partialCount} ❌{wrongCount}）
+                    （判對 {correctCount} · 部分對 {partialCount} · 誤判 {wrongCount}）
                   </>
                 )}
               </span>

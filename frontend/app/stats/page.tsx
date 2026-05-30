@@ -1,6 +1,6 @@
 "use client";
 
-import { DownloadIcon } from "lucide-react";
+import { AlertTriangleIcon, DownloadIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -127,10 +127,13 @@ export default function StatsPage() {
             </p>
           </div>
           {evalData.orphan_judgments > 0 && (
-            <p className="rounded border border-yellow-400/50 bg-yellow-50 p-2 text-xs text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300">
-              ⚠️ 有 {evalData.orphan_judgments} 筆判定對應的論文已被刪除 —
+            <p className="flex items-start gap-1.5 rounded border border-yellow-400/50 bg-yellow-50 p-2 text-xs text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300">
+              <AlertTriangleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+              有 {evalData.orphan_judgments} 筆判定對應的論文已被刪除 —
               這些仍計入 overall / per-rule，但無法做 severity / confidence
               的細項分析（因為缺 result_json）。
+              </span>
             </p>
           )}
 
@@ -142,9 +145,9 @@ export default function StatsPage() {
                 整體 (Overall)
               </h3>
               <div className="space-y-2 text-sm">
-                <BucketRow label="✅ Correct" n={evalData.overall.correct} total={evalData.overall.total} colorClass="bg-emerald-500" />
-                <BucketRow label="🤔 Partial" n={evalData.overall.partial} total={evalData.overall.total} colorClass="bg-yellow-500" />
-                <BucketRow label="❌ Wrong" n={evalData.overall.wrong} total={evalData.overall.total} colorClass="bg-red-500" />
+                <BucketRow label="Correct" n={evalData.overall.correct} total={evalData.overall.total} colorClass="bg-emerald-500" />
+                <BucketRow label="Partial" n={evalData.overall.partial} total={evalData.overall.total} colorClass="bg-yellow-500" />
+                <BucketRow label="Wrong" n={evalData.overall.wrong} total={evalData.overall.total} colorClass="bg-red-500" />
                 <div className="mt-3 border-t pt-3 text-center">
                   <div className="text-3xl font-bold tabular-nums">
                     {evalData.overall.soft_precision === null
@@ -280,7 +283,7 @@ export default function StatsPage() {
                   </td>
                   <td className="p-2 text-right tabular-nums">
                     {r.judged_total > 0 ? (
-                      <span title={`✅${r.judged_correct} 🤔${r.judged_partial} ❌${r.judged_wrong}`}>
+                      <span title={`判對 ${r.judged_correct} · 部分對 ${r.judged_partial} · 誤判 ${r.judged_wrong}`}>
                         {r.judged_total}
                       </span>
                     ) : (
@@ -325,25 +328,25 @@ export default function StatsPage() {
           <div className="grid gap-1.5 sm:grid-cols-2">
             <div className="flex items-start gap-2">
               <Badge variant="outline" className="border-emerald-400 text-emerald-700 shrink-0">
-                ✅ 表現良好
+                表現良好
               </Badge>
               <span>已判 ≥ 3 筆 且 precision ≥ 70% — 規則穩定，誤判率低。</span>
             </div>
             <div className="flex items-start gap-2">
               <Badge variant="outline" className="border-red-400 text-red-700 shrink-0">
-                ⚠️ 需檢討
+                需檢討
               </Badge>
               <span>已判 ≥ 3 筆 但 precision &lt; 50% — 誤判率偏高，建議重寫規則 description 或 Cypher。</span>
             </div>
             <div className="flex items-start gap-2">
               <Badge variant="outline" className="border-orange-400 text-orange-700 shrink-0">
-                🔥 高頻觸發
+                高頻觸發
               </Badge>
               <span>命中率 &gt; 80% — 幾乎每篇都觸發，可能 over-fire，建議檢視規則或 Cypher。</span>
             </div>
             <div className="flex items-start gap-2">
               <Badge variant="outline" className="border-zinc-400 text-zinc-600 shrink-0">
-                🌑 從未觸發
+                從未觸發
               </Badge>
               <span>總缺陷 = 0 — 規則太嚴或 Cypher 沒抓到候選，需要範例論文驗證。</span>
             </div>
@@ -434,7 +437,7 @@ function StatusChip({
         className="border-zinc-400 text-zinc-600"
         title="從未觸發。可能規則太嚴或 Cypher 沒抓到候選"
       >
-        🌑 從未觸發
+        從未觸發
       </Badge>
     );
   }
@@ -445,7 +448,7 @@ function StatusChip({
         className="border-red-400 text-red-700"
         title="precision 低於 50%，建議重寫規則 description"
       >
-        ⚠️ 需檢討
+        需檢討
       </Badge>
     );
   }
@@ -455,7 +458,7 @@ function StatusChip({
         variant="outline"
         className="border-emerald-400 text-emerald-700"
       >
-        ✅ 表現良好
+        表現良好
       </Badge>
     );
   }
@@ -467,7 +470,7 @@ function StatusChip({
         className="border-orange-400 text-orange-700"
         title="幾乎每篇都觸發，可能 over-fire"
       >
-        🔥 高頻觸發
+        高頻觸發
       </Badge>
     );
   }

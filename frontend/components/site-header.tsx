@@ -8,13 +8,10 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-4 px-4 sm:px-6">
-        <Link
-          href="/"
-          className="flex items-center gap-2 font-semibold tracking-tight"
-        >
+        <Link href="/" aria-label="論文檢核系統" className="flex items-center">
           <svg
             viewBox="0 0 32 32"
-            className="h-6 w-6 shrink-0"
+            className="h-7 w-7 shrink-0"
             fill="none"
             aria-hidden="true"
           >
@@ -32,7 +29,6 @@ export function SiteHeader() {
               strokeLinejoin="round"
             />
           </svg>
-          <span className="text-base sm:text-lg">論文檢核系統</span>
         </Link>
         <Link href="/changelog" title="版本紀錄">
           <Badge
@@ -57,12 +53,6 @@ export function SiteHeader() {
             className={buttonVariants({ variant: "ghost", size: "sm" })}
           >
             規則統計
-          </Link>
-          <Link
-            href="/about"
-            className={buttonVariants({ variant: "ghost", size: "sm" })}
-          >
-            系統說明
           </Link>
           <Link
             href="/changelog"

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownIcon } from "lucide-react";
+import { ArrowDownIcon, Check, X } from "lucide-react";
 
 import { MermaidDiagram } from "@/components/mermaid-diagram";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +35,7 @@ export default function AboutPage() {
               <li key={s.id}>
                 <a
                   href={`#${s.id}`}
-                  className="block rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  className="block rounded px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 >
                   {s.label}
                 </a>
@@ -57,7 +57,7 @@ export default function AboutPage() {
           <p className="text-lg text-muted-foreground">
             用 Knowledge Graph + LLM 自動找學術論文的邏輯結構性缺陷
           </p>
-          <p className="max-w-3xl text-sm leading-relaxed">
+          <p className="max-w-3xl text-base leading-relaxed">
             上傳論文 → 抽取 EDU / Entity / RST / FRU 四層結構並寫入 Neo4j Knowledge Graph
             → 用 13 條 REL 規則檢核（Cypher 找候選 + LLM 判讀）→ 輸出邏輯缺陷與修改建議。
             搭配 Human-as-judge 標註介面，由人工逐一檢查每個缺陷並量化系統 precision。
@@ -90,28 +90,28 @@ export default function AboutPage() {
               <tbody>
                 <ComparisonRow
                   dim="結果可重現"
-                  llm="❌ 每次答案不同"
-                  ours="✅ KG + 規則確定性"
+                  llm="每次答案不同"
+                  ours="KG + 規則確定性"
                 />
                 <ComparisonRow
                   dim="追溯到原文位置"
-                  llm="❌ 描述模糊"
-                  ours="✅ 高亮 PDF 句子（page + bbox）"
+                  llm="描述模糊"
+                  ours="高亮 PDF 句子（page + bbox）"
                 />
                 <ComparisonRow
                   dim="規則可由人維護"
-                  llm="❌ 黑盒"
-                  ours="✅ 規則寫在 YAML，學長可改"
+                  llm="黑盒"
+                  ours="規則寫在 YAML，學長可改"
                 />
                 <ComparisonRow
                   dim="跨論文比較"
-                  llm="❌"
-                  ours="✅ KG 持久化於 Neo4j"
+                  llm="做不到"
+                  ours="KG 持久化於 Neo4j"
                 />
                 <ComparisonRow
                   dim="投論文的方法論支撐"
-                  llm="❌"
-                  ours="✅ Neurosymbolic（KG + LLM hybrid）"
+                  llm="缺乏"
+                  ours="Neurosymbolic（KG + LLM hybrid）"
                 />
               </tbody>
             </table>
@@ -460,7 +460,7 @@ export default function AboutPage() {
               { col: "paper_id", type: "TEXT PK", desc: "缺陷所屬論文" },
               { col: "defect_id", type: "TEXT PK", desc: "缺陷 id，對應 results.result_json 內 defects[].id" },
               { col: "rule_id", type: "TEXT NOT NULL", desc: "該缺陷觸發的規則 (REL-01 ~ REL-13)" },
-              { col: "verdict", type: "TEXT CHECK", desc: "必為 correct (✅判對) / wrong (❌誤判) / partial (🤔部分對) 三選一" },
+              { col: "verdict", type: "TEXT CHECK", desc: "必為 correct (判對) / wrong (誤判) / partial (部分對) 三選一" },
               { col: "note", type: "TEXT", desc: "學長補充說明（選填）" },
               { col: "created_at", type: "TEXT NOT NULL", desc: "標註時間 (ISO 8601 UTC)" },
             ]}
@@ -550,14 +550,14 @@ export default function AboutPage() {
             <p>系統把這句話切成幾個小命題（EDU），然後貼上三種便利貼：</p>
             <ul>
               <li>
-                <strong>🟢 觀察類便利貼</strong>（Observation FRU）：
+                <strong>觀察類便利貼</strong>（Observation FRU）：
                 「這句話是在『描述實驗看到什麼』。」
               </li>
               <li>
-                <strong>📍 位置便利貼</strong>：「在 Results 章節，第 9 頁。」
+                <strong>位置便利貼</strong>：「在 Results 章節，第 9 頁。」
               </li>
               <li>
-                <strong>🔗 修辭關係便利貼</strong>（RST）：
+                <strong>修辭關係便利貼</strong>（RST）：
                 「這句話跟 Table 3 的數據有 Result 因果關係。」
               </li>
             </ul>
@@ -574,7 +574,7 @@ export default function AboutPage() {
               所以系統就把這句話列為「可疑候選」，準備交給 LLM 確認。
             </p>
             <p className="text-xs text-muted-foreground">
-              📌 對比：Section 6.2 row (B) 講「reducing dk hurts quality」之後就有一句
+              對比：Section 6.2 row (B) 講「reducing dk hurts quality」之後就有一句
               「This suggests that determining compatibility is not easy」— 那就是「歸因類」便利貼，
               所以 row (B) 不會被列為候選。
             </p>
@@ -640,8 +640,8 @@ export default function AboutPage() {
           <ExampleStep n={6} title="學長判定 → 量化系統品質">
             <p>
               學長看到這條缺陷後可以按三個鈕：
-              <strong>✅ 判對</strong> / <strong>🤔 部分對</strong> /{" "}
-              <strong>❌ 誤判</strong>。
+              <strong>判對</strong> / <strong>部分對</strong> /{" "}
+              <strong>誤判</strong>。
               判定會存到 SQLite。
             </p>
             <p>
@@ -656,7 +656,7 @@ export default function AboutPage() {
         {/* 8. 人工評估機制 */}
         <Section id="phase2" title="8. 人工評估機制">
           <p>
-            系統判讀完後，由學長對每個缺陷做人工檢查（✅判對 / 🤔部分對 / ❌誤判），用來量化系統品質。
+            系統判讀完後，由學長對每個缺陷做人工檢查（判對 / 部分對 / 誤判），用來量化系統品質。
             判定資料只用於評估與匯出 ground truth，<strong>不會回饋進 prompt</strong>——
             每次檢核都是獨立 zero-shot，結果可重現。
           </p>
@@ -893,8 +893,8 @@ function Section({
         {title}
       </h2>
       <div className={cn(
-        "space-y-4 text-sm leading-relaxed",
-        "[&_h3]:mt-6 [&_h3]:text-lg [&_h3]:font-semibold",
+        "space-y-5 text-base leading-relaxed",
+        "[&_h3]:mt-6 [&_h3]:text-xl [&_h3]:font-semibold",
         "[&_p]:leading-relaxed",
         "[&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1",
         "[&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:space-y-1",
@@ -919,8 +919,18 @@ function ComparisonRow({
   return (
     <tr className="border-t">
       <td className="p-2 font-medium">{dim}</td>
-      <td className="p-2 text-muted-foreground">{llm}</td>
-      <td className="p-2">{ours}</td>
+      <td className="p-2 text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <X className="h-4 w-4 shrink-0 text-rose-500" />
+          {llm}
+        </span>
+      </td>
+      <td className="p-2">
+        <span className="inline-flex items-center gap-1.5">
+          <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+          {ours}
+        </span>
+      </td>
     </tr>
   );
 }

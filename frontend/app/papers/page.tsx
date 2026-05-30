@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -173,7 +174,7 @@ export default function PapersPage() {
                     )}
                     aria-label={isSelected ? "取消選取" : "選取"}
                   >
-                    {isSelected ? "☑" : "☐"}
+                    {isSelected ? <Check className="h-4 w-4" /> : null}
                   </button>
                   <Link
                     href={`/papers/${encodeURIComponent(p.paper_id)}`}
@@ -191,7 +192,7 @@ export default function PapersPage() {
                           {/* filename 小字顯示，但若跟 title 相同就不重複（多數為舊資料 backfill 的情況） */}
                           {p.filename && p.filename !== p.title && (
                             <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
-                              📄 {p.filename}
+                              {p.filename}
                             </p>
                           )}
                           <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">

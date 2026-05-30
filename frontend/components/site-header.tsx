@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { MobileNav } from "@/components/mobile-nav";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { CURRENT_VERSION } from "@/lib/version-log";
@@ -38,7 +39,7 @@ export function SiteHeader() {
             v{CURRENT_VERSION}
           </Badge>
         </Link>
-        <nav className="ml-auto flex items-center gap-1">
+        <nav className="ml-auto hidden items-center gap-1 sm:flex">
           <Link href="/" className={buttonVariants({ variant: "ghost", size: "sm" })}>
             上傳
           </Link>
@@ -61,6 +62,9 @@ export function SiteHeader() {
             版本紀錄
           </Link>
         </nav>
+        <div className="ml-auto sm:hidden">
+          <MobileNav />
+        </div>
       </div>
     </header>
   );

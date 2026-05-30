@@ -22,9 +22,9 @@ export default async function Home() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-6 min-w-0">
+    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center px-4 py-6 sm:px-6 sm:py-8">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-stretch">
+        <div className="flex min-w-0 flex-col justify-center gap-6">
           <section className="space-y-2">
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
               上傳論文，自動找出邏輯缺陷
@@ -55,14 +55,14 @@ export default async function Home() {
           <UploadForm />
         </div>
 
-        <aside className="space-y-3 lg:sticky lg:top-20 lg:self-start">
-          <Card>
+        <aside className="min-w-0">
+          <Card className="flex h-full flex-col">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">13 條 REL 規則</CardTitle>
               <CardDescription>MECE 收斂自 51 條章節規則</CardDescription>
             </CardHeader>
-            <CardContent className="px-0 pb-3">
-              <ScrollArea className="h-[480px] px-6">
+            <CardContent className="flex-1 px-0 pb-3">
+              <ScrollArea className="h-[420px] px-6 lg:h-[calc(100vh-15rem)]">
                 <ol className="space-y-2.5">
                   {rules.map((r) => (
                     <li key={r.id} className="text-xs leading-relaxed">

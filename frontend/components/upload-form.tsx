@@ -1,5 +1,6 @@
 "use client";
 
+import { UploadIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -8,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { fetchJob, uploadPaper, type JobStatus } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const STATUS_LABEL: Record<JobStatus, string> = {
   queued: "排隊中",
@@ -43,6 +44,8 @@ export function UploadForm() {
   const [status, setStatus] = useState<JobStatus | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => () => {
@@ -114,11 +117,71 @@ export function UploadForm() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>上傳論文</CardTitle>
-        <CardDescription>支援 PDF 或純文字（中/英）</CardDescription>
+        <CardTitle className="text-xl">上傳論文</CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Dropzone — primary action, big touch target */}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => !isProcessing && inputRef.current?.click()}
+            onKeyDown={(e) => {
+              if ((e.key === "Enter" || e.key === " ") && !isProcessing) {
+                e.preventDefault();
+                inputRef.current?.click();
+              }
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (!isProcessing) setDragActive(true);
+            }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragActive(false);
+              if (isProcessing) return;
+              const f = e.dataTransfer.files?.[0];
+              if (f) setFile(f);
+            }}
+            className={cn(
+              "flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition",
+              isProcessing
+                ? "cursor-not-allowed opacity-60"
+                : "cursor-pointer hover:border-primary/50 hover:bg-muted/50",
+              dragActive
+                ? "border-primary bg-primary/5"
+                : "border-muted-foreground/25"
+            )}
+          >
+            <UploadIcon className="h-8 w-8 text-muted-foreground" />
+            {file ? (
+              <div className="min-w-0">
+                <p className="truncate font-medium">{file.name}</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {(file.size / 1024).toFixed(1)} KB · 點擊或拖放可更換
+                </p>
+              </div>
+            ) : (
+              <div>
+                <p className="font-medium">拖放檔案到此，或點擊選擇</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  支援 PDF / TXT / MD（中・英）
+                </p>
+              </div>
+            )}
+            <input
+              ref={inputRef}
+              id="file"
+              type="file"
+              accept=".pdf,.txt,.md"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              disabled={isProcessing}
+              className="hidden"
+            />
+          </div>
+
+          {/* Optional title */}
           <div className="space-y-1.5">
             <Label htmlFor="title">標題（選填）</Label>
             <Input
@@ -127,33 +190,18 @@ export function UploadForm() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               disabled={isProcessing}
+              className="h-11"
             />
             <p className="text-xs text-muted-foreground">
               通常不用填，系統會自動讀出論文標題；想覆寫再手動輸入。
             </p>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="file">檔案</Label>
-            <Input
-              id="file"
-              type="file"
-              accept=".pdf,.txt,.md"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              disabled={isProcessing}
-              required
-              className="file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-primary/10 file:px-3 file:py-1 file:text-sm file:text-primary"
-            />
-            {file && (
-              <p className="text-xs text-muted-foreground">
-                {file.name} · {(file.size / 1024).toFixed(1)} KB
-              </p>
-            )}
-          </div>
 
           <Button
             type="submit"
+            size="lg"
             disabled={!file || isProcessing}
-            className="w-full sm:w-auto"
+            className="h-12 w-full text-base"
           >
             {isProcessing ? "分析中…" : "開始分析"}
           </Button>

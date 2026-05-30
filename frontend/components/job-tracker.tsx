@@ -18,6 +18,8 @@ import { fireDoneNotification, requestNotifyPermission } from "@/lib/notify";
 const POLL_MS = 2000;
 const STORAGE_KEY = "paperchecker:activeJob";
 const DONE_TITLE = "✅ 分析完成 — 論文檢核系統";
+// Auto-dismiss the "done" pill if the user never acts on it.
+const DONE_AUTO_DISMISS_MS = 180_000; // 3 minutes
 
 export type ActiveJob = {
   jobId: string;
@@ -129,6 +131,13 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
       document.removeEventListener("visibilitychange", restore);
     };
   }, []);
+
+  // Auto-dismiss the "done" pill after a few minutes if untouched.
+  useEffect(() => {
+    if (active?.status !== "done") return;
+    const t = setTimeout(() => clearJob(), DONE_AUTO_DISMISS_MS);
+    return () => clearTimeout(t);
+  }, [active?.status, clearJob]);
 
   // Warn before closing / reloading the whole tab while processing.
   useEffect(() => {

@@ -2,9 +2,10 @@
 
 import { UploadIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { useJobTracker } from "@/components/job-tracker";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,58 +16,33 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { fetchJob, uploadPaper, type JobStatus } from "@/lib/api";
+import { uploadPaper } from "@/lib/api";
+import { STATUS_LABEL, STATUS_PROGRESS } from "@/lib/job-status";
 import { cn } from "@/lib/utils";
-
-const STATUS_LABEL: Record<JobStatus, string> = {
-  queued: "排隊中",
-  extracting: "抽取 EDU / ER / RST / FRU",
-  checking: "執行 13 條 REL 規則檢核",
-  done: "完成",
-  error: "失敗",
-};
-
-const STATUS_PROGRESS: Record<JobStatus, number> = {
-  queued: 5,
-  extracting: 40,
-  checking: 80,
-  done: 100,
-  error: 100,
-};
 
 export function UploadForm() {
   const router = useRouter();
+  const { active, startJob, isProcessing } = useJobTracker();
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [paperId, setPaperId] = useState<string | null>(null);
-  const [status, setStatus] = useState<JobStatus | null>(null);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => () => {
-    if (pollRef.current) clearInterval(pollRef.current);
-  }, []);
+  // Busy = the brief upload POST window, or an analysis already running globally.
+  const busy = submitting || isProcessing;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!file) return;
+    if (!file || busy) return;
     setSubmitting(true);
-    setError(null);
-    setStatus(null);
+    setUploadError(null);
 
     try {
       const { job_id, paper_id, cached } = await uploadPaper(file, title);
-      setJobId(job_id);
-      setPaperId(paper_id);
 
       if (cached) {
-        setStatus("done");
-        setMessage("命中快取，直接顯示之前的分析結果。");
         toast.success("命中快取", {
           description: "相同檔案已分析過，跳過重新處理",
         });
@@ -74,45 +50,16 @@ export function UploadForm() {
         return;
       }
 
-      setStatus("queued");
-      setMessage("等待後端開始處理…");
-
-      const tick = async () => {
-        try {
-          const job = await fetchJob(job_id);
-          setStatus(job.status);
-          setMessage(job.message ?? "");
-          if (job.status === "done") {
-            if (pollRef.current) clearInterval(pollRef.current);
-            toast.success("分析完成", {
-              description: `共 ${job.result?.defects.length ?? 0} 個缺陷`,
-            });
-            router.push(`/papers/${encodeURIComponent(paper_id)}`);
-          } else if (job.status === "error") {
-            if (pollRef.current) clearInterval(pollRef.current);
-            setError(job.error ?? "未知錯誤");
-            toast.error("分析失敗", { description: job.error });
-            setSubmitting(false);
-          }
-        } catch (err) {
-          if (pollRef.current) clearInterval(pollRef.current);
-          setError(err instanceof Error ? err.message : String(err));
-          setSubmitting(false);
-        }
-      };
-
-      // Poll once immediately, then on a 2s interval.
-      tick();
-      pollRef.current = setInterval(tick, 2000);
+      // Hand off to the global tracker: polling, notification and the header
+      // pill now follow the user across pages.
+      startJob(job_id, paper_id, title || file.name);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setUploadError(err instanceof Error ? err.message : String(err));
       toast.error("上傳失敗");
+    } finally {
       setSubmitting(false);
     }
   }
-
-  const progress = status ? STATUS_PROGRESS[status] : 0;
-  const isProcessing = submitting && status !== "error";
 
   return (
     <Card>
@@ -125,28 +72,28 @@ export function UploadForm() {
           <div
             role="button"
             tabIndex={0}
-            onClick={() => !isProcessing && inputRef.current?.click()}
+            onClick={() => !busy && inputRef.current?.click()}
             onKeyDown={(e) => {
-              if ((e.key === "Enter" || e.key === " ") && !isProcessing) {
+              if ((e.key === "Enter" || e.key === " ") && !busy) {
                 e.preventDefault();
                 inputRef.current?.click();
               }
             }}
             onDragOver={(e) => {
               e.preventDefault();
-              if (!isProcessing) setDragActive(true);
+              if (!busy) setDragActive(true);
             }}
             onDragLeave={() => setDragActive(false)}
             onDrop={(e) => {
               e.preventDefault();
               setDragActive(false);
-              if (isProcessing) return;
+              if (busy) return;
               const f = e.dataTransfer.files?.[0];
               if (f) setFile(f);
             }}
             className={cn(
               "flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition",
-              isProcessing
+              busy
                 ? "cursor-not-allowed opacity-60"
                 : "cursor-pointer hover:border-primary/50 hover:bg-muted/50",
               dragActive
@@ -176,7 +123,7 @@ export function UploadForm() {
               type="file"
               accept=".pdf,.txt,.md"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              disabled={isProcessing}
+              disabled={busy}
               className="hidden"
             />
           </div>
@@ -189,7 +136,7 @@ export function UploadForm() {
               placeholder="留空則自動從論文內容偵測標題"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              disabled={isProcessing}
+              disabled={busy}
               className="h-11"
             />
             <p className="text-xs text-muted-foreground">
@@ -200,44 +147,39 @@ export function UploadForm() {
           <Button
             type="submit"
             size="lg"
-            disabled={!file || isProcessing}
+            disabled={!file || busy}
             className="h-12 w-full text-base"
           >
-            {isProcessing ? "分析中…" : "開始分析"}
+            {busy ? "分析中…" : "開始分析"}
           </Button>
         </form>
 
-        {status && (
+        {isProcessing && active && (
           <div className="mt-6 space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">{STATUS_LABEL[status]}</span>
-              {status !== "done" && status !== "error" && (
-                <span className="text-muted-foreground">
-                  通常需要 1–10 分鐘，視論文長度
-                </span>
-              )}
+              <span className="font-medium">{STATUS_LABEL[active.status]}</span>
+              <span className="text-muted-foreground">
+                通常需要 1–10 分鐘，視論文長度
+              </span>
             </div>
-            <Progress value={progress} />
-            {message && (
-              <p className="text-xs text-muted-foreground">{message}</p>
+            <Progress value={STATUS_PROGRESS[active.status]} />
+            <p className="text-xs text-muted-foreground">
+              可切到其他頁或關掉分頁去做別的事 — 分析會在背景完成，完成時通知你。
+            </p>
+            {active.message && (
+              <p className="text-xs text-muted-foreground">{active.message}</p>
             )}
-            {jobId && (
-              <p className="text-xs text-muted-foreground">
-                Job: <code className="font-mono">{jobId}</code>
-                {paperId && (
-                  <>
-                    {" · "}Paper: <code className="font-mono">{paperId}</code>
-                  </>
-                )}
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground">
+              Job: <code className="font-mono">{active.jobId}</code>
+              {" · "}Paper: <code className="font-mono">{active.paperId}</code>
+            </p>
           </div>
         )}
 
-        {error && (
+        {uploadError && (
           <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
             <p className="font-semibold">錯誤</p>
-            <p className="mt-1 break-all">{error}</p>
+            <p className="mt-1 break-all">{uploadError}</p>
           </div>
         )}
       </CardContent>

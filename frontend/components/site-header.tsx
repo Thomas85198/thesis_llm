@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { GuardedLink } from "@/components/guarded-link";
+import { JobIndicator } from "@/components/job-indicator";
 import { MobileNav } from "@/components/mobile-nav";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -31,36 +33,37 @@ export function SiteHeader() {
             />
           </svg>
         </Link>
-        <Link href="/changelog" title="版本紀錄">
+        <GuardedLink href="/changelog" title="版本紀錄">
           <Badge
             variant="secondary"
             className="font-mono text-[10px] transition-colors hover:bg-accent"
           >
             v{CURRENT_VERSION}
           </Badge>
-        </Link>
+        </GuardedLink>
+        <JobIndicator />
         <nav className="ml-auto hidden items-center gap-1 sm:flex">
           <Link href="/" className={buttonVariants({ variant: "ghost", size: "sm" })}>
             上傳
           </Link>
-          <Link
+          <GuardedLink
             href="/papers"
             className={buttonVariants({ variant: "ghost", size: "sm" })}
           >
             歷史
-          </Link>
-          <Link
+          </GuardedLink>
+          <GuardedLink
             href="/stats"
             className={buttonVariants({ variant: "ghost", size: "sm" })}
           >
             規則統計
-          </Link>
-          <Link
+          </GuardedLink>
+          <GuardedLink
             href="/changelog"
             className={buttonVariants({ variant: "ghost", size: "sm" })}
           >
             版本紀錄
-          </Link>
+          </GuardedLink>
         </nav>
         <div className="ml-auto sm:hidden">
           <MobileNav />

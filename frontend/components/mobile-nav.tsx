@@ -4,6 +4,7 @@ import { MenuIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
+import { GuardedLink } from "@/components/guarded-link";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -34,16 +35,26 @@ export function MobileNav() {
           <SheetTitle>選單</SheetTitle>
         </SheetHeader>
         <nav className="flex flex-col gap-1 px-2">
-          {LINKS.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              onClick={() => setOpen(false)}
-              className="rounded-md px-3 py-2.5 text-base transition-colors hover:bg-accent"
-            >
-              {l.label}
-            </Link>
-          ))}
+          {LINKS.map((l) => {
+            const cls =
+              "rounded-md px-3 py-2.5 text-base transition-colors hover:bg-accent";
+            const close = () => setOpen(false);
+            // "/" goes to the progress view itself, so it never needs a guard.
+            return l.href === "/" ? (
+              <Link key={l.href} href={l.href} onClick={close} className={cls}>
+                {l.label}
+              </Link>
+            ) : (
+              <GuardedLink
+                key={l.href}
+                href={l.href}
+                onClick={close}
+                className={cls}
+              >
+                {l.label}
+              </GuardedLink>
+            );
+          })}
         </nav>
       </SheetContent>
     </Sheet>

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
+import { JobTrackerProvider } from "@/components/job-tracker";
 import { SiteHeader } from "@/components/site-header";
 import { Toaster } from "@/components/ui/sonner";
 import { VersionWatcher } from "@/components/version-watcher";
@@ -33,8 +34,10 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-muted/30">
-        <SiteHeader />
-        <main className="flex-1 flex flex-col">{children}</main>
+        <JobTrackerProvider>
+          <SiteHeader />
+          <main className="flex-1 flex flex-col">{children}</main>
+        </JobTrackerProvider>
         <VersionWatcher />
         <Toaster richColors position="top-center" />
       </body>

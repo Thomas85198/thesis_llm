@@ -1,0 +1,46 @@
+"use client";
+
+import { Check, RefreshCwIcon, XIcon } from "lucide-react";
+import Link from "next/link";
+
+import { useJobTracker } from "@/components/job-tracker";
+import { STATUS_PROGRESS } from "@/lib/job-status";
+
+export function JobIndicator() {
+  const { active, isProcessing, clearJob } = useJobTracker();
+  if (!active) return null;
+
+  if (isProcessing) {
+    return (
+      <Link
+        href="/"
+        title="分析進行中，點擊回到進度"
+        className="flex items-center gap-1.5 rounded-full border bg-muted/60 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+      >
+        <RefreshCwIcon className="h-3.5 w-3.5 shrink-0 animate-spin" />
+        <span>分析中</span>
+        <span className="tabular-nums">{STATUS_PROGRESS[active.status]}%</span>
+      </Link>
+    );
+  }
+
+  // Done — invite the user to view the result, with a dismiss.
+  return (
+    <span className="flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 py-1 pr-1 pl-2.5 text-xs font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+      <Link
+        href={`/papers/${encodeURIComponent(active.paperId)}`}
+        className="flex items-center gap-1.5"
+      >
+        <Check className="h-3.5 w-3.5 shrink-0" />
+        分析完成 · 查看
+      </Link>
+      <button
+        onClick={clearJob}
+        aria-label="關閉"
+        className="rounded-full p-0.5 hover:bg-emerald-100 dark:hover:bg-emerald-900"
+      >
+        <XIcon className="h-3.5 w-3.5" />
+      </button>
+    </span>
+  );
+}

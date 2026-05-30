@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 
 import { Skeleton } from "@/components/ui/skeleton";
-import type { EDU } from "@/lib/api";
 
 // Use the same pdfjs version that react-pdf bundles, served from CDN.
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -67,7 +66,9 @@ export function PdfViewer({
     return map;
   }, [highlights]);
 
-  // Scroll focused highlight into view + flash.
+  // Scroll focused highlight into view + flash. Depends on pageDims too so that
+  // when the viewer is freshly mounted (e.g. opened in a drawer) the scroll
+  // re-runs once the target page has loaded and its ref is populated.
   useEffect(() => {
     if (!focusedEduId) return;
     const target = highlights.find((h) => h.edu_id === focusedEduId);
@@ -76,7 +77,7 @@ export function PdfViewer({
     if (pageEl) {
       pageEl.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [focusedEduId, highlights]);
+  }, [focusedEduId, highlights, pageDims]);
 
   const handlePageLoad = useCallback(
     (pageIdx: number) =>

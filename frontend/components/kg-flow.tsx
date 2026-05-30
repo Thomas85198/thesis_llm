@@ -11,7 +11,8 @@ import {
 } from "@xyflow/react";
 import { ChevronRight, ExternalLink } from "lucide-react";
 import nextDynamic from "next/dynamic";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,14 +32,41 @@ import {
 } from "@/components/ui/tabs";
 import { layoutDagre } from "@/lib/kg-layout";
 import { cn } from "@/lib/utils";
-import { pdfUrl } from "@/lib/api";
+import {
+  deleteJudgment,
+  fetchJudgments,
+  pdfUrl,
+  submitJudgment,
+} from "@/lib/api";
 import type {
   AnalysisResult,
   Defect,
   EDU,
   SectionName,
   Severity,
+  Verdict,
 } from "@/lib/api";
+
+const VERDICT_OPTIONS: { value: Verdict; label: string; active: string }[] = [
+  {
+    value: "correct",
+    label: "判對",
+    active:
+      "bg-green-100 text-green-800 ring-2 ring-green-500 dark:bg-green-950 dark:text-green-200",
+  },
+  {
+    value: "partial",
+    label: "部分對",
+    active:
+      "bg-yellow-100 text-yellow-800 ring-2 ring-yellow-500 dark:bg-yellow-950 dark:text-yellow-200",
+  },
+  {
+    value: "wrong",
+    label: "誤判",
+    active:
+      "bg-red-100 text-red-800 ring-2 ring-red-500 dark:bg-red-950 dark:text-red-200",
+  },
+];
 
 const PdfViewer = nextDynamic(
   () => import("@/components/pdf-viewer").then((m) => m.PdfViewer),
@@ -779,6 +807,60 @@ function FruLayer({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [activeFns, setActiveFns] = useState<Set<string>>(new Set());
+  const [judgments, setJudgments] = useState<Map<string, Verdict>>(new Map());
+
+  // Human-as-judge verdicts, shared with the result page via the same API.
+  useEffect(() => {
+    let cancelled = false;
+    fetchJudgments(result.paper_id)
+      .then((items) => {
+        if (cancelled) return;
+        const m = new Map<string, Verdict>();
+        for (const j of items) m.set(j.defect_id, j.verdict);
+        setJudgments(m);
+      })
+      .catch(() => {
+        /* best-effort; missing judgments shouldn't block the graph */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [result.paper_id]);
+
+  const handleJudge = useCallback(
+    async (defectId: string, ruleId: string, verdict: Verdict | null) => {
+      setJudgments((prev) => {
+        const next = new Map(prev);
+        if (verdict === null) next.delete(defectId);
+        else next.set(defectId, verdict);
+        return next;
+      });
+      try {
+        if (verdict === null) {
+          await deleteJudgment(result.paper_id, defectId);
+        } else {
+          await submitJudgment(result.paper_id, {
+            defect_id: defectId,
+            rule_id: ruleId,
+            verdict,
+          });
+        }
+      } catch (err) {
+        toast.error("儲存判定失敗", {
+          description: err instanceof Error ? err.message : String(err),
+        });
+        try {
+          const items = await fetchJudgments(result.paper_id);
+          const m = new Map<string, Verdict>();
+          for (const j of items) m.set(j.defect_id, j.verdict);
+          setJudgments(m);
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    [result.paper_id]
+  );
 
   const filterActive = activeFns.size > 0;
   const matchesFn = (fn: string) => !filterActive || activeFns.has(fn);
@@ -1030,6 +1112,33 @@ function FruLayer({
                           {d.suggestion}
                         </p>
                       )}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2">
+                        {VERDICT_OPTIONS.map((opt) => {
+                          const isActive = judgments.get(d.id) === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() =>
+                                handleJudge(
+                                  d.id,
+                                  d.rule_id,
+                                  isActive ? null : opt.value
+                                )
+                              }
+                              title={isActive ? "點擊取消" : `標為 ${opt.label}`}
+                              className={cn(
+                                "rounded px-2 py-0.5 text-[11px] font-medium transition-all hover:opacity-90",
+                                isActive
+                                  ? opt.active
+                                  : "bg-muted text-muted-foreground"
+                              )}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </li>
                   ))}
                 </ul>

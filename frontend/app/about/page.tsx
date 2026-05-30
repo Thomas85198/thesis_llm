@@ -23,7 +23,7 @@ const SECTIONS = [
 
 export default function AboutPage() {
   return (
-    <div className="mx-auto w-full max-w-7xl gap-8 px-4 py-6 sm:px-6 lg:flex">
+    <div className="mx-auto w-full max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:flex">
       {/* Sticky TOC */}
       <aside className="lg:sticky lg:top-20 lg:h-[calc(100vh-6rem)] lg:w-56 lg:shrink-0 lg:overflow-y-auto">
         <nav className="mb-6 rounded-md border bg-card p-3 lg:mb-0">
@@ -51,7 +51,7 @@ export default function AboutPage() {
           <Badge variant="secondary" className="font-mono">
             系統說明 / Demo Report
           </Badge>
-          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
             論文檢核系統
           </h1>
           <p className="text-lg text-muted-foreground">

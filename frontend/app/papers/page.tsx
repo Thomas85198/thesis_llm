@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -90,32 +91,28 @@ export default function PapersPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            分析歷史
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            所有已分析過的論文（持久化於 SQLite）
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {selected.size > 0 && (
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleBulkDelete}
-              disabled={deleting}
-            >
-              刪除選取 ({selected.size})
-            </Button>
-          )}
-          <Link href="/" className={buttonVariants()}>
-            上傳新論文
-          </Link>
-        </div>
-      </div>
+    <div className="mx-auto w-full max-w-4xl flex-1 px-4 py-8 sm:px-6">
+      <PageHeader
+        title="分析歷史"
+        description="所有已分析過的論文（持久化於 SQLite）"
+        actions={
+          <div className="flex items-center gap-2">
+            {selected.size > 0 && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleBulkDelete}
+                disabled={deleting}
+              >
+                刪除選取 ({selected.size})
+              </Button>
+            )}
+            <Link href="/" className={buttonVariants()}>
+              上傳新論文
+            </Link>
+          </div>
+        }
+      />
 
       {error ? (
         <Card className="border-destructive/40 bg-destructive/5">

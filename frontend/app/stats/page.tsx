@@ -4,6 +4,7 @@ import { AlertTriangleIcon, DownloadIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,7 +12,9 @@ import {
   fetchEvalSummary,
   fetchJudgmentExport,
   fetchRuleStats,
+  fetchRules,
   type EvalSummary,
+  type Rule,
   type RulesStats,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -19,6 +22,7 @@ import { cn } from "@/lib/utils";
 export default function StatsPage() {
   const [data, setData] = useState<RulesStats | null>(null);
   const [evalData, setEvalData] = useState<EvalSummary | null>(null);
+  const [rules, setRules] = useState<Rule[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,6 +35,11 @@ export default function StatsPage() {
       .then(setEvalData)
       .catch(() => {
         // Eval summary 是次要資料，失敗不擋主頁
+      });
+    fetchRules()
+      .then(setRules)
+      .catch(() => {
+        // 規則參考清單失敗不擋主頁
       });
   }, []);
 
@@ -82,24 +91,22 @@ export default function StatsPage() {
   const overallPrecision = computeOverallPrecision(data.items);
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 sm:px-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          <h1 className="text-2xl font-semibold">規則統計 / 評估</h1>
-          <p className="text-sm text-muted-foreground">
-            13 條 REL 規則在所有已分析論文上的命中分布，與人工判定 precision。
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleExportJudgments}
-          disabled={totalJudged === 0}
-        >
-          <DownloadIcon className="h-4 w-4" />
-          下載判定 JSON（{totalJudged} 筆）
-        </Button>
-      </header>
+    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 sm:px-6">
+      <PageHeader
+        title="規則統計 / 評估"
+        description="13 條 REL 規則在所有已分析論文上的命中分布，與人工判定 precision。"
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportJudgments}
+            disabled={totalJudged === 0}
+          >
+            <DownloadIcon className="h-4 w-4" />
+            下載判定 JSON（{totalJudged} 筆）
+          </Button>
+        }
+      />
 
       {/* Top-level KPIs */}
       <div className="grid gap-3 sm:grid-cols-4">
@@ -360,6 +367,30 @@ export default function StatsPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="rounded-md border bg-card">
+        <div className="border-b px-4 py-3">
+          <h2 className="text-base font-semibold">13 條 REL 規則</h2>
+          <p className="text-xs text-muted-foreground">
+            MECE 收斂自 51 條章節規則
+          </p>
+        </div>
+        <ol className="grid gap-x-6 gap-y-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
+          {rules.map((r) => (
+            <li key={r.id} className="text-xs leading-relaxed">
+              <div className="flex items-center gap-1.5">
+                <Badge variant="outline" className="font-mono text-[10px]">
+                  {r.id}
+                </Badge>
+                <span className="font-semibold">{r.name}</span>
+              </div>
+              <p className="mt-0.5 text-muted-foreground">
+                {r.description.split("\n")[0]}
+              </p>
+            </li>
+          ))}
+        </ol>
       </div>
     </div>
   );

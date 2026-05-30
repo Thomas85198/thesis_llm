@@ -30,7 +30,7 @@ export default function ChangelogPage() {
           </Badge>
           <Badge className="font-mono">v{CURRENT_VERSION}</Badge>
         </div>
-        <h1 className="text-3xl font-bold tracking-tight">版本紀錄</h1>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">版本紀錄</h1>
         <p className="text-sm leading-relaxed text-muted-foreground">
           記錄每次改版的功能、修復與調整。版本號採用三碼語意化版本（
           <span className="font-mono">MAJOR.MINOR.PATCH</span>）。

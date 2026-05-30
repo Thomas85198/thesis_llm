@@ -46,6 +46,9 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
   const router = useRouter();
   const [active, setActive] = useState<ActiveJob | null>(null);
   const origTitleRef = useRef<string | null>(null);
+  // Guards against firing the completion toast/notification more than once for
+  // the same job (a stray poll tick could otherwise re-trigger it).
+  const doneNotifiedRef = useRef<string | null>(null);
 
   const processing = isProcessingStatus(active?.status);
 
@@ -72,6 +75,7 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
 
   const startJob = useCallback(
     (jobId: string, paperId: string, title: string) => {
+      doneNotifiedRef.current = null;
       setActive({
         jobId,
         paperId,
@@ -150,7 +154,10 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
         const job = await fetchJob(jobId);
         if (cancelled) return;
         if (job.status === "done") {
-          markDone(paperId, title, job.result?.defects.length ?? null);
+          if (doneNotifiedRef.current !== jobId) {
+            doneNotifiedRef.current = jobId;
+            markDone(paperId, title, job.result?.defects.length ?? null);
+          }
         } else if (job.status === "error") {
           toast.error("分析失敗", { description: job.error });
           setActive(null);
@@ -167,7 +174,10 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
         if (String(e).includes("404")) {
           try {
             await fetchPaperResult(paperId);
-            if (!cancelled) markDone(paperId, title, null);
+            if (!cancelled && doneNotifiedRef.current !== jobId) {
+              doneNotifiedRef.current = jobId;
+              markDone(paperId, title, null);
+            }
           } catch {
             if (!cancelled) {
               toast("先前的分析已中斷", {
@@ -195,7 +205,7 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
       document.removeEventListener("visibilitychange", onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active?.jobId, markDone]);
+  }, [active?.jobId, processing, markDone]);
 
   return (
     <JobTrackerContext.Provider

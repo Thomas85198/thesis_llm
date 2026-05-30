@@ -1,8 +1,10 @@
 "use client";
 
+import { DownloadIcon, FileWarningIcon, RefreshCwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // Use the same pdfjs version that react-pdf bundles, served from CDN.
@@ -38,6 +40,8 @@ export function PdfViewer({
 }: Props) {
   const [numPages, setNumPages] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Bumped to force react-pdf to remount + refetch when the user retries.
+  const [reloadKey, setReloadKey] = useState(0);
   // page index → natural width/height (PDF points)
   const [pageDims, setPageDims] = useState<Record<number, { w: number; h: number }>>({});
   const containerRef = useRef<HTMLDivElement>(null);
@@ -100,11 +104,45 @@ export function PdfViewer({
       className="h-full w-full overflow-y-auto rounded-md border bg-muted/40"
     >
       {loadError ? (
-        <div className="flex h-full items-center justify-center p-4 text-sm text-destructive">
-          {loadError}
+        <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+          <FileWarningIcon className="h-8 w-8 text-muted-foreground" />
+          <div>
+            <p className="text-sm font-medium">無法顯示 PDF 預覽</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              可能是以純文字（TXT / MD）上傳、檔案毀損，或載入時後端正忙。
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setLoadError(null);
+                setNumPages(0);
+                setPageDims({});
+                setReloadKey((k) => k + 1);
+              }}
+            >
+              <RefreshCwIcon className="h-4 w-4" />
+              重新載入
+            </Button>
+            <a
+              href={pdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
+            >
+              <DownloadIcon className="h-4 w-4" />
+              下載原始檔
+            </a>
+          </div>
+          <p className="max-w-md break-all text-[10px] text-muted-foreground/70">
+            {loadError}
+          </p>
         </div>
       ) : (
         <Document
+          key={reloadKey}
           file={pdfUrl}
           onLoadSuccess={({ numPages: n }) => setNumPages(n)}
           onLoadError={(e) => setLoadError(e.message)}

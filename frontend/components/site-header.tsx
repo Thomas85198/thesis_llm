@@ -12,6 +12,26 @@ export function SiteHeader() {
           href="/"
           className="flex items-center gap-2 font-semibold tracking-tight"
         >
+          <svg
+            viewBox="0 0 32 32"
+            className="h-6 w-6 shrink-0"
+            fill="none"
+            aria-hidden="true"
+          >
+            <rect width="32" height="32" rx="7" fill="#4F46E5" />
+            <path
+              d="M12 6H17L22 11V23A2 2 0 0 1 20 25H12A2 2 0 0 1 10 23V8A2 2 0 0 1 12 6Z"
+              fill="#FFFFFF"
+            />
+            <path d="M17 6L22 11H17V6Z" fill="#C7D2FE" />
+            <path
+              d="M13.2 16.9L15.7 19.4L20.2 14.2"
+              stroke="#4F46E5"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
           <span className="text-base sm:text-lg">論文檢核系統</span>
         </Link>
         <Link href="/changelog" title="版本紀錄">

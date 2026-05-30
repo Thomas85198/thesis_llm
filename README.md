@@ -1,4 +1,4 @@
-# 論文檢核系統 v3
+# 論文檢核系統
 
 實驗室 thesis checker — 上傳論文 → 建 Knowledge Graph → 用 13 條 REL 規則檢核 → 輸出邏輯缺陷與修改建議。
 

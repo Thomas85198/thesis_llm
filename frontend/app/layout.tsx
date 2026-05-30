@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "論文檢核系統 v3",
+  title: "論文檢核系統",
   description: "EDU → ER → RST/FRU → Neo4j KG → 13 條 REL 規則檢核",
 };
 

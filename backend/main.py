@@ -20,7 +20,7 @@ load_dotenv()
 
 from app.routes import router  # noqa: E402
 
-app = FastAPI(title="Thesis Checker (v3)")
+app = FastAPI(title="Thesis Checker")
 
 CORS_ORIGIN_REGEX = os.getenv(
     "CORS_ORIGIN_REGEX",

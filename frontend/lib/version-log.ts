@@ -38,6 +38,31 @@ export const CHANGE_TYPE_META: Record<
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "3.6.0",
+    date: "2026-05-30",
+    title: "知識圖譜頁大改版：章節分組卡片、缺陷連動、原文就地定位",
+    summary:
+      "Entity 與 FRU 兩層從力導向圖改為依章節分組的卡片視圖，點選可在右側焦點面板看細節；焦點面板裡的任一原始句子都能就地開右側抽屜跳到 PDF 對應位置並 highlight，不離開圖譜頁。同步移除介面殘留的「v3」字樣、換上簡約的新 app icon。",
+    changes: [
+      {
+        type: "feat",
+        text: "Entity 層：力導向圖改為依章節（Abstract→…→未分類）分組的可收合卡片並支援型別篩選；點實體在焦點面板顯示 1-hop 關係小圖（incoming｜實體｜outgoing）與證據句。無關係的實體以名稱比對 EDU 全文補上代表章節（未分類由 83→5）。",
+      },
+      {
+        type: "feat",
+        text: "FRU 層：序列流程圖改為依章節分組卡片 + function 篩選；點 FRU 顯示 summary、涵蓋的 EDU 原文、以及涉及此段落的缺陷（以 fru.edu_ids ∩ defect.evidence_edu_ids 連動）。",
+      },
+      {
+        type: "feat",
+        text: "原文就地定位：焦點面板每個原始句子旁新增定位鈕，點擊在同頁右側寬抽屜內嵌 PDF、自動捲到該句所在頁並 highlight，不再跳離圖譜頁。",
+      },
+      {
+        type: "chore",
+        text: "移除介面（分頁標題 / about / README / 後端 FastAPI title）殘留的「v3」字樣，新增簡約的「文件＋勾選」app icon 並用於 header。",
+      },
+    ],
+  },
+  {
     version: "3.5.0",
     date: "2026-05-30",
     title: "移除 Phase 2 few-shot 回饋迴路，改為純人工評估",

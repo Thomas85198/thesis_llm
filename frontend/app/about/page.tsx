@@ -52,7 +52,7 @@ export default function AboutPage() {
             系統說明 / Demo Report
           </Badge>
           <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            論文檢核系統 v3
+            論文檢核系統
           </h1>
           <p className="text-lg text-muted-foreground">
             用 Knowledge Graph + LLM 自動找學術論文的邏輯結構性缺陷
@@ -863,7 +863,7 @@ export default function AboutPage() {
 
         {/* Footer */}
         <footer className="border-t pt-6 text-center text-xs text-muted-foreground">
-          論文檢核系統 v3 · 系統說明文件 · 詳細設計請見{" "}
+          論文檢核系統 · 系統說明文件 · 詳細設計請見{" "}
           <a
             href="https://github.com/anthropics/claude-code"
             className="text-primary hover:underline"

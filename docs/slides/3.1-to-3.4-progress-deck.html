@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>3.1.0 → 3.4.1 進度投影片素材</title>
+<style>
+@page { size: A4; margin: 18mm 16mm; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body {
+  font-family: "PingFang TC", "PingFang HK", "Heiti TC", "Hiragino Sans GB",
+               "Arial Unicode MS", sans-serif;
+  font-size: 11pt; line-height: 1.55; color: #222; max-width: 100%;
+  margin: 0;
+}
+h1 { font-size: 22pt; border-bottom: 3px solid #337ab7; padding-bottom: 6px; margin-top: 18px;
+     page-break-before: auto; }
+h2 { font-size: 16pt; color: #337ab7; border-bottom: 1px solid #ddd;
+     padding-bottom: 4px; margin-top: 24px; page-break-after: avoid; }
+h3 { font-size: 13pt; color: #444; margin-top: 16px; page-break-after: avoid; }
+h4 { font-size: 11.5pt; color: #555; margin-top: 12px; page-break-after: avoid; }
+p, li { font-size: 10.5pt; }
+code, pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 9.5pt; }
+pre { background: #f4f6f8; padding: 10px 12px; border-radius: 4px; overflow-x: auto;
+      page-break-inside: avoid; }
+code { background: #f1f3f5; padding: 1px 4px; border-radius: 3px; }
+pre code { background: transparent; padding: 0; }
+table { border-collapse: collapse; margin: 10px 0; width: 100%; font-size: 9.8pt;
+        page-break-inside: avoid; }
+th, td { border: 1px solid #ccc; padding: 5px 8px; text-align: left; vertical-align: top; }
+th { background: #eaeff4; font-weight: 600; }
+tr:nth-child(even) td { background: #fafbfc; }
+blockquote { border-left: 4px solid #5bc0de; background: #f4faff; padding: 8px 14px;
+             margin: 10px 0; color: #355; }
+img { max-width: 100%; height: auto; display: block; margin: 12px auto;
+      page-break-inside: avoid; }
+hr { border: 0; border-top: 1px solid #ddd; margin: 18px 0; }
+a { color: #337ab7; text-decoration: none; }
+ul, ol { padding-left: 22px; }
+.section { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+<h1 id="v3-310-341">論文檢核系統 v3 — 進度投影片素材（3.1.0 之後 → 3.4.1）</h1>
+<blockquote>
+<p><strong>用途</strong>：給你做投影片的「詳細素材庫」。資訊刻意寫滿，你自己抓重點摘要即可。
+<strong>涵蓋期間</strong>：上次報告（3.1.0，2026-05-20）之後的所有工作 → 至 2026-05-25。
+<strong>模型</strong>：gpt-5.4 / gpt-5.4-mini（temperature=0）。<strong>部署機台</strong>：<code>140.115.54.62:8083</code>（WIDM 實驗室）。
+<strong>圖檔</strong>：本檔同層 <code>figures/</code>，可直接拖進投影片。</p>
+</blockquote>
+<hr />
+<h2 id="0">0. 一頁總覽（電梯簡報）</h2>
+<p>這一期做了四類事：</p>
+<table>
+<thead>
+<tr>
+<th>類別</th>
+<th>版本</th>
+<th>一句話</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🚀 效能大改</td>
+<td><strong>3.3.0</strong></td>
+<td>分析流程<strong>平行化 + 規則瘦身</strong>：整篇從約 9 分鐘降到約 2 分鐘、rule_check token −43~49%、成本下降，<strong>且用 4 篇論文的固定圖譜 A/B 證明判定品質沒退步</strong>。</td>
+</tr>
+<tr>
+<td>✨ 體驗功能</td>
+<td><strong>3.2.0 / 3.4.0</strong></td>
+<td>3.2.0 新版自動偵測更新橫幅；3.4.0 上傳免填標題（LLM 自動讀論文標題）。</td>
+</tr>
+<tr>
+<td>🐞 精修</td>
+<td><strong>3.4.1</strong>（待發）</td>
+<td>無法定位的缺陷不再給「在 PDF 中查看」假按鈕；REL-04/REL-12 統一走跨章節判定，定位率 100%。</td>
+</tr>
+<tr>
+<td>🛠 維運</td>
+<td>—</td>
+<td>部署機台從 <code>.48/.58</code> 遷到公網直連的 <code>.62</code>；建立版本紀錄頁與語意化版本規範。</td>
+</tr>
+</tbody>
+</table>
+<p><strong>對論文最有價值的一點</strong>：在驗證效能改動的過程中，量化證實了「<strong>神經抽取層 run-to-run 不可重現</strong>」這個方法論事實，並據此設計出「<strong>固定圖譜 A/B + 雜訊地板</strong>」這套不需 ground truth 也能證明「無退步」的評估法。</p>
+<hr />
+<h2 id="1">1. 版本時間軸</h2>
+<pre><code>3.0.0  2026-05-09  系統基線：KG + 13 條 REL 規則 + Human-as-judge
+3.1.0  2026-05-20  PDF OCR 容錯 + 版本紀錄頁          ← 上次報告到這
+─────────────────────────────────────────────────────  本期起點
+3.2.0  2026-05-20  新版自動偵測 + 更新橫幅
+3.3.0  2026-05-25  ★ 平行化 + 規則瘦身（效能大改 + A/B 驗證）
+3.4.0  2026-05-25  論文標題自動偵測
+3.4.1  （待發）     無定位缺陷修正 + REL-04/12 跨章節統一
+</code></pre>
+<p>語意化版本規範（本期建立，寫在 <code>frontend/lib/version-log.ts</code>）：
+- <strong>MAJOR</strong> — 架構性破壞變更（換 KG schema、改 API 合約）
+- <strong>MINOR</strong> — 新增向後相容功能（OCR 容錯、標題偵測）
+- <strong>PATCH</strong> — bug 修復 / 不改對外行為（偵測閾值、文案、定位修正）</p>
+<hr />
+<h2 id="2">2. 效能大改（一）：分析流程平行化</h2>
+<h3 id="_1">為什麼要改</h3>
+<ul>
+<li>原本整篇分析是<strong>完全序列</strong>：每個章節段依序做 EDU→ER→RST/FRU 三次 LLM 抽取，再依序跑 13 條規則檢核。</li>
+<li>一篇 20–30 頁論文要 <strong>5–9 分鐘</strong>，使用者體驗差，且每次 demo 都要等。</li>
+</ul>
+<h3 id="_2">怎麼改</h3>
+<ul>
+<li>用 <code>ThreadPoolExecutor</code>，環境變數 <code>OPENAI_MAX_WORKERS</code>（預設 <strong>6</strong>，設 <code>1</code> 強制回序列）。</li>
+<li>兩處平行：<strong>① 章節抽取</strong>（各章節段同時送）、<strong>② 13 條規則檢核</strong>（同時送）。</li>
+<li><code>pool.map</code> <strong>保序</strong>，結果順序與序列版一致 → 不影響可重現性宣稱。</li>
+<li>配套：<code>client()</code> / <code>driver()</code> 改 <strong>thread-safe lazy singleton</strong>（避免併發初始化 race）。</li>
+</ul>
+<h3 id="worker">數據：同篇控制實驗（唯一變數＝worker 數）</h3>
+<p><img alt="平行化加速" src="figures/fig2_parallel_speedup.png" /></p>
+<table>
+<thead>
+<tr>
+<th>設定</th>
+<th>抽取耗時（build_paper_graph）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>序列 <code>MAX_WORKERS=1</code></td>
+<td>~225s</td>
+</tr>
+<tr>
+<td>平行 <code>MAX_WORKERS=6</code></td>
+<td>~60s</td>
+</tr>
+<tr>
+<td><strong>加速</strong></td>
+<td><strong>約 3.4×</strong></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>這是<strong>乾淨對照</strong>：同一篇、同程式碼、同輸入 spans，只切 worker 數。整篇「9 分→2 分」還疊加了瘦身與論文大小因素（見第 4 節），不能全歸功平行化；純並發效果就是這 3.4×。</p>
+</blockquote>
+<hr />
+<h2 id="3-slimming">3. 效能大改（二）：規則判定瘦身（slimming）</h2>
+<h3 id="_3">為什麼要改</h3>
+<ul>
+<li>13 條規則每條都對「Cypher 撈出的候選」逐一請 LLM 判定（verdict）。</li>
+<li>舊（肥）schema 要求 LLM <strong>每個候選都填滿 8 個欄位</strong>（defect_type / severity / confidence / evidence_edu_ids / description / suggestion …），<strong>即使該候選根本沒違規</strong>。</li>
+<li>結果：<strong>候選多、違規少</strong>的規則（如 REL-06 一篇 63–82 個候選只 4–6 違規）產生海量「沒違規卻仍寫一堆說明」的廢棄 output token。</li>
+</ul>
+<h3 id="_4">怎麼改</h3>
+<ul>
+<li>verdict schema 的 <code>required</code> 從「全部 8 欄」縮成只剩 <strong><code>[candidate_index, violates]</code></strong>。</li>
+<li>細節欄位<strong>只在 <code>violates=true</code> 時才填</strong>。非違規候選只回 <code>{index, violates:false}</code>，幾乎零 output。</li>
+</ul>
+<h3 id="rule_check-schemaneurosymbolic-3">數據：同篇同固定候選，只切 rule_check schema（NeuroSymbolic，各跑 3 次）</h3>
+<p><img alt="逐規則 token 節省" src="figures/fig4_slim_token_per_rule.png" /></p>
+<table>
+<thead>
+<tr>
+<th>規則</th>
+<th>候選</th>
+<th>肥 token</th>
+<th>瘦 token</th>
+<th>變化</th>
+<th>肥秒</th>
+<th>瘦秒</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>REL-08</td>
+<td>1</td>
+<td>357</td>
+<td>31</td>
+<td><strong>−91%</strong></td>
+<td>8.0</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>REL-02</td>
+<td>32</td>
+<td>1,330</td>
+<td>341</td>
+<td><strong>−74%</strong></td>
+<td>14.8</td>
+<td>4.2</td>
+</tr>
+<tr>
+<td>REL-13</td>
+<td>35</td>
+<td>1,211</td>
+<td>371</td>
+<td><strong>−69%</strong></td>
+<td>12.5</td>
+<td>4.7</td>
+</tr>
+<tr>
+<td>REL-06</td>
+<td>82</td>
+<td>3,814</td>
+<td>1,967</td>
+<td><strong>−48%</strong></td>
+<td>42.5</td>
+<td>24.8</td>
+</tr>
+<tr>
+<td>REL-01</td>
+<td>25</td>
+<td>2,928</td>
+<td>2,478</td>
+<td>−15%</td>
+<td>37.9</td>
+<td>34.7</td>
+</tr>
+<tr>
+<td>REL-12 ⚠️</td>
+<td>1</td>
+<td>456</td>
+<td>3,614</td>
+<td><strong>異常</strong></td>
+<td>7.9</td>
+<td>41.5</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="rule_check 總節省" src="figures/fig4b_slim_totals.png" /></p>
+<ul>
+<li><strong>規律</strong>：候選多、違規少的規則<strong>大勝</strong>（REL-02 −74%、REL-13 −69%、REL-06 −48%）；違規率高的規則（REL-01，25 候選 15 違規）持平；單候選是雜訊。</li>
+<li><strong>剔除 REL-12 異常後</strong>：rule_check <strong>token −43%、時間 −35%</strong>（與另一篇 Forensic 量到的 −49% 一致）。</li>
+</ul>
+<h3 id="_5">⚠️ 附帶發現的可靠性風險（誠實揭露）</h3>
+<ul>
+<li><strong>REL-12</strong>（單一候選）瘦版 3 次有 2 次發生 LLM <strong>退化生成</strong>：output 爆到 3,614 token / 41.5s（肥版僅 456 / 7.9s）。</li>
+<li>推測：瘦 schema 欄位變寬鬆，偶爾讓模型在某些候選「跑飛」。</li>
+<li>目前僅此 1 例，<strong>已列入待觀察</strong>（多跑看是否常見）；不影響「平均省 token」結論，但要記在風險清單。</li>
+</ul>
+<hr />
+<h2 id="4">4. 準確度驗證（本期方法論核心）</h2>
+<blockquote>
+<p><strong>核心命題</strong>：效能改了，<strong>判定品質有沒有掉？</strong> 沒時間做人工標註（ground truth），如何證明？</p>
+</blockquote>
+<h3 id="41-naive">4.1 先踩到的坑：naive 重跑「不能比」</h3>
+<p>破 cache 把同一篇用瘦身版重跑，缺陷數從基準的 <strong>18 → 31</strong>。看起來像暴增，但：</p>
+<table>
+<thead>
+<tr>
+<th>指標</th>
+<th>肥基準</th>
+<th>瘦重跑</th>
+<th>變化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>缺陷總數</td>
+<td>18</td>
+<td>31</td>
+<td>⚠️ 不可直接比</td>
+</tr>
+<tr>
+<td>總 output</td>
+<td>49,351</td>
+<td>39,645</td>
+<td>−20%</td>
+</tr>
+<tr>
+<td>rule_check output</td>
+<td>16,887</td>
+<td>8,633</td>
+<td><strong>−49%</strong></td>
+</tr>
+<tr>
+<td>成本</td>
+<td>$0.73</td>
+<td>$0.61</td>
+<td>−16%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>為何不能比</strong>：各規則的<strong>候選數本身就變了</strong>（REL-03 0→16、REL-01 13→24）。候選是 Cypher 從 KG 撈的 → 候選變＝上游抽出的 KG 不同 → 這是<strong>抽取層的非決定性</strong>，發生在規則之前，與瘦身無關。</p>
+<h3 id="42">4.2 量化「雜訊地板」：證明平行化無辜 + 抽取層不可重現</h3>
+<p>同一篇、同程式碼、同輸入，只切 worker 數，跑 4 次（2 平行 + 2 序列）：</p>
+<p><img alt="雜訊地板" src="figures/fig3_noise_floor.png" /></p>
+<table>
+<thead>
+<tr>
+<th>run</th>
+<th>設定</th>
+<th>EDU</th>
+<th>Entity</th>
+<th>ER</th>
+<th>FRU</th>
+<th>RST</th>
+<th>耗時</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>par1</td>
+<td>平行</td>
+<td>572</td>
+<td>172</td>
+<td>60</td>
+<td>174</td>
+<td>149</td>
+<td>67s</td>
+</tr>
+<tr>
+<td>par2</td>
+<td>平行</td>
+<td>570</td>
+<td>169</td>
+<td>74</td>
+<td>120</td>
+<td>139</td>
+<td>59s</td>
+</tr>
+<tr>
+<td>seq1</td>
+<td>序列</td>
+<td>564</td>
+<td>158</td>
+<td>70</td>
+<td>143</td>
+<td>142</td>
+<td>222s</td>
+</tr>
+<tr>
+<td>seq2</td>
+<td>序列</td>
+<td>577</td>
+<td>163</td>
+<td>66</td>
+<td>155</td>
+<td>141</td>
+<td>230s</td>
+</tr>
+</tbody>
+</table>
+<p><strong>關鍵讀法</strong>：
+- 同為平行的 par1 vs par2，光 FRU 就差 <strong>174↔120（45%）</strong>，比「平行 vs 序列」的均值差（147 vs 149）還大。
+- seq 的每個值都落在 par 的範圍內 → <strong>變異來自 LLM 抽取本身，不是平行化</strong>。
+- <strong>平行化無辜</strong>（只改速度不改內容），且 <strong>FRU 最不穩</strong>（同條件 ±20%+），這正是 4.1 候選暴動的根因。
+- 結論：<strong>任何準確度量測都不能單跑</strong>，必須多跑取分布（老師要的「鬍鬚圖 / boxplot」）。</p>
+<h3 id="43-ab-schema">4.3 主驗證：固定圖譜 A/B（隔離 schema 這個唯一變數）</h3>
+<p><strong>方法</strong>：取一張已建好的 KG（<strong>凍結候選</strong>當常數）→ 只切 verdict schema（肥/瘦）→ 對<strong>同一批候選</strong>各跑 5 次 → 逐候選比 <code>violates</code>。
+抽取/平行化的雜訊被完全排除，唯一變數＝schema。
+- <strong>within-fat</strong>（肥自己跑 5 次的兩兩一致率）＝ <strong>雜訊天花板</strong>。
+- <strong>fat-vs-slim ≈ within-fat</strong> → 瘦身跟「肥再跑一次」分不出來 → <strong>等價</strong>。</p>
+<p><img alt="固定圖譜 A/B" src="figures/fig5_ab_agreement.png" /></p>
+<table>
+<thead>
+<tr>
+<th>論文</th>
+<th>候選</th>
+<th>within-fat（雜訊天花板）</th>
+<th><strong>fat-vs-slim</strong></th>
+<th>Cohen's κ</th>
+<th>違規 肥→瘦</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Forensic</td>
+<td>155</td>
+<td>97.4%</td>
+<td><strong>96.6%</strong></td>
+<td>0.913</td>
+<td>≈</td>
+</tr>
+<tr>
+<td>Vaswani-Transformer (2017)</td>
+<td>75</td>
+<td>97.9%</td>
+<td><strong>98.3%</strong></td>
+<td>0.793</td>
+<td>2→3</td>
+</tr>
+<tr>
+<td>Li-Browser-Agent-RAG (2025)</td>
+<td>113</td>
+<td>95.6%</td>
+<td><strong>95.9%</strong></td>
+<td>0.732</td>
+<td>10→6</td>
+</tr>
+<tr>
+<td>NeuroSymbolicAI4Law</td>
+<td>181</td>
+<td>96.0%</td>
+<td><strong>95.5%</strong></td>
+<td>0.862</td>
+<td>21→20</td>
+</tr>
+<tr>
+<td><strong>合計</strong></td>
+<td><strong>524</strong></td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><strong>判讀</strong>：
+- 四篇全部 <strong>fat-vs-slim ≈ within-fat（差距 ±0.8% 內）</strong> → 瘦身偏離肥版的程度 = 肥版自己重跑偏離自己的程度。<strong>在雜訊內無法區分 → 瘦 ≡ 肥。</strong>
+- 違規數<strong>沒有系統性方向</strong>（Vaswani 瘦略多、Li-RAG 略少、NeuroSymbolic 幾乎同）→ 偏離是雜訊，不是系統性退步。
+- κ 在違規稀少的篇較低（0.73–0.79）是 <strong>κ 對低盛行率的已知敏感性</strong>（高一致率但低 κ），非瘦身問題。</p>
+<h3 id="44-ground-truth">4.4 為什麼「瘦 ≡ 肥」就足夠（不需 ground truth）</h3>
+<blockquote>
+<p><strong>前提</strong>：老師已<strong>口頭認可肥（舊）版</strong>「還不錯」。
+本驗證證的是 <strong>「瘦 ≡ 肥」（no regression）</strong> → 瘦版<strong>繼承肥版的認可</strong> → 不需重新做 ground truth 就能上線。</p>
+</blockquote>
+<h3 id="45">4.5 誠實但書（一定要寫進論文的限制）</h3>
+<ol>
+<li>本報告證的是 <strong>「瘦 ≡ 肥（無退步）」，不是「絕對準確（真不真實）」</strong>。後者需 ground truth（perturbation 注入已知缺陷量 recall、或人工標）—— <strong>另一條獨立工作線</strong>。</li>
+<li><strong>抽取層不可重現</strong>：可重現性只對符號規則層成立，神經抽取層不成立 → 對論文的 ablation/evaluation 是方法論風險，評估時要多跑取分布或固定中間產物（KG）。</li>
+<li>A/B 只比了「<strong>違規決策 + 哪個候選</strong>」，<strong>未比</strong> description/suggestion 的<strong>文字內容</strong>（自由生成，需語意相似度另測）。</li>
+</ol>
+<hr />
+<h2 id="5-token">5. 各篇處理量側寫（步驟結構 + token 分佈）</h2>
+<p>四篇走<strong>同一條 pipeline</strong>，差別只在「步驟<strong>數量</strong>」隨論文結構放大（章節段數、候選規則數）。</p>
+<blockquote>
+<p>呼叫數 = 3×章節段 + 有候選規則數 + 1（cross-section）。例：Forensic 3×9+11+1 = 39。</p>
+</blockquote>
+<p><img alt="各階段 token 堆疊" src="figures/fig7_stage_token_stack.png" /></p>
+<table>
+<thead>
+<tr>
+<th>階段</th>
+<th>Forensic（瘦）</th>
+<th>Vaswani（肥）</th>
+<th>Li-RAG（肥）</th>
+<th>NeuroSymbolic（肥）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>edu</td>
+<td>11,293</td>
+<td>8,437</td>
+<td>20,737</td>
+<td>23,310</td>
+</tr>
+<tr>
+<td>er</td>
+<td>9,015</td>
+<td>5,553</td>
+<td>7,818</td>
+<td>5,712</td>
+</tr>
+<tr>
+<td>rst_fru</td>
+<td>10,143</td>
+<td>5,222</td>
+<td>10,510</td>
+<td>13,171</td>
+</tr>
+<tr>
+<td><strong>rule_check</strong></td>
+<td><strong>8,633</strong></td>
+<td>9,638</td>
+<td>15,978</td>
+<td><strong>22,938</strong></td>
+</tr>
+<tr>
+<td>cross_section</td>
+<td>561</td>
+<td>20</td>
+<td>678</td>
+<td>20</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="整篇處理時間" src="figures/fig8_processing_time.png" /></p>
+<table>
+<thead>
+<tr>
+<th>論文</th>
+<th>版本</th>
+<th>章節段</th>
+<th>總呼叫</th>
+<th>總 output</th>
+<th>成本</th>
+<th>處理時間</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Forensic</td>
+<td>瘦+平行</td>
+<td>9</td>
+<td>39</td>
+<td>39,645</td>
+<td>$0.61</td>
+<td><strong>138s（2.3 分）</strong></td>
+</tr>
+<tr>
+<td>Vaswani</td>
+<td>序+肥</td>
+<td>6</td>
+<td>30</td>
+<td>28,870</td>
+<td>$0.42</td>
+<td>313s（5.2 分）</td>
+</tr>
+<tr>
+<td>Li-RAG</td>
+<td>序+肥</td>
+<td>7</td>
+<td>34</td>
+<td>55,721</td>
+<td>$0.86</td>
+<td>519s（8.6 分）</td>
+</tr>
+<tr>
+<td>NeuroSymbolic</td>
+<td>序+肥</td>
+<td>7</td>
+<td>33</td>
+<td>65,151</td>
+<td>$1.10</td>
+<td>536s（8.9 分）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>讀法</strong>：
+- <strong>rule_check 是最大成本/時間黑洞</strong>（橘色），序列三篇佔總時間約 45–48% → 正是平行化 + 瘦身雙重受益的階段。NeuroSymbolic 肥版光 rule_check 就吃 22,938 token（$0.52）。
+- ⚠️ 這張時間圖<strong>不是純瘦身對照</strong>：Forensic 是瘦+平行、其餘是序+肥，時間同時受<strong>版本</strong>與<strong>論文大小</strong>影響。乾淨對照看第 2 節（同篇 3.4×）與第 3 節（同篇 token −43%）。</p>
+<hr />
+<h2 id="6-schema">6. 肥 schema 缺陷基準（瘦身驗收的對照基準）</h2>
+<p>Forensic 論文（肥版）共抓到 <strong>18 條缺陷</strong>，作為「瘦身不可掉以下這些」的回歸基準。</p>
+<p><img alt="18 條缺陷分佈" src="figures/fig6_defect_baseline.png" /></p>
+<table>
+<thead>
+<tr>
+<th>規則</th>
+<th>缺陷類型</th>
+<th>條數</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>REL-01</td>
+<td>NakedClaim 裸主張</td>
+<td>3</td>
+</tr>
+<tr>
+<td>REL-02</td>
+<td>BaselineNotCritiqued baseline 未批判</td>
+<td>2</td>
+</tr>
+<tr>
+<td>REL-04</td>
+<td>NoMacroDecomposition 缺巨觀拆解</td>
+<td>2</td>
+</tr>
+<tr>
+<td>REL-06</td>
+<td>ConceptNotFormalized 概念未形式化</td>
+<td>6</td>
+</tr>
+<tr>
+<td>REL-08</td>
+<td>ProblemSolutionMismatch 問題解法不符</td>
+<td>1</td>
+</tr>
+<tr>
+<td>REL-12</td>
+<td>ConclusionMisaligned 結論偏移</td>
+<td>2</td>
+</tr>
+<tr>
+<td>REL-13</td>
+<td>MetaDiscourseImbalance 後設論述失衡</td>
+<td>2</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>18 條逐條明細（章節 / 嚴重度 / 信心 / 中文說明 / 建議）見 <code>docs/baselines/forensic-fatschema-baseline.md</code> 附錄。</p>
+</blockquote>
+<hr />
+<h2 id="7">7. 體驗功能</h2>
+<h3 id="71-320">7.1 新版自動偵測 + 更新橫幅（3.2.0）</h3>
+<ul>
+<li><strong>問題</strong>：使用者分頁開著舊版前端，部署新版後仍用到舊 bundle。</li>
+<li><strong>做法</strong>：新增 <code>/version</code> 端點；前端 watcher 用 bundle 內建版本比對伺服器當前版本，不一致時於畫面底部顯示<strong>不可關閉的更新橫幅</strong>，點「立即更新」即重整。</li>
+<li><strong>檢查時機</strong>：分頁重新聚焦（focus / visibilitychange）立即查，平常每 60 秒輪詢。</li>
+</ul>
+<h3 id="72-340">7.2 論文標題自動偵測（3.4.0）</h3>
+<ul>
+<li><strong>問題</strong>：上傳要手動輸入標題，麻煩且常與真實標題不符。</li>
+<li><strong>做法</strong>：抽取後以 <strong>gpt-5.4-mini 讀論文第一頁前約 1,500 字</strong>取得標題（一次極輕量呼叫，成本可忽略）。使用者未填標題時自動套用；偵測失敗才退回檔名。</li>
+<li><strong>介面</strong>：上傳表單標題欄改為<strong>選填覆寫</strong>，提示「留空則自動偵測」。</li>
+</ul>
+<hr />
+<h2 id="8-341">8. 精修：無定位缺陷修正（3.4.1，待發）</h2>
+<h3 id="_6">問題（使用者實際遇到）</h3>
+<p>某些缺陷（如 REL-04 NoMacroDecomposition）的「證據 EDU = 0 個」，卻仍顯示「📄 在 PDF 中查看」按鈕 → 點了沒反應。</p>
+<h3 id="_7">根因</h3>
+<ul>
+<li>REL-04 / REL-12 的 Cypher candidate_query <strong>本身就不回傳 EDU id</strong>（它們判的是「<strong>結構缺失 / 全文不一致</strong>」這種<strong>沒有單一定位點</strong>的問題）→ LLM 自然回空的 <code>evidence_edu_ids</code>。</li>
+<li>對照：REL-06 的 query 有 <code>OPTIONAL MATCH MENTIONED_IN</code> 撈 EDU id，所以<strong>有定位</strong>。</li>
+</ul>
+<h3 id="_8">兩道修正</h3>
+<ol>
+<li><strong>前端安全網</strong>（<code>defect-panel.tsx</code>）：缺陷的 <code>evidence_edu_ids</code> 對不到任何圖譜節點時，<strong>隱藏「在 PDF 中查看」按鈕</strong>，不給假按鈕。</li>
+<li><strong>後端治本</strong>（<code>rules.py</code>）：REL-04 / REL-12 <strong>統一只走 cross-section pass</strong>（跨章節判定會<strong>強制 ≥2 證據 EDU</strong>），不再產生「逐章節版的無定位缺陷」。
+   - 驗證：重跑 Forensic，REL-04/08/12 全部來自 cross-section、證據 8/9/8 個（有定位），<strong>16 條缺陷 0 條無定位</strong>（原本約 8% 無定位）。</li>
+</ol>
+<blockquote>
+<p>狀態：兩個 commit 在 <code>feat/next</code>（尚未 push / 合併 / 部署）。屬 bug fix/refinement → 發版會是 <strong>PATCH 3.4.1</strong>。</p>
+</blockquote>
+<hr />
+<h2 id="9">9. 維運：部署機台遷移</h2>
+<pre><code>.48  repo 文件寫死的舊機（DEPLOY.md / docker-compose.prod.yml / Caddyfile 內）
+.58  2026-05-22 試用 → 前面有 NAT 閘道未轉發 8083 → 對外連不到 → 棄用
+.62  網管改派，公網 IP 直接綁機器（無 NAT）→ 8083 對外直通 ✅ 現行
+</code></pre>
+<ul>
+<li><strong>關鍵手法</strong>：不改 repo 寫死的 .48，靠伺服器<strong>根目錄 <code>.env</code> 覆寫</strong> <code>PUBLIC_BASE</code> / <code>CORS_ORIGIN_REGEX</code> / <code>NEO4J_PASSWORD</code>。</li>
+<li><code>PUBLIC_BASE</code> 會 cascade 成 <code>FRONTEND_URL</code> 與前端 build-time 的 <code>NEXT_PUBLIC_API_BASE</code> → <strong>換 IP/port 一定要 <code>--build</code> 重建前端</strong>。</li>
+<li><code>.62</code> 已依序部署 3.1.0 → 3.3.0 → 3.4.0，皆驗證 <code>/version</code> 回正確版本、對外 IP 自打 8083 回 200。</li>
+<li><strong>已知小坑</strong>：全新部署「第一篇上傳」常以 neo4j <code>TransientError()</code> 失敗（neo4j 暖機 + 建 constraint 撞 transient，非 OpenAI、非 code bug）→ <strong>重傳即成功</strong>。</li>
+</ul>
+<hr />
+<h2 id="10">10. 結語：可以對外講的一句話</h2>
+<blockquote>
+<p>本期把分析流程<strong>平行化 + 規則判定瘦身</strong>，rule_check output token 省約 43–49%、整篇處理（同篇純並發）加速約 3.4×、成本下降；並在 <strong>4 篇論文、524 個候選</strong>的<strong>固定圖譜 A/B</strong> 上證明瘦身與原版判定一致率（95.5–98.3%）與「原版自身重跑」的雜訊天花板<strong>無法區分</strong>（Cohen's κ 0.73–0.91），<strong>無準確度退步</strong>。過程中量化證實<strong>神經抽取層 run-to-run 不可重現</strong>，並建立「多跑取分布 + 固定中間產物」的評估方法論。</p>
+</blockquote>
+<hr />
+<h2 id="a-commit">附錄 A：本期 commit 對照（給技術細節投影片）</h2>
+<table>
+<thead>
+<tr>
+<th>版本</th>
+<th>主要 commit</th>
+<th>內容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3.2.0</td>
+<td><code>322c00e</code></td>
+<td>feat(frontend): detect new deploys and prompt a refresh</td>
+</tr>
+<tr>
+<td>3.3.0</td>
+<td><code>396bef7</code></td>
+<td>perf(pipeline): parallelize section extraction and rule checks</td>
+</tr>
+<tr>
+<td>3.3.0</td>
+<td><code>b72854a</code></td>
+<td>perf(rules): only emit verdict detail fields for actual violations（瘦身）</td>
+</tr>
+<tr>
+<td>3.3.0</td>
+<td><code>da63379</code></td>
+<td>fix(concurrency): thread-safe lazy init for client()/driver()</td>
+</tr>
+<tr>
+<td>3.3.0</td>
+<td><code>9995ae0</code></td>
+<td>test(pipeline): garble detection + OCR routing 單元測試</td>
+</tr>
+<tr>
+<td>3.3.0</td>
+<td><code>6ed95e9</code></td>
+<td>docs: 規則瘦身驗證報告（4 篇 A/B）</td>
+</tr>
+<tr>
+<td>3.3.0</td>
+<td><code>466a182</code> / <code>597f21b</code></td>
+<td>merge feat/parallel-pipeline / 發版 3.3.0</td>
+</tr>
+<tr>
+<td>3.4.0</td>
+<td><code>ae1fe50</code></td>
+<td>feat(title): 未填標題時 LLM 自動偵測</td>
+</tr>
+<tr>
+<td>3.4.0</td>
+<td><code>4f4590c</code> / <code>6043b23</code></td>
+<td>merge feat/ui-polish / 發版 3.4.0</td>
+</tr>
+<tr>
+<td>3.4.1（待）</td>
+<td><code>f64415c</code></td>
+<td>fix(ui): 無可定位證據時隱藏「在 PDF 中查看」按鈕</td>
+</tr>
+<tr>
+<td>3.4.1（待）</td>
+<td><code>8ec871a</code></td>
+<td>fix(rules): REL-04/REL-12 只走 cross-section、消除無定位缺陷</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>回退路徑：<code>git revert -m 1 466a182</code>（再 revert 597f21b）即回肥 schema / 序列版。</p>
+</blockquote>
+<h2 id="b">附錄 B：實驗數據一覽（給數據投影片）</h2>
+<ul>
+<li><strong>平行化加速</strong>：同篇 build_paper_graph 序列 ~225s → 平行 ~60s（<strong>3.4×</strong>）。</li>
+<li><strong>雜訊地板</strong>：同篇 4 跑，FRU 同設定差最大 45%；EDU 最穩（564–577，±2%）。</li>
+<li><strong>瘦身 token</strong>（同篇同候選，rule_check）：REL-08 −91% / REL-02 −74% / REL-13 −69% / REL-06 −48% / REL-01 −15%；總計剔除異常後 <strong>−43% token、−35% 時間</strong>。</li>
+<li><strong>固定圖譜 A/B</strong>：4 篇 524 候選，fat-vs-slim 95.5–98.3% ≈ within-fat 95.6–97.9%，κ 0.73–0.91。</li>
+<li><strong>缺陷基準</strong>：Forensic 肥版 18 條（REL-06 最多 6 條）。</li>
+</ul>
+<h2 id="cfigures">附錄 C：圖檔清單（figures/）</h2>
+<table>
+<thead>
+<tr>
+<th>檔名</th>
+<th>內容</th>
+<th>建議用於哪張投影片</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fig2_parallel_speedup.png</code></td>
+<td>平行 vs 序列加速 3.4×</td>
+<td>第 2 節 平行化</td>
+</tr>
+<tr>
+<td><code>fig3_noise_floor.png</code></td>
+<td>雜訊地板（4 跑變異）</td>
+<td>第 4.2 節 抽取非決定性</td>
+</tr>
+<tr>
+<td><code>fig4_slim_token_per_rule.png</code></td>
+<td>逐規則瘦身 token</td>
+<td>第 3 節 瘦身</td>
+</tr>
+<tr>
+<td><code>fig4b_slim_totals.png</code></td>
+<td>rule_check 總 token/時間 −43%/−35%</td>
+<td>第 3 節 瘦身</td>
+</tr>
+<tr>
+<td><code>fig5_ab_agreement.png</code></td>
+<td>固定圖譜 A/B 一致率 + κ</td>
+<td>第 4.3 節 主驗證</td>
+</tr>
+<tr>
+<td><code>fig6_defect_baseline.png</code></td>
+<td>18 條缺陷分佈</td>
+<td>第 6 節 基準</td>
+</tr>
+<tr>
+<td><code>fig7_stage_token_stack.png</code></td>
+<td>各階段 token 堆疊</td>
+<td>第 5 節 處理量</td>
+</tr>
+<tr>
+<td><code>fig8_processing_time.png</code></td>
+<td>整篇處理時間</td>
+<td>第 5 節 處理量</td>
+</tr>
+</tbody>
+</table>
+</body>
+</html>

@@ -4,6 +4,7 @@ import { GuardedLink } from "@/components/guarded-link";
 import { JobIndicator } from "@/components/job-indicator";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { MobileNav } from "@/components/mobile-nav";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
@@ -67,9 +68,11 @@ export function SiteHeader() {
           >
             {t("changelog")}
           </GuardedLink>
+          <ThemeToggle />
           <LanguageSwitcher />
         </nav>
         <div className="ml-auto flex items-center gap-1 sm:hidden">
+          <ThemeToggle />
           <LanguageSwitcher />
           <MobileNav />
         </div>

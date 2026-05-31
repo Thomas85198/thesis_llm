@@ -7,7 +7,8 @@
     "history": "History",
     "ruleStats": "Rule Stats",
     "changelog": "Changelog",
-    "language": "Language"
+    "language": "Language",
+    "theme": "Toggle dark mode"
   },
   "nav": {
     "menuTitle": "Menu",

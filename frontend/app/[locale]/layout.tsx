@@ -32,6 +32,12 @@ export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
 }
 
+// Runs before first paint (blocking inline script): reads the `theme` cookie and
+// applies `.dark` to <html> so a reload never flashes the wrong theme. Falls
+// back to the OS preference for first-time visitors who have no cookie yet. The
+// toggle (components/theme-toggle) keeps the cookie in sync afterwards.
+const THEME_INIT_SCRIPT = `(function(){try{var m=document.cookie.match(/(?:^|; )theme=([^;]+)/);var t=m&&m[1];if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark');}}catch(e){}})();`;
+
 export default async function LocaleLayout({
   children,
   params,
@@ -53,6 +59,7 @@ export default async function LocaleLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-muted/30">
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <NextIntlClientProvider>
           <JobTrackerProvider>
             <SiteHeader />

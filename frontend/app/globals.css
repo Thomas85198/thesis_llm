@@ -125,10 +125,13 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
   }
   html {
-    @apply font-sans;
+    /* Solid background on <html> itself (not just <body>): the body uses a
+       semi-transparent bg-muted/30, so without this the white <html> shows
+       through it — a light-grey halo in dark mode and a flash on reload. */
+    @apply bg-background font-sans;
     /* Bump base size up from the 16px default — the UI reads small otherwise,
        especially the dense graph / entity views. All rem-based sizing scales. */
     font-size: 17px;

@@ -7,7 +7,8 @@
     "history": "歷史",
     "ruleStats": "規則統計",
     "changelog": "版本紀錄",
-    "language": "語言"
+    "language": "語言",
+    "theme": "切換深色模式"
   },
   "nav": {
     "menuTitle": "選單",

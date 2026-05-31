@@ -158,6 +158,22 @@ function entityColor(type: string): string {
   return ENTITY_COLORS[type] ?? ENTITY_COLORS.Other;
 }
 
+// Tracks the active `.dark` class on <html> so canvas-rendered widgets (React
+// Flow nodes/edges/controls use inline colors, not Tailwind) can re-theme live
+// when the user toggles. A MutationObserver keeps it in sync with the toggle.
+function useIsDark(): boolean {
+  const [isDark, setIsDark] = useState(false);
+  useEffect(() => {
+    const el = document.documentElement;
+    const update = () => setIsDark(el.classList.contains("dark"));
+    update();
+    const obs = new MutationObserver(update);
+    obs.observe(el, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+  return isDark;
+}
+
 // Detail panel width is user-resizable via a drag handle on its left edge,
 // clamped so the panel never crowds out the left list nor overflows the card.
 const ASIDE_MIN = 320;
@@ -431,6 +447,7 @@ function EgoGraph({
   relations: EntityRelation[];
   onSelect: (id: string) => void;
 }) {
+  const isDark = useIsDark();
   const { nodes, edges } = useMemo(() => {
     const NODE_W = 120;
     const NODE_H = 30;
@@ -482,6 +499,9 @@ function EgoGraph({
         draggable: false,
         connectable: false,
         style: {
+          // Center: solid bright fill → dark text reads in both themes.
+          // Neighbor: faint tint → text must follow the theme or it vanishes
+          // (dark text on the dark-mode tint was the invisible-node bug).
           background: center ? c : `${c}26`,
           border: `1px solid ${c}`,
           borderRadius: 8,
@@ -490,7 +510,7 @@ function EgoGraph({
           fontWeight: center ? 600 : 400,
           width: NODE_W,
           textAlign: "center" as const,
-          color: "#0f172a",
+          color: center ? "#0f172a" : isDark ? "#e2e8f0" : "#0f172a",
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap" as const,
@@ -510,15 +530,18 @@ function EgoGraph({
       source: r.direction === "out" ? centerId : r.otherId,
       target: r.direction === "out" ? r.otherId : centerId,
       label: r.predicate,
-      labelStyle: { fontSize: 9, fill: "#475569" },
-      labelBgStyle: { fill: "#f8fafc", fillOpacity: 0.85 },
+      labelStyle: { fontSize: 9, fill: isDark ? "#cbd5e1" : "#475569" },
+      labelBgStyle: { fill: isDark ? "#1e293b" : "#f8fafc", fillOpacity: 0.85 },
       labelBgPadding: [2, 1] as [number, number],
-      style: { stroke: "#94a3b8", strokeWidth: 1 },
-      markerEnd: { type: "arrowclosed" as const, color: "#94a3b8" },
+      style: { stroke: isDark ? "#64748b" : "#94a3b8", strokeWidth: 1 },
+      markerEnd: {
+        type: "arrowclosed" as const,
+        color: isDark ? "#64748b" : "#94a3b8",
+      },
     }));
 
     return { nodes, edges };
-  }, [centerId, centerName, centerType, relations]);
+  }, [centerId, centerName, centerType, relations, isDark]);
 
   return (
     <ReactFlow
@@ -543,9 +566,12 @@ function EgoGraph({
       panOnDrag
       preventScrolling={false}
       proOptions={{ hideAttribution: true }}
+      // colorMode themes the built-in Background + Controls (the previously
+      // white-on-dark zoom buttons) to match the active theme.
+      colorMode={isDark ? "dark" : "light"}
       onNodeClick={(_, node) => onSelect(node.id)}
     >
-      <Background gap={14} size={1} color="#e2e8f0" />
+      <Background gap={14} size={1} color={isDark ? "#334155" : "#e2e8f0"} />
       <Controls showInteractive={false} position="bottom-right" />
     </ReactFlow>
   );

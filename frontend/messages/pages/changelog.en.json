@@ -29,6 +29,16 @@
     "chore": "Chore"
   },
   "versions": {
+    "3_8_0": {
+      "title": "Multilingual UI and dark mode: 繁中 / English switching, light/dark theme",
+      "summary": "The whole interface gains Traditional Chinese and English, switched via URL prefixes (/zh-Hant, /en) and remembered across visits, with new visitors following the browser language automatically. A dark-mode toggle is added: the choice is remembered via cookie, follows the OS light/dark preference on first visit, and never flashes on reload. LLM-generated defect descriptions and suggestions are now produced bilingually, and the paper assistant replies in the current UI language.",
+      "changes": {
+        "0": "Multilingual UI (Traditional Chinese / English): built on next-intl, switched via the URL prefixes /zh-Hant and /en, with a language switcher added to the header; the choice is stored in a cookie, and new visitors have their browser language auto-detected. Locale is a data dimension, so adding languages later requires no structural changes.",
+        "1": "Dark mode: a light/dark toggle is added to the header and the choice is remembered via cookie; the theme is rendered server-side from the cookie so reloads never flash, and the first visit follows the system prefers-color-scheme; the knowledge-graph mini-map's nodes, edges, and zoom controls switch with the theme too.",
+        "2": "Bilingual content: defect descriptions and suggestions are produced in both Chinese and English at analysis time (batch-translated with a lightweight model), so switching languages shows them instantly; the paper assistant reads context and replies in the current UI language.",
+        "3": "Fixed early dark-mode issues: flash on reload, a light-gray halo around the page, and the knowledge-graph mini-map's invisible nodes and white-on-dark zoom controls."
+      }
+    },
     "3_7_0": {
       "title": "Interface polish and the analysis-waiting experience: global task tracking, mobile-first, consistent across pages",
       "summary": "The overall interface is tighter and more professional: the header keeps only the logo and version, the report-oriented system guide is hidden, filler text and decorative emoji are removed, and a shared PageHeader gives every page the same title height and format. The upload page becomes a mobile-first single-column focused design (drag-and-drop upload, large buttons, mobile hamburger menu), with the rules explanation moved to the rule statistics page. Long-running analysis gains global task tracking: switching tabs no longer loses progress, completion fires a browser notification plus a tab-title flash plus a header pill, and leaving the upload page asks for confirmation first. The KG defect cards also gain a human-rating mechanism.",

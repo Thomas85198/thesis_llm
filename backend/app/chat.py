@@ -14,7 +14,7 @@ import threading
 import time
 from typing import Any, Literal
 
-from . import db, llm
+from . import db, i18n, llm
 from .prompts import load_prompt
 
 Role = Literal["user", "assistant"]
@@ -66,8 +66,13 @@ def _check_rate_limit(paper_id: str) -> tuple[bool, int]:
 
 # ---------- Context assembly ----------
 
-def _format_paper_context(paper_id: str, paper_title: str) -> str:
-    """Pack EDUs, defects, and rule list into a single cached system block."""
+def _format_paper_context(paper_id: str, paper_title: str, lang: str) -> str:
+    """Pack EDUs, defects, and rule list into a single cached system block.
+
+    Defect description/suggestion are localized maps — render the `lang` variant
+    (falls back to PRIMARY via i18n.pick) so the assistant reads the same
+    language it will answer in.
+    """
     result = db.get_result(paper_id)
     if result is None:
         return f"# Paper: {paper_title}\n(no analysis result available)"
@@ -109,8 +114,8 @@ def _format_paper_context(paper_id: str, paper_title: str) -> str:
                 f"\n[DEFECT:{d['id']}] {d['rule_id']} / {d['defect_type']}"
                 f" / severity={d['severity']} / section={d['section']}"
                 f"\n  evidence: {ev}"
-                f"\n  description: {d['description']}"
-                f"\n  suggestion: {d['suggestion']}"
+                f"\n  description: {i18n.pick(d.get('description'), lang)}"
+                f"\n  suggestion: {i18n.pick(d.get('suggestion'), lang)}"
             )
 
     return "\n".join(parts)
@@ -169,10 +174,13 @@ def chat(
     paper_id: str,
     paper_title: str,
     messages: list[dict[str, str]],
+    lang: str | None = None,
 ) -> dict[str, Any]:
     """Run one chat turn. Returns {reply, cost_usd, cited_edu_ids, cited_defect_ids}.
 
-    Raises ValueError on validation errors, RuntimeError on rate-limit hit.
+    `lang` is the UI locale; the assistant reads the paper context and replies in
+    that language. Raises ValueError on validation errors, RuntimeError on
+    rate-limit hit.
     """
     err = _validate_messages(messages)
     if err:
@@ -182,9 +190,13 @@ def chat(
     if not allowed:
         raise RuntimeError(f"rate_limited:{wait}")
 
+    locale = i18n.normalize_locale(lang)
     truncated = _truncate_history(messages, MAX_HISTORY_TURNS)
-    paper_context = _format_paper_context(paper_id, paper_title)
-    system_text = load_prompt("chat").format(paper_context=paper_context)
+    paper_context = _format_paper_context(paper_id, paper_title, locale)
+    system_text = load_prompt("chat").format(
+        paper_context=paper_context,
+        language=i18n.LANG_NAME[locale],
+    )
     system_text += _injection_warning(truncated)
 
     model = llm.model_light()  # gpt-4.1-mini is plenty for chat; cheaper than heavy.

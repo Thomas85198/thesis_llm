@@ -1,0 +1,112 @@
+{
+  "metaTitle": "Changelog · Paper Review System",
+  "metaDescription": "Changelog and the three-part semantic versioning scheme",
+  "badge": "版本紀錄 / Changelog",
+  "heading": "Changelog",
+  "introBefore": "A record of the features, fixes, and adjustments in each release. Version numbers follow three-part semantic versioning (",
+  "introAfter": ").",
+  "schemeTitle": "Versioning scheme",
+  "latest": "Latest",
+  "scheme": {
+    "MAJOR": {
+      "name": "Major version",
+      "desc": "Architectural overhaul / incompatible breaking changes"
+    },
+    "MINOR": {
+      "name": "Minor version",
+      "desc": "New features, backward compatible"
+    },
+    "PATCH": {
+      "name": "Patch version",
+      "desc": "Bug fixes and minor tweaks that don't change external behavior"
+    }
+  },
+  "changeType": {
+    "feat": "Feature",
+    "fix": "Fix",
+    "perf": "Performance",
+    "docs": "Docs",
+    "chore": "Chore"
+  },
+  "versions": {
+    "3_7_0": {
+      "title": "Interface polish and the analysis-waiting experience: global task tracking, mobile-first, consistent across pages",
+      "summary": "The overall interface is tighter and more professional: the header keeps only the logo and version, the report-oriented system guide is hidden, filler text and decorative emoji are removed, and a shared PageHeader gives every page the same title height and format. The upload page becomes a mobile-first single-column focused design (drag-and-drop upload, large buttons, mobile hamburger menu), with the rules explanation moved to the rule statistics page. Long-running analysis gains global task tracking: switching tabs no longer loses progress, completion fires a browser notification plus a tab-title flash plus a header pill, and leaving the upload page asks for confirmation first. The KG defect cards also gain a human-rating mechanism.",
+      "changes": {
+        "0": "Interface polish: the header now shows the logo plus a version badge (the text wordmark is removed), the nav hides \"System guide\" (/about is still reachable directly), and pages like about/changelog drop decorative emoji and excess gray text and use larger type, for a tighter overall look.",
+        "1": "Mobile-first upload-page redesign: switched to a single-column focused drag-and-drop upload card, with larger buttons and tap targets and the big blank area fixed; added a <sm mobile hamburger menu. The original \"13 REL rules\" explanation panel moved to the rule statistics page to keep the upload screen clean.",
+        "2": "Global analysis-task tracking: post-upload polling and progress are promoted to a global Context, so switching tabs or reloading no longer loses progress; completion triggers a browser notification (under secure contexts) plus a tab-title flash plus an \"Analysis complete\" header pill, so users can leave to do something else and come back.",
+        "3": "Navigation guard and preference persistence: leaving the upload page while analysis is running asks for confirmation first (no nagging if you're already on another page), and closing the tab shows a beforeunload warning; the completion pill auto-closes after a few minutes of inactivity; notification preferences are stored in the browser.",
+        "4": "Consistent page titles: added a shared PageHeader component to unify the height, type size, and layout of every page's title.",
+        "5": "Human rating added to KG defect cards: the \"defects involving this passage\" card on the knowledge-graph FRU layer gains correct / partial / wrong annotation, sharing the same judgment API and statistics as the results page.",
+        "6": "Fixed the completion notification re-firing endlessly (polling didn't stop after completion) and the navigation guard mis-firing on non-upload pages; when a PDF can't be parsed it now degrades gracefully to a card (reload / download the original file) instead of showing a bare red error."
+      }
+    },
+    "3_6_0": {
+      "title": "Major knowledge-graph page redesign: section-grouped cards, defect linkage, in-place source locating",
+      "summary": "The Entity and FRU layers move from force-directed graphs to card views grouped by section; clicking shows details in the focus panel on the right, and any source sentence in the focus panel can open a right-side drawer in place to jump to the corresponding position in the PDF and highlight it, without leaving the graph page. At the same time, leftover \"v3\" wording in the interface is removed and a simple new app icon is added.",
+      "changes": {
+        "0": "Entity layer: the force-directed graph becomes collapsible cards grouped by section (Abstract → … → Uncategorized) with type filtering; clicking an entity shows a 1-hop relationship mini-graph (incoming | entity | outgoing) and evidence sentences in the focus panel. Entities with no relationships are assigned a representative section by name-matching against the full EDU text (uncategorized dropped from 83 → 5).",
+        "1": "FRU layer: the sequence flow chart becomes section-grouped cards plus function filtering; clicking an FRU shows the summary, the EDU source text it covers, and the defects involving that passage (linked via fru.edu_ids ∩ defect.evidence_edu_ids).",
+        "2": "In-place source locating: a locate button is added next to each source sentence in the focus panel; clicking it embeds the PDF in a wide right-side drawer on the same page, auto-scrolls to the page containing that sentence, and highlights it, without leaving the graph page.",
+        "3": "Removed leftover \"v3\" wording from the interface (tab title / about / README / backend FastAPI title), and added a simple \"document + checkmark\" app icon used in the header."
+      }
+    },
+    "3_5_0": {
+      "title": "Removed the Phase 2 few-shot feedback loop in favor of purely manual evaluation",
+      "summary": "Removed the feedback loop where \"once a rule accumulated ≥3 judgments they were injected into the prompt as few-shot examples.\" The reviewer's manual judgments (correct / partial / wrong) are kept, but used only to quantify precision and export ground truth—they are no longer written back into the prompt. Every check is now an independent zero-shot run, so results are reproducible.",
+      "changes": {
+        "0": "Removed few-shot injection: rules.check_rule no longer reads the past-judgments examples_block, the checker prompt drops {examples_block}, and db.get_judgment_examples and rules._build_examples_block are deleted. Rule checking is always zero-shot.",
+        "1": "Manual review mechanism retained: defect annotation (✅ correct / 🤔 partial / ❌ wrong), per-rule soft precision statistics, judgments export (ground truth), and the eval summary all remain unchanged.",
+        "2": "The stats page removes the \"Phase 2\" column and the few-shot / zero-shot explanation; section 8 of the about page changes from \"Phase 2 feedback loop\" to \"Manual evaluation mechanism,\" removing the feedback-loop sequence diagram and the in-context learning literature entry."
+      }
+    },
+    "3_4_0": {
+      "title": "Automatic paper-title detection",
+      "summary": "You no longer have to enter the title by hand when uploading: the system uses an LLM to read the real title from the paper's first page, so you can leave it blank (fill it in manually if you want to override).",
+      "changes": {
+        "0": "Automatic title detection: after extraction, gpt-5.4-mini reads roughly the first 1500 characters of the paper's first page to obtain the title (one very lightweight call with negligible cost), applied automatically when the user leaves the title blank, falling back to the filename only if detection fails.",
+        "1": "The title field in the upload form becomes an optional override, with the hint \"Leave blank to auto-detect.\""
+      }
+    },
+    "3_3_0": {
+      "title": "Major analysis performance optimization: parallelization + rule slimming",
+      "summary": "Section extraction and the 13 rule checks now run in parallel, and rule-verdict output is trimmed, bringing a full analysis from about 9 minutes down to about 2 minutes with a corresponding cost drop; verdicts match the old version (verified with a fixed-graph A/B across 4 papers with no regression).",
+      "changes": {
+        "0": "Analysis pipeline parallelized: section extraction (EDU/ER/RST·FRU) and the 13 REL rules are now dispatched simultaneously via a thread pool (OPENAI_MAX_WORKERS, default 6), bringing full processing time from about 9 minutes → about 2 minutes (about 5×), with order-preserving, reproducible results.",
+        "1": "Rule-verdict output slimmed: the verdict schema fills detail fields only when there is a violation, so non-violations no longer produce throwaway text; rule_check output tokens drop by about −43% and time by about −35%.",
+        "2": "Added unit tests (garble detection / extraction routing / singleton concurrency) and a thread-safe singleton; docs trimmed to three core files—SYSTEM / DB_SCHEMA / TODO—with performance notes added."
+      }
+    },
+    "3_2_0": {
+      "title": "Automatic new-version detection and update prompt",
+      "summary": "An already-open tab sitting on an outdated frontend will automatically detect a new deployment and show an update banner, preventing users from staying on an old version.",
+      "changes": {
+        "0": "Added a /version endpoint and a frontend version watcher: it compares the bundle's built-in version against the server's currently deployed version, and when a mismatch is detected shows a non-dismissible update banner at the bottom of the screen; clicking \"Update now\" reloads.",
+        "1": "Version-check timing: it checks immediately when the tab regains focus (focus / visibilitychange), and otherwise polls once every 60 seconds."
+      }
+    },
+    "3_1_0": {
+      "title": "PDF OCR fault tolerance and the changelog page",
+      "summary": "Solves the problem where some LaTeX papers (Type 3 fonts without a ToUnicode CMap) copy out as garbage, causing LLM extraction to fail.",
+      "changes": {
+        "0": "Added PDF garble detection + tesseract OCR fallback (chi_tra + eng): if native extraction detects glyph-cipher garbage, it automatically falls back to OCR to recover the text, while preserving each text segment's page number and bbox coordinates.",
+        "1": "PDF text extraction moved to a background task, so OCR (about 3–5 minutes for 30 pages) no longer blocks the upload's HTTP request.",
+        "2": "Added real-time progress hints: \"Parsing PDF…\" → on detecting garbage, switches to \"PDF font can't be read directly; recognizing via OCR (about 3-5 minutes).\"",
+        "3": "Added a \"Changelog\" page defining the three-part semantic versioning scheme.",
+        "4": "Fixed the garble-detection threshold: the original two-condition check (\"real-character ratio + noise ratio\") missed substitution-cipher garble (letters shifted to other letters, so the letter ratio stays high); it now looks only at the ratio of noise characters such as backticks/asterisks being > 3%.",
+        "5": "The backend Docker image installs tesseract-ocr and the chi-tra / chi-sim / eng language packs, and sets TESSDATA_PREFIX."
+      }
+    },
+    "3_0_0": {
+      "title": "System baseline: Knowledge Graph + LLM paper review",
+      "summary": "Automatically finds structural defects in academic papers using a four-layer EDU/Entity/RST/FRU structure + a Neo4j KG + 13 REL rules.",
+      "changes": {
+        "0": "Extracts the four-layer EDU / Entity / RST / FRU structure from a paper and writes it into a Neo4j Knowledge Graph.",
+        "1": "13 REL rule checks (Cypher finds candidates + LLM interprets), outputting logical defects and revision suggestions.",
+        "2": "Human-as-judge annotation interface (per-defect correct/wrong/partial) + Phase 2 few-shot feedback loop.",
+        "3": "KG visualization, rule statistics, PDF source-alignment view, SQLite persistence, and token/cost logging."
+      }
+    }
+  }
+}

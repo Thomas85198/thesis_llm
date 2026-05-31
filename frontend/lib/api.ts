@@ -77,6 +77,20 @@ export type PaperGraph = {
 
 export type Severity = "high" | "medium" | "low";
 
+// LLM-generated text, keyed by locale: { "zh-Hant": "…", "en": "…" }. A plain
+// string is tolerated for safety (legacy / not-yet-translated data).
+export type LocalizedText = Record<string, string>;
+
+/** Read a localized value for `locale`, falling back to zh-Hant then any value. */
+export function pickLocalized(
+  value: LocalizedText | string | null | undefined,
+  locale: string
+): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  return value[locale] ?? value["zh-Hant"] ?? Object.values(value)[0] ?? "";
+}
+
 export type Defect = {
   id: string;
   rule_id: string;
@@ -84,8 +98,8 @@ export type Defect = {
   severity: Severity;
   section: SectionName;
   evidence_edu_ids: string[];
-  description: string;
-  suggestion: string;
+  description: LocalizedText | string;
+  suggestion: LocalizedText | string;
   confidence?: number | null; // 0.0–1.0
 };
 
@@ -383,14 +397,15 @@ export class ChatRateLimitError extends Error {
 
 export async function sendChat(
   paperId: string,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  lang?: string
 ): Promise<ChatResponse> {
   const res = await fetch(
     `${API_BASE}/api/papers/${encodeURIComponent(paperId)}/chat`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages, lang }),
     }
   );
   if (res.status === 429) {

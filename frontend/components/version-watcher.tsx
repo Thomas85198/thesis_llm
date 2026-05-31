@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { RefreshCwIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { CURRENT_VERSION } from "@/lib/version-log";
@@ -13,6 +14,7 @@ const POLL_MS = 60_000;
 // by the live server and reflects the deployed version. A mismatch => stale tab.
 export function VersionWatcher() {
   const [stale, setStale] = useState(false);
+  const t = useTranslations("versionWatcher");
 
   useEffect(() => {
     if (stale) return; // detected once — stop polling, leave the banner up.
@@ -54,15 +56,13 @@ export function VersionWatcher() {
     <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center p-4">
       <div className="flex items-center gap-3 rounded-lg border bg-primary px-4 py-3 text-primary-foreground shadow-lg">
         <RefreshCwIcon className="h-4 w-4 shrink-0" />
-        <span className="text-sm font-medium">
-          系統已更新到新版本，請重新整理以套用。
-        </span>
+        <span className="text-sm font-medium">{t("updated")}</span>
         <Button
           size="sm"
           variant="secondary"
           onClick={() => window.location.reload()}
         >
-          立即更新
+          {t("updateNow")}
         </Button>
       </div>
     </div>

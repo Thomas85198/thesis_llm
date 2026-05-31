@@ -4,14 +4,16 @@ import "@xyflow/react/dist/style.css";
 
 import {
   Background,
+  Controls,
   Position,
   ReactFlow,
   type Edge,
   type Node,
 } from "@xyflow/react";
-import { ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronRight, ExternalLink, X } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 import nextDynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +38,7 @@ import {
   deleteJudgment,
   fetchJudgments,
   pdfUrl,
+  pickLocalized,
   submitJudgment,
 } from "@/lib/api";
 import type {
@@ -47,22 +50,21 @@ import type {
   Verdict,
 } from "@/lib/api";
 
-const VERDICT_OPTIONS: { value: Verdict; label: string; active: string }[] = [
+// Labels are resolved at render time via t(`verdict.${value}`) since module-level
+// consts cannot call hooks; only value + styling live here.
+const VERDICT_OPTIONS: { value: Verdict; active: string }[] = [
   {
     value: "correct",
-    label: "判對",
     active:
       "bg-green-100 text-green-800 ring-2 ring-green-500 dark:bg-green-950 dark:text-green-200",
   },
   {
     value: "partial",
-    label: "部分對",
     active:
       "bg-yellow-100 text-yellow-800 ring-2 ring-yellow-500 dark:bg-yellow-950 dark:text-yellow-200",
   },
   {
     value: "wrong",
-    label: "誤判",
     active:
       "bg-red-100 text-red-800 ring-2 ring-red-500 dark:bg-red-950 dark:text-red-200",
   },
@@ -122,7 +124,7 @@ const FRU_COLORS: Record<string, string> = {
 };
 
 // Severity styling, mirrored from defect-panel.tsx for the FRU defect linkage.
-const SEVERITY_LABEL: Record<Severity, string> = { high: "高", medium: "中", low: "低" };
+// Severity labels are resolved via t(`sev.${severity}`) at render time.
 const SEVERITY_BORDER: Record<Severity, string> = {
   high: "border-l-red-500",
   medium: "border-l-orange-500",
@@ -149,11 +151,96 @@ const SECTION_ORDER: SectionName[] = [
 ];
 
 // Bucket key for entities that have no relation citing a sectioned EDU.
+// Its human label is resolved via t("unsectioned") at render time.
 const UNSECTIONED = "__unsectioned__";
-const UNSECTIONED_LABEL = "未分類";
 
 function entityColor(type: string): string {
   return ENTITY_COLORS[type] ?? ENTITY_COLORS.Other;
+}
+
+// Detail panel width is user-resizable via a drag handle on its left edge,
+// clamped so the panel never crowds out the left list nor overflows the card.
+const ASIDE_MIN = 320;
+const ASIDE_MAX = 620;
+const ASIDE_DEFAULT = 380;
+
+function useResizableAside() {
+  const [width, setWidth] = useState(ASIDE_DEFAULT);
+  const dragging = useRef(false);
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+    const startX = e.clientX;
+    const startW = width;
+    const onMove = (ev: MouseEvent) => {
+      if (!dragging.current) return;
+      // Handle sits on the aside's LEFT edge → dragging left widens it.
+      const next = startW + (startX - ev.clientX);
+      setWidth(Math.min(ASIDE_MAX, Math.max(ASIDE_MIN, next)));
+    };
+    const onUp = () => {
+      dragging.current = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [width]);
+
+  return { width, onMouseDown };
+}
+
+function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      onMouseDown={onMouseDown}
+      className="absolute left-0 top-0 z-10 h-full w-1.5 -translate-x-1/2 cursor-col-resize bg-transparent transition-colors hover:bg-foreground/20"
+    />
+  );
+}
+
+type EntitySort = "default" | "alpha" | "relations";
+type FruSort = "default" | "alpha" | "defects";
+
+// Segmented sort control, styled to match the existing pill filters above it.
+function SortControl<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <div className="flex overflow-hidden rounded-full border bg-muted/50">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              "px-2 py-0.5 text-[11px] transition",
+              value === opt.value
+                ? "bg-muted font-medium"
+                : "text-muted-foreground hover:bg-muted"
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 type EntityRelation = {
@@ -175,7 +262,6 @@ type GroupedEntity = {
 
 type SectionGroup = {
   key: string;
-  label: string;
   entities: GroupedEntity[];
 };
 
@@ -307,7 +393,6 @@ function analyzeEntities(result: AnalysisResult): EntityModel {
     .filter((k) => buckets.has(k))
     .map((k) => ({
       key: k,
-      label: k === UNSECTIONED ? UNSECTIONED_LABEL : k,
       entities: buckets
         .get(k)!
         .sort((a, b) => a.sortKey - b.sortKey || a.name.localeCompare(b.name)),
@@ -383,7 +468,15 @@ function EgoGraph({
       return {
         id,
         position: { x: pos.x, y: pos.y },
-        data: { label: name },
+        data: {
+          // span carries the full name as a native tooltip; the node's own
+          // ellipsis styling still truncates the visible text.
+          label: (
+            <span title={name} className="block overflow-hidden text-ellipsis whitespace-nowrap">
+              {name}
+            </span>
+          ),
+        },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
         draggable: false,
@@ -429,23 +522,31 @@ function EgoGraph({
 
   return (
     <ReactFlow
+      // Remount when the focused entity changes so fitView re-runs on the new
+      // graph — otherwise a previously-fit viewport leaves a large tree
+      // overflowing the panel.
+      key={centerId}
       nodes={nodes}
       edges={edges}
       fitView
-      fitViewOptions={{ padding: 0.15 }}
-      minZoom={0.2}
+      fitViewOptions={{ padding: 0.2 }}
+      // Allow shrinking far enough that even a hub entity with many relations
+      // fits, and let the user drag to pan / pinch + buttons to zoom when it
+      // doesn't. (zoomOnScroll stays off so the side panel still scrolls.)
+      minZoom={0.05}
       maxZoom={1.5}
       nodesDraggable={false}
       nodesConnectable={false}
       zoomOnScroll={false}
-      zoomOnPinch={false}
-      zoomOnDoubleClick={false}
-      panOnDrag={false}
+      zoomOnPinch
+      zoomOnDoubleClick
+      panOnDrag
       preventScrolling={false}
       proOptions={{ hideAttribution: true }}
       onNodeClick={(_, node) => onSelect(node.id)}
     >
       <Background gap={14} size={1} color="#e2e8f0" />
+      <Controls showInteractive={false} position="bottom-right" />
     </ReactFlow>
   );
 }
@@ -457,13 +558,33 @@ function EntityLayer({
   result: AnalysisResult;
   onOpenPdf: OpenPdf;
 }) {
+  const t = useTranslations("kgFlow");
   const model = useMemo(() => analyzeEntities(result), [result]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<EntitySort>("default");
+  const aside = useResizableAside();
 
   const filterActive = activeTypes.size > 0;
   const matchesType = (type: string) => !filterActive || activeTypes.has(type);
+  const q = query.trim().toLowerCase();
+  const matchesQuery = (name: string) => !q || name.toLowerCase().includes(q);
+
+  // Sort within a section group; relation count comes from model.relationsById.
+  const sortEntities = (entities: GroupedEntity[]): GroupedEntity[] => {
+    const arr = [...entities];
+    if (sort === "alpha") arr.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sort === "relations")
+      arr.sort(
+        (a, b) =>
+          (model.relationsById.get(b.id)?.length ?? 0) -
+            (model.relationsById.get(a.id)?.length ?? 0) ||
+          a.name.localeCompare(b.name)
+      );
+    return arr; // "default" keeps the model's section+order sort
+  };
 
   const toggleCollapse = (key: string) =>
     setCollapsed((prev) => {
@@ -493,6 +614,41 @@ function EntityLayer({
     <div className="flex h-full">
       {/* Left: section-grouped entity chips */}
       <div className="flex-1 overflow-auto p-3">
+        {/* Search box */}
+        <div className="relative mb-2">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("searchEntities")}
+            className="w-full rounded-md border bg-background px-2 py-1 pr-7 text-xs outline-none focus:ring-1 focus:ring-foreground/30"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              title={t("clearSearch")}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Sort */}
+        <div className="mb-2">
+          <SortControl
+            label={t("sortLabel")}
+            value={sort}
+            onChange={setSort}
+            options={[
+              { value: "default", label: t("sortDefault") },
+              { value: "alpha", label: t("sortAlpha") },
+              { value: "relations", label: t("sortRelations") },
+            ]}
+          />
+        </div>
+
         {/* Type filter */}
         <div className="mb-3 flex flex-wrap items-center gap-1.5">
           {model.typeCounts.map(({ type, count }) => {
@@ -522,15 +678,20 @@ function EntityLayer({
               onClick={() => setActiveTypes(new Set())}
               className="rounded-full px-2 py-0.5 text-[11px] text-muted-foreground underline-offset-2 hover:underline"
             >
-              清除篩選
+              {t("clearFilter")}
             </button>
           )}
         </div>
 
         <div className="space-y-2">
           {model.groups.map((g) => {
-            const visible = g.entities.filter((e) => matchesType(e.type));
-            if (filterActive && visible.length === 0) return null;
+            const visible = sortEntities(
+              g.entities.filter(
+                (e) => matchesType(e.type) && matchesQuery(e.name)
+              )
+            );
+            // Hide groups emptied by an active filter or search.
+            if ((filterActive || q) && visible.length === 0) return null;
             const isCollapsed = collapsed.has(g.key);
             return (
               <div key={g.key} className="rounded-lg border bg-card">
@@ -545,10 +706,10 @@ function EntityLayer({
                         !isCollapsed && "rotate-90"
                       )}
                     />
-                    {g.label}
+                    {g.key === UNSECTIONED ? t("unsectioned") : g.key}
                   </span>
                   <Badge variant="secondary">
-                    {filterActive
+                    {filterActive || q
                       ? `${visible.length}/${g.entities.length}`
                       : g.entities.length}
                   </Badge>
@@ -564,7 +725,7 @@ function EntityLayer({
                           onClick={() =>
                             setSelectedId(isSel ? null : e.id)
                           }
-                          title={e.type}
+                          title={`${e.name} · ${e.type}`}
                           className={cn(
                             "rounded-md border px-2 py-1 text-xs transition",
                             isSel && "ring-2 ring-offset-1"
@@ -588,23 +749,30 @@ function EntityLayer({
         </div>
       </div>
 
-      {/* Right: selected entity detail */}
-      <aside className="w-80 shrink-0 overflow-auto border-l bg-muted/20 p-3">
+      {/* Right: selected entity detail (resizable) */}
+      <aside
+        className="relative shrink-0 overflow-auto border-l bg-muted/20 p-3"
+        style={{ width: aside.width }}
+      >
+        <ResizeHandle onMouseDown={aside.onMouseDown} />
         {!selected ? (
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            點選左側實體
+            {t("entityEmptyHint")}
             <br />
-            查看它的關係與證據
+            {t("entityEmptyHintSub")}
           </p>
         ) : (
           <div className="space-y-3">
             <div>
               <div className="flex items-center gap-1.5">
                 <span
-                  className="inline-block h-2.5 w-2.5 rounded-full"
+                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
                   style={{ background: entityColor(selected.type) }}
                 />
-                <span className="text-sm font-semibold leading-tight">
+                <span
+                  className="text-sm font-semibold leading-tight"
+                  title={selected.name}
+                >
                   {selected.name}
                 </span>
               </div>
@@ -630,11 +798,11 @@ function EntityLayer({
 
             <div>
               <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                關係 {selectedRelations.length > 0 && `(${selectedRelations.length})`}
+                {t("relations")} {selectedRelations.length > 0 && `(${selectedRelations.length})`}
               </p>
               {selectedRelations.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  此實體沒有抽取到關係。
+                  {t("noRelations")}
                 </p>
               ) : (
                 <ul className="space-y-2">
@@ -664,7 +832,10 @@ function EntityLayer({
                       </div>
                       {r.evidenceText && (
                         <div className="mt-1 flex items-start gap-1">
-                          <p className="line-clamp-3 flex-1 text-[11px] leading-snug text-muted-foreground">
+                          <p
+                            className="line-clamp-3 flex-1 text-[11px] leading-snug text-muted-foreground"
+                            title={r.evidenceText}
+                          >
                             {r.evidenceText}
                           </p>
                           {r.evidenceEduId && (
@@ -672,7 +843,7 @@ function EntityLayer({
                               onClick={() =>
                                 onOpenPdf([r.evidenceEduId], r.evidenceEduId)
                               }
-                              title="在 PDF 中定位此句"
+                              title={t("locateInPdf")}
                               className="mt-0.5 shrink-0 text-muted-foreground transition hover:text-foreground"
                             >
                               <ExternalLink className="h-3 w-3" />
@@ -713,7 +884,6 @@ type FruItem = {
 
 type FruGroup = {
   key: string;
-  label: string;
   frus: FruItem[];
 };
 
@@ -763,7 +933,6 @@ function analyzeFrus(result: AnalysisResult): FruModel {
     .filter((k) => buckets.has(k))
     .map((k) => ({
       key: k,
-      label: k === UNSECTIONED ? UNSECTIONED_LABEL : k,
       frus: buckets.get(k)!.sort((a, b) => a.sortKey - b.sortKey),
     }));
 
@@ -803,11 +972,16 @@ function FruLayer({
   result: AnalysisResult;
   onOpenPdf: OpenPdf;
 }) {
+  const t = useTranslations("kgFlow");
+  const locale = useLocale();
   const model = useMemo(() => analyzeFrus(result), [result]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [activeFns, setActiveFns] = useState<Set<string>>(new Set());
   const [judgments, setJudgments] = useState<Map<string, Verdict>>(new Map());
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<FruSort>("default");
+  const aside = useResizableAside();
 
   // Human-as-judge verdicts, shared with the result page via the same API.
   useEffect(() => {
@@ -846,7 +1020,7 @@ function FruLayer({
           });
         }
       } catch (err) {
-        toast.error("儲存判定失敗", {
+        toast.error(t("saveJudgmentFailed"), {
           description: err instanceof Error ? err.message : String(err),
         });
         try {
@@ -859,11 +1033,32 @@ function FruLayer({
         }
       }
     },
-    [result.paper_id]
+    [result.paper_id, t]
   );
 
   const filterActive = activeFns.size > 0;
   const matchesFn = (fn: string) => !filterActive || activeFns.has(fn);
+  const q = query.trim().toLowerCase();
+  // FRU search matches the summary text and the function name.
+  const matchesQuery = (f: FruItem) =>
+    !q ||
+    f.summary.toLowerCase().includes(q) ||
+    f.function.toLowerCase().includes(q);
+
+  // Sort within a section group; defect linkage comes from model.defectsByFru.
+  const sortFrus = (frus: FruItem[]): FruItem[] => {
+    const arr = [...frus];
+    if (sort === "alpha")
+      arr.sort((a, b) => a.summary.localeCompare(b.summary));
+    else if (sort === "defects")
+      arr.sort((a, b) => {
+        const da = model.defectsByFru.get(a.id)?.length ?? 0;
+        const db = model.defectsByFru.get(b.id)?.length ?? 0;
+        // Defective FRUs first, then by defect count, then keep document order.
+        return (db > 0 ? 1 : 0) - (da > 0 ? 1 : 0) || db - da || a.sortKey - b.sortKey;
+      });
+    return arr; // "default" keeps the model's section+order sort
+  };
 
   const toggleCollapse = (key: string) =>
     setCollapsed((prev) => {
@@ -900,6 +1095,41 @@ function FruLayer({
     <div className="flex h-full">
       {/* Left: section-grouped FRU cards */}
       <div className="flex-1 overflow-auto p-3">
+        {/* Search box */}
+        <div className="relative mb-2">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("searchFru")}
+            className="w-full rounded-md border bg-background px-2 py-1 pr-7 text-xs outline-none focus:ring-1 focus:ring-foreground/30"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              title={t("clearSearch")}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Sort */}
+        <div className="mb-2">
+          <SortControl
+            label={t("sortLabel")}
+            value={sort}
+            onChange={setSort}
+            options={[
+              { value: "default", label: t("sortDefault") },
+              { value: "alpha", label: t("sortAlpha") },
+              { value: "defects", label: t("sortDefectsFirst") },
+            ]}
+          />
+        </div>
+
         {/* Function filter */}
         <div className="mb-3 flex flex-wrap items-center gap-1.5">
           {model.functionCounts.map(({ fn, count }) => {
@@ -929,15 +1159,18 @@ function FruLayer({
               onClick={() => setActiveFns(new Set())}
               className="rounded-full px-2 py-0.5 text-[11px] text-muted-foreground underline-offset-2 hover:underline"
             >
-              清除篩選
+              {t("clearFilter")}
             </button>
           )}
         </div>
 
         <div className="space-y-2">
           {model.groups.map((g) => {
-            const visible = g.frus.filter((f) => matchesFn(f.function));
-            if (filterActive && visible.length === 0) return null;
+            const visible = sortFrus(
+              g.frus.filter((f) => matchesFn(f.function) && matchesQuery(f))
+            );
+            // Hide groups emptied by an active filter or search.
+            if ((filterActive || q) && visible.length === 0) return null;
             const isCollapsed = collapsed.has(g.key);
             return (
               <div key={g.key} className="rounded-lg border bg-card">
@@ -952,10 +1185,10 @@ function FruLayer({
                         !isCollapsed && "rotate-90"
                       )}
                     />
-                    {g.label}
+                    {g.key === UNSECTIONED ? t("unsectioned") : g.key}
                   </span>
                   <Badge variant="secondary">
-                    {filterActive
+                    {filterActive || q
                       ? `${visible.length}/${g.frus.length}`
                       : g.frus.length}
                   </Badge>
@@ -995,12 +1228,15 @@ function FruLayer({
                                   SEVERITY_BADGE[topSeverity(ds)]
                                 )}
                               >
-                                {ds.length} 缺陷
+                                {t("defectCount", { count: ds.length })}
                               </span>
                             )}
                           </div>
-                          <span className="line-clamp-2 text-[11px] leading-snug text-foreground">
-                            {f.summary || "(無摘要)"}
+                          <span
+                            className="line-clamp-2 text-[11px] leading-snug text-foreground"
+                            title={f.summary || t("noSummary")}
+                          >
+                            {f.summary || t("noSummary")}
                           </span>
                         </button>
                       );
@@ -1013,13 +1249,17 @@ function FruLayer({
         </div>
       </div>
 
-      {/* Right: selected FRU detail */}
-      <aside className="w-80 shrink-0 overflow-auto border-l bg-muted/20 p-3">
+      {/* Right: selected FRU detail (resizable) */}
+      <aside
+        className="relative shrink-0 overflow-auto border-l bg-muted/20 p-3"
+        style={{ width: aside.width }}
+      >
+        <ResizeHandle onMouseDown={aside.onMouseDown} />
         {!selected ? (
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            點選左側 FRU
+            {t("fruEmptyHint")}
             <br />
-            查看摘要、原文與缺陷
+            {t("fruEmptyHintSub")}
           </p>
         ) : (
           <div className="space-y-3">
@@ -1036,9 +1276,9 @@ function FruLayer({
               <p className="mt-1 text-[11px] text-muted-foreground">
                 {selectedSection && selectedSection !== UNSECTIONED
                   ? selectedSection
-                  : UNSECTIONED_LABEL}
-                {` · 涵蓋 ${selected.edu_ids.length} 段`}
-                {selectedPage > 0 ? ` · 第 ${selectedPage} 頁` : ""}
+                  : t("unsectioned")}
+                {` · ${t("coversSegments", { count: selected.edu_ids.length })}`}
+                {selectedPage > 0 ? ` · ${t("page", { page: selectedPage })}` : ""}
               </p>
             </div>
 
@@ -1048,7 +1288,7 @@ function FruLayer({
 
             <div>
               <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                涵蓋的 EDU ({selectedEdus.length})
+                {t("coveredEdu", { count: selectedEdus.length })}
               </p>
               <div className="space-y-1 border-l-2 border-muted-foreground/30 pl-3">
                 {selectedEdus.map((e) => (
@@ -1058,7 +1298,7 @@ function FruLayer({
                     </p>
                     <button
                       onClick={() => onOpenPdf(selected.edu_ids, e.id)}
-                      title="在 PDF 中定位此句"
+                      title={t("locateInPdf")}
                       className="mt-0.5 shrink-0 text-muted-foreground transition hover:text-foreground"
                     >
                       <ExternalLink className="h-3 w-3" />
@@ -1070,12 +1310,12 @@ function FruLayer({
 
             <div>
               <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                涉及此段落的缺陷{" "}
+                {t("defectsInvolving")}{" "}
                 {selectedDefects.length > 0 && `(${selectedDefects.length})`}
               </p>
               {selectedDefects.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  此段落未命中缺陷。
+                  {t("noDefectInSegment")}
                 </p>
               ) : (
                 <ul className="space-y-2">
@@ -1094,7 +1334,7 @@ function FruLayer({
                             SEVERITY_BADGE[d.severity]
                           )}
                         >
-                          {SEVERITY_LABEL[d.severity]}
+                          {t(`sev.${d.severity}`)}
                         </span>
                         <span className="text-xs font-medium">
                           {d.defect_type}
@@ -1104,17 +1344,18 @@ function FruLayer({
                         </span>
                       </div>
                       <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                        {d.description}
+                        {pickLocalized(d.description, locale)}
                       </p>
-                      {d.suggestion && (
+                      {pickLocalized(d.suggestion, locale) && (
                         <p className="mt-1 text-[11px] leading-snug">
-                          <span className="font-medium">建議:</span>{" "}
-                          {d.suggestion}
+                          <span className="font-medium">{t("suggestion")}</span>{" "}
+                          {pickLocalized(d.suggestion, locale)}
                         </p>
                       )}
                       <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2">
                         {VERDICT_OPTIONS.map((opt) => {
                           const isActive = judgments.get(d.id) === opt.value;
+                          const label = t(`verdict.${opt.value}`);
                           return (
                             <button
                               key={opt.value}
@@ -1126,7 +1367,11 @@ function FruLayer({
                                   isActive ? null : opt.value
                                 )
                               }
-                              title={isActive ? "點擊取消" : `標為 ${opt.label}`}
+                              title={
+                                isActive
+                                  ? t("clickToCancel")
+                                  : t("markAs", { label })
+                              }
                               className={cn(
                                 "rounded px-2 py-0.5 text-[11px] font-medium transition-all hover:opacity-90",
                                 isActive
@@ -1134,7 +1379,7 @@ function FruLayer({
                                   : "bg-muted text-muted-foreground"
                               )}
                             >
-                              {opt.label}
+                              {label}
                             </button>
                           );
                         })}
@@ -1152,6 +1397,7 @@ function FruLayer({
 }
 
 export function KGFlow({ result }: { result: AnalysisResult }) {
+  const t = useTranslations("kgFlow");
   const [layer, setLayer] = useState<"entity" | "fru">("entity");
   const [pdf, setPdf] = useState<PdfPreview | null>(null);
 
@@ -1196,10 +1442,10 @@ export function KGFlow({ result }: { result: AnalysisResult }) {
         <Tabs value={layer} onValueChange={(v) => setLayer(v as "entity" | "fru")}>
           <TabsList>
             <TabsTrigger value="entity">
-              Entity 層 <Badge variant="secondary" className="ml-1.5">{stats.entity}</Badge>
+              {t("entityLayer")} <Badge variant="secondary" className="ml-1.5">{stats.entity}</Badge>
             </TabsTrigger>
             <TabsTrigger value="fru">
-              FRU 層 <Badge variant="secondary" className="ml-1.5">{stats.fru}</Badge>
+              {t("fruLayer")} <Badge variant="secondary" className="ml-1.5">{stats.fru}</Badge>
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -1227,10 +1473,12 @@ export function KGFlow({ result }: { result: AnalysisResult }) {
           className="flex flex-col gap-0 p-0 data-[side=right]:w-[92vw] data-[side=right]:sm:max-w-[820px]"
         >
           <SheetHeader className="border-b">
-            <SheetTitle>原文定位</SheetTitle>
+            <SheetTitle>{t("sourceLocate")}</SheetTitle>
             <SheetDescription>
               {pdf
-                ? `${pdf.section ? `${pdf.section} · ` : ""}第 ${pdf.page + 1} 頁`
+                ? pdf.section
+                  ? t("sectionPage", { section: pdf.section, page: pdf.page + 1 })
+                  : t("pageOnly", { page: pdf.page + 1 })
                 : ""}
             </SheetDescription>
           </SheetHeader>

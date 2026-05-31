@@ -1,6 +1,7 @@
 "use client";
 
 import { MessageCircleIcon, SendIcon, SparklesIcon } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -23,12 +24,14 @@ import { cn } from "@/lib/utils";
 
 const MAX_INPUT_CHARS = 2000;
 
-const SUGGESTIONS = [
-  "這篇論文的核心 claim 是什麼？",
-  "幫我整理目前發現的最嚴重缺陷",
-  "Method 章節有沒有沒交代清楚的步驟？",
-  "REL-09 為什麼會抓到這個段落？",
-];
+// Suggestion message keys under the "chat" namespace — resolved to localized
+// prompts in EmptyState.
+const SUGGESTION_KEYS = [
+  "suggestion1",
+  "suggestion2",
+  "suggestion3",
+  "suggestion4",
+] as const;
 
 type Props = {
   paperId: string;
@@ -43,6 +46,8 @@ type UIMessage = ChatMessage & {
 };
 
 export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
+  const t = useTranslations("chat");
+  const locale = useLocale();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [input, setInput] = useState("");
@@ -70,7 +75,7 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
       const trimmed = text.trim();
       if (!trimmed || sending) return;
       if (trimmed.length > MAX_INPUT_CHARS) {
-        toast.error(`訊息過長（上限 ${MAX_INPUT_CHARS} 字）`);
+        toast.error(t("tooLong", { max: MAX_INPUT_CHARS }));
         return;
       }
 
@@ -84,22 +89,23 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
       try {
         const res = await sendChat(
           paperId,
-          nextHistory.map(({ role, content }) => ({ role, content }))
+          nextHistory.map(({ role, content }) => ({ role, content })),
+          locale
         );
         setMessages((prev) => [
           ...prev,
           {
             role: "assistant",
-            content: res.reply || "(空回覆)",
+            content: res.reply || t("emptyReply"),
             citedEduIds: res.cited_edu_ids,
             citedDefectIds: res.cited_defect_ids,
           },
         ]);
       } catch (err) {
         if (err instanceof ChatRateLimitError) {
-          toast.error(`聊天頻率過快，請 ${err.retryAfter} 秒後再試`);
+          toast.error(t("rateLimited", { seconds: err.retryAfter }));
         } else {
-          toast.error("聊天失敗", {
+          toast.error(t("chatFailed"), {
             description: err instanceof Error ? err.message : String(err),
           });
         }
@@ -110,7 +116,7 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
         setSending(false);
       }
     },
-    [messages, paperId, sending]
+    [messages, paperId, sending, t, locale]
   );
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -137,10 +143,10 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
           "hover:scale-105 hover:shadow-xl active:scale-95",
           open && "pointer-events-none opacity-0"
         )}
-        aria-label="開啟論文助手"
+        aria-label={t("openAria")}
       >
         <MessageCircleIcon className="h-5 w-5" />
-        <span className="hidden text-sm font-medium sm:inline">論文助手</span>
+        <span className="hidden text-sm font-medium sm:inline">{t("fab")}</span>
       </button>
 
       <Sheet open={open} onOpenChange={setOpen}>
@@ -151,11 +157,9 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
           <SheetHeader className="border-b">
             <SheetTitle className="flex items-center gap-2">
               <SparklesIcon className="h-4 w-4 text-primary" />
-              論文助手
+              {t("title")}
             </SheetTitle>
-            <SheetDescription>
-              只能討論這篇論文的內容與檢出的缺陷。回答會引用 [EDU:xxx] / [DEFECT:xxx]。
-            </SheetDescription>
+            <SheetDescription>{t("description")}</SheetDescription>
           </SheetHeader>
 
           {/* Message list */}
@@ -177,7 +181,7 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
             {sending && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
-                助手思考中…
+                {t("thinking")}
               </div>
             )}
           </div>
@@ -190,7 +194,7 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
                 value={input}
                 onChange={(e) => setInput(e.target.value.slice(0, MAX_INPUT_CHARS))}
                 onKeyDown={handleKeyDown}
-                placeholder="問這篇論文一個問題…（Enter 送出 / Shift+Enter 換行）"
+                placeholder={t("placeholder")}
                 rows={2}
                 className={cn(
                   "min-h-[44px] flex-1 resize-none rounded-md border bg-background px-3 py-2",
@@ -205,7 +209,7 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
                 size="icon"
                 onClick={() => void send(input)}
                 disabled={sending || !input.trim()}
-                aria-label="送出"
+                aria-label={t("sendAria")}
               >
                 <SendIcon className="h-4 w-4" />
               </Button>
@@ -220,7 +224,7 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
                   onClick={reset}
                   className="hover:text-foreground"
                 >
-                  清空對話
+                  {t("clear")}
                 </button>
               )}
             </div>
@@ -232,25 +236,27 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
 }
 
 function EmptyState({ onPick }: { onPick: (text: string) => void }) {
+  const t = useTranslations("chat");
   return (
     <div className="space-y-3 py-6 text-center">
-      <p className="text-sm text-muted-foreground">
-        試試問問看：
-      </p>
+      <p className="text-sm text-muted-foreground">{t("tryAsk")}</p>
       <div className="space-y-1.5">
-        {SUGGESTIONS.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => onPick(s)}
-            className={cn(
-              "block w-full rounded-md border bg-card px-3 py-2 text-left text-xs",
-              "transition-colors hover:bg-accent"
-            )}
-          >
-            {s}
-          </button>
-        ))}
+        {SUGGESTION_KEYS.map((k) => {
+          const s = t(k);
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() => onPick(s)}
+              className={cn(
+                "block w-full rounded-md border bg-card px-3 py-2 text-left text-xs",
+                "transition-colors hover:bg-accent"
+              )}
+            >
+              {s}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -265,6 +271,7 @@ function MessageBubble({
   onEduClick?: (eduId: string) => void;
   onDefectClick?: (defectId: string) => void;
 }) {
+  const t = useTranslations("chat");
   const isUser = message.role === "user";
   return (
     <div
@@ -274,7 +281,7 @@ function MessageBubble({
       )}
     >
       <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">
-        {isUser ? "你" : "助手"}
+        {isUser ? t("roleUser") : t("roleAssistant")}
       </div>
       {isUser ? (
         // User input is plain text — preserve whitespace, no markdown parsing.
@@ -300,13 +307,20 @@ function AssistantMarkdown({
   onEduClick?: (eduId: string) => void;
   onDefectClick?: (defectId: string) => void;
 }) {
+  const t = useTranslations("chat");
+  // renderCitations is a plain function (no hooks), so the localized chip titles
+  // are passed down from here where useTranslations is available.
+  const labels = { eduJump: t("eduJump"), defectFocus: t("defectFocus") };
   // Walk children of any block element; if a child is a string, split out citations.
   const processChildren = (children: ReactNode): ReactNode => {
-    if (typeof children === "string") return renderCitations(children, onEduClick, onDefectClick);
+    if (typeof children === "string")
+      return renderCitations(children, onEduClick, onDefectClick, labels);
     if (Array.isArray(children)) {
       return children.map((c, i) =>
         typeof c === "string" ? (
-          <Fragment key={i}>{renderCitations(c, onEduClick, onDefectClick)}</Fragment>
+          <Fragment key={i}>
+            {renderCitations(c, onEduClick, onDefectClick, labels)}
+          </Fragment>
         ) : (
           <Fragment key={i}>{c}</Fragment>
         )
@@ -365,7 +379,8 @@ function AssistantMarkdown({
 function renderCitations(
   text: string,
   onEduClick?: (eduId: string) => void,
-  onDefectClick?: (defectId: string) => void
+  onDefectClick?: (defectId: string) => void,
+  labels?: { eduJump: string; defectFocus: string }
 ): ReactNode {
   const tokens = splitCitations(text);
   if (tokens.length === 1 && tokens[0].kind === "text") return tokens[0].value;
@@ -378,7 +393,7 @@ function renderCitations(
           type="button"
           onClick={() => onEduClick?.(p.id)}
           className="mx-0.5 rounded bg-primary/10 px-1 font-mono text-[10px] text-primary hover:bg-primary/20"
-          title={onEduClick ? "點擊跳到該段落" : ""}
+          title={onEduClick ? labels?.eduJump ?? "" : ""}
         >
           EDU:{p.id}
         </button>
@@ -391,7 +406,7 @@ function renderCitations(
           type="button"
           onClick={() => onDefectClick?.(p.id)}
           className="mx-0.5 rounded bg-orange-100 px-1 font-mono text-[10px] text-orange-700 hover:bg-orange-200 dark:bg-orange-950 dark:text-orange-300"
-          title={onDefectClick ? "點擊聚焦該缺陷" : ""}
+          title={onDefectClick ? labels?.defectFocus ?? "" : ""}
         >
           DEFECT:{p.id}
         </button>

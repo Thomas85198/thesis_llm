@@ -1,5 +1,6 @@
-import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 
+import { Link } from "@/i18n/navigation";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { fetchPaperCost, fetchPaperResult } from "@/lib/api";
@@ -11,9 +12,10 @@ export default async function PaperLayout({
   params,
 }: {
   children: React.ReactNode;
-  params: Promise<{ id: string }>;
+  params: Promise<{ locale: string; id: string }>;
 }) {
   const { id } = await params;
+  const t = await getTranslations("paperLayout");
   const decodedId = decodeURIComponent(id);
 
   let title = decodedId;
@@ -55,7 +57,7 @@ export default async function PaperLayout({
                     <Badge
                       variant={defectCount > 0 ? "destructive" : "secondary"}
                     >
-                      {defectCount} 缺陷
+                      {t("defectsBadge", { count: defectCount })}
                     </Badge>
                   )}
                   {eduCount !== null && (
@@ -64,7 +66,7 @@ export default async function PaperLayout({
                   {costUsd !== null && costCalls !== null && costCalls > 0 && (
                     <Badge
                       variant="outline"
-                      title={`${costCalls} 次 LLM 呼叫`}
+                      title={t("llmCalls", { count: costCalls })}
                       className="font-mono"
                     >
                       ${costUsd.toFixed(3)}
@@ -78,13 +80,13 @@ export default async function PaperLayout({
                 href={`/papers/${id}`}
                 className={buttonVariants({ variant: "outline", size: "sm" })}
               >
-                缺陷 + PDF
+                {t("tabDefects")}
               </Link>
               <Link
                 href={`/papers/${id}/graph`}
                 className={buttonVariants({ variant: "outline", size: "sm" })}
               >
-                Knowledge Graph
+                {t("tabGraph")}
               </Link>
             </nav>
           </div>

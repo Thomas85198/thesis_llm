@@ -1,0 +1,644 @@
+{
+  "toc": "目錄",
+  "nav": {
+    "intro": "1. 系統定位",
+    "arch": "2. 系統架構",
+    "pipeline": "3. Pipeline 時序圖",
+    "kg": "4. KG 資料結構",
+    "rds": "5. SQLite 資料結構",
+    "rules": "6. 13 條 REL 規則",
+    "example": "7. 範例走查（Vaswani 2017）",
+    "phase2": "8. 人工評估機制",
+    "guards": "9. 聊天 Guardrails",
+    "literature": "10. 理論文獻",
+    "perf": "11. 效能與穩定性"
+  },
+  "hero": {
+    "badge": "系統說明 / Demo Report",
+    "title": "論文檢核系統",
+    "subtitle": "用 Knowledge Graph + LLM 自動找學術論文的邏輯結構性缺陷",
+    "lead": "上傳論文 → 抽取 EDU / Entity / RST / FRU 四層結構並寫入 Neo4j Knowledge Graph → 用 13 條 REL 規則檢核（Cypher 找候選 + LLM 判讀）→ 輸出邏輯缺陷與修改建議。搭配 Human-as-judge 標註介面，由人工逐一檢查每個缺陷並量化系統 precision。",
+    "startReading": "開始閱讀"
+  },
+  "sections": {
+    "intro": { "title": "1. 系統定位" },
+    "arch": { "title": "2. 系統架構" },
+    "pipeline": { "title": "3. Pipeline 時序圖" },
+    "kg": { "title": "4. Knowledge Graph 資料結構" },
+    "rds": { "title": "5. SQLite 資料結構（RDS）" },
+    "rules": { "title": "6. 13 條 REL 規則 + Hybrid 檢核" },
+    "example": { "title": "7. 範例走查 — Vaswani 2017 \"Attention Is All You Need\"" },
+    "phase2": { "title": "8. 人工評估機制" },
+    "guards": { "title": "9. 論文助手聊天 + Guardrails" },
+    "literature": { "title": "10. 理論文獻支撐" },
+    "perf": { "title": "11. 效能與穩定性：平行化、成本優化與測試" }
+  },
+  "intro": {
+    "p1": "學術論文初稿常見三類「結構性」問題：(1) 主張無證據、(2) 缺乏動機、(3) 跨章節失聯。傳統靠人工 review 抓，慢且主觀。本系統的目標是把這個過程自動化、可重現、可追溯。",
+    "compareHeading": "跟「直接問 ChatGPT 改論文」差在哪？",
+    "compareColDim": "維度",
+    "compareColLlm": "純 LLM 對話",
+    "compareColOurs": "本系統",
+    "compare": {
+      "reproducible": { "dim": "結果可重現", "llm": "每次答案不同", "ours": "KG + 規則確定性" },
+      "trace": { "dim": "追溯到原文位置", "llm": "描述模糊", "ours": "高亮 PDF 句子（page + bbox）" },
+      "maintainable": { "dim": "規則可由人維護", "llm": "黑盒", "ours": "規則寫在 YAML，學長可改" },
+      "crossPaper": { "dim": "跨論文比較", "llm": "做不到", "ours": "KG 持久化於 Neo4j" },
+      "methodology": { "dim": "投論文的方法論支撐", "llm": "缺乏", "ours": "Neurosymbolic（KG + LLM hybrid）" }
+    }
+  },
+  "arch": {
+    "p1": "前後端分離 + 三層儲存。前端 Next.js 16 + Tailwind + shadcn/ui，後端 FastAPI；Neo4j 存 KG（給 Cypher 查詢）、SQLite 存中繼資料/分析結果/cost log/人工判定、本地磁碟存 PDF 原檔。",
+    "diagramCaption": "圖 2-1：三層架構與外部依賴（Neo4j / SQLite / Anthropic）",
+    "diagram": {
+      "user": "使用者",
+      "fe": "前端 Next.js 16<br/>Tailwind + shadcn/ui<br/>PDF Viewer + KG 視覺化",
+      "be": "後端 FastAPI + Python<br/>pipeline / rules / chat / db",
+      "neo": "Neo4j<br/>Knowledge Graph",
+      "sql": "SQLite data.db<br/>papers / results / llm_calls / judgments",
+      "disk": "uploads/<br/>PDF 原檔",
+      "edgeUpload": "上傳 / 操作",
+      "edgeHttp": "HTTP / JSON",
+      "edgeExtract": "抽取 / 判讀 / 聊天",
+      "edgeWrite": "寫入 + Cypher 查詢",
+      "edgeMeta": "metadata + cost + judgments",
+      "edgeStore": "存 PDF 檔",
+      "edgePull": "拉 PDF / 結果 / 統計"
+    }
+  },
+  "pipeline": {
+    "p1": "分析時間主要花在 ~30–40 次 LLM 呼叫上。這些呼叫大多彼此獨立，因此會用 thread pool 平行送出（預設最多 6 條，{maxWorkers} 可調），把原本序列約 9 分鐘的分析壓到約 1/3。文字抽取與分析都在背景任務執行，上傳請求會立刻回 {jobId}，前端再輪詢進度。SHA-256 hash 命中快取則秒回。",
+    "diagramCaption": "圖 3-1：上傳論文後的完整處理流程（含 OCR fallback 與平行化）",
+    "diagram": {
+      "user": "使用者",
+      "fe": "前端",
+      "be": "後端",
+      "openai": "OpenAI API",
+      "neo": "Neo4j",
+      "sql": "SQLite",
+      "upload": "上傳 PDF",
+      "dedupe": "SHA-256 hash 去重",
+      "hitAlt": "hash 命中",
+      "hitReturn": "直接回傳之前 paper_id",
+      "newFile": "新檔案",
+      "newReturn": "立即回 job_id（背景處理）",
+      "bgNote": "以下皆在背景任務執行",
+      "extractSpans": "PyMuPDF 抽 spans + page+bbox",
+      "garbledAlt": "偵測到亂碼（無 ToUnicode CMap）",
+      "ocr": "tesseract OCR fallback (chi_tra+eng)",
+      "splitSections": "regex 切 sections",
+      "parSections": "各 section 平行 (thread pool ≤ OPENAI_MAX_WORKERS=6)",
+      "sectionA": "section A：EDU→ER (gpt-5.4-mini) → RST/FRU (gpt-5.4)",
+      "sectionB": "section B：同上",
+      "sectionEtc": "section …：同上",
+      "writeKg": "寫入 Paper + EDU + Entity + FRU + RST",
+      "parRules": "13 條 REL 規則平行 (同一 thread pool)",
+      "cypherCand": "Cypher 找候選",
+      "llmJudge": "LLM 判讀 (gpt-5.4, zero-shot)",
+      "crossSection": "跨章節 second pass (REL-04/08/12)",
+      "writeResult": "寫 result_json + llm_calls",
+      "jobDone": "job done + paper_id",
+      "pullResult": "拉 result + PDF + KG",
+      "resultPage": "結果頁 (PDF 高亮 + 缺陷面板 + KG 圖)"
+    }
+  },
+  "kg": {
+    "p1": "KG 是這個系統的核心 — 13 條規則本質上都是 graph pattern matching。5 種節點代表論文不同層次的結構，6 種邊串起來。",
+    "nodesHeading": "5 種節點",
+    "nodes": {
+      "paper": "論文本身。所有其他節點都透過 paper_id 指回它。",
+      "edu": "Elementary Discourse Unit，最小命題單位。每個 EDU 帶 page+bbox 座標 — 這是 PDF 高亮能精確定位的根基。",
+      "entity": "論文裡的概念實體（例 Transformer、BLEU、WMT），分 8 種 type（Concept / Method / Metric / Dataset / Model / Task / Claim / Other）。",
+      "fru": "Functional Rhetorical Unit，把連續 EDU 組成修辭功能單元。15 種 function：Motivation / Claim / Evidence / Background / Definition / MethodStep / Observation / Attribution / Concession / ...",
+      "rst": "Rhetorical Structure Theory 的修辭關係，標 nucleus-satellite。15 種 type：Elaboration / Cause / Result / Contrast / Concession / Evidence / Justify / ..."
+    },
+    "edgesHeading": "6 種邊",
+    "edgesDiagramCaption": "圖 4-1：KG schema — 五種節點與邊的連接關係",
+    "edgesTableHeading": "6 種邊的意義 + Vaswani 範例",
+    "edgesColEdge": "邊",
+    "edgesColDir": "方向",
+    "edgesColMeaning": "中文意義",
+    "edgesColExample": "Vaswani 範例",
+    "edges": {
+      "hasEdu": {
+        "meaning": "「這篇論文擁有這個最小命題」",
+        "examplePrefix": "Paper(",
+        "examplePaper": "Attention Is All You Need",
+        "exampleSuffix": ") HAS_EDU EDU(“We propose a new simple network architecture, the Transformer”)"
+      },
+      "covers": {
+        "meaning": "「這個修辭功能單元涵蓋這個小命題」",
+        "example": "FRU(function=Claim) COVERS EDU(“We propose the Transformer”) — 這個 FRU 把這句歸類為主張類"
+      },
+      "nucleus": {
+        "meaning": "「這個修辭關係的核心句是這個（主角）」",
+        "example": "RST(rst_type=Contrast) NUCLEUS EDU(“We propose the Transformer”) — 對比關係的「新方法」這方"
+      },
+      "satellite": {
+        "meaning": "「這個修辭關係的從屬句是這個（配角）」",
+        "example": "同上 RST(Contrast) SATELLITE EDU(“Existing models are based on RNN/CNN”) — 對比關係的「舊方法」這方"
+      },
+      "er": {
+        "meaning": "「兩個概念之間有關係（動詞寫在邊屬性 predicate 上）」",
+        "examplePrefix": "Entity(Transformer) -[ER ",
+        "exampleSuffix": "]-> Entity(attention mechanism)"
+      },
+      "mentionedIn": {
+        "meaning": "「這個概念在這個小命題裡被提到」",
+        "example": "Entity(BLEU) MENTIONED_IN EDU(“achieves 28.4 BLEU on WMT 2014”)"
+      }
+    },
+    "fruHeading": "FRU 的 15 種 function（重點 — 規則檢核主要看這個）",
+    "fruIntro": "一個 FRU 把連續幾個 EDU 組成一個「修辭功能單元」。15 種 function 就是論文寫作中常見的修辭角色。",
+    "rstHeading": "RST 的 15 種關係類型",
+    "rstIntro": "RST（Rhetorical Structure Theory）標兩個 EDU 之間的修辭關係，分 nucleus（主角）與 satellite（配角）。15 種 type 涵蓋論文中常見的句間邏輯。",
+    "whyHeading": "為什麼要 4 層抽取（EDU / ER / FRU / RST）",
+    "whyIntro": "不同規則需要不同層的證據：",
+    "why": {
+      "rel01": "需要 FRU 層分辨哪些 EDU 是 Claim、哪些是 Evidence",
+      "rel09": "需要 FRU + 同 section 鄰近度",
+      "rel04": "需要跨章節 + RST 結構",
+      "entityLabel": "實體層級分析",
+      "entity": "需要 Entity + ER triples 追蹤同一概念跨段落出現"
+    }
+  },
+  "subtypeTable": {
+    "colName": "類型名",
+    "colMeaning": "中文意義",
+    "colExample": "Vaswani 範例"
+  },
+  "fruFunctions": {
+    "Motivation": {
+      "meaning": "動機 — 解釋為什麼這個問題重要、為什麼要做這個研究",
+      "example": "“The fundamental constraint of sequential computation, however, remains.” (Intro p.2 — 解釋為何需要新架構)"
+    },
+    "Claim": {
+      "meaning": "主張 — 作者提出的核心論點或結論",
+      "example": "“We propose a new simple network architecture, the Transformer, based solely on attention mechanisms” (Abstract)"
+    },
+    "Evidence": {
+      "meaning": "證據 — 支撐主張的量化數據、引用或實驗結果",
+      "example": "“Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles, by over 2 BLEU.” (Abstract)"
+    },
+    "Background": {
+      "meaning": "背景 — 既有研究或既有方法的描述",
+      "example": "“The dominant sequence transduction models are based on complex recurrent or convolutional neural networks” (Abstract)"
+    },
+    "Definition": {
+      "meaning": "定義 — 概念 / 術語 / 變數的形式化定義",
+      "example": "“An attention function can be described as mapping a query and a set of key-value pairs to an output, where the query, keys, values, and output are all vectors.” (Section 3.2 Attention)"
+    },
+    "MethodStep": {
+      "meaning": "方法步驟 — 具體做了什麼操作",
+      "example": "“We compute the dot products of the query with all keys, divide each by √dk, and apply a softmax function to obtain the weights on the values.” (Section 3.2.1)"
+    },
+    "Observation": {
+      "meaning": "觀察 — 描述「實驗看到什麼結果」的句子",
+      "example": "“While single-head attention is 0.9 BLEU worse than the best setting, quality also drops off with too many heads.” (Section 6.2)"
+    },
+    "Attribution": {
+      "meaning": "歸因 — 解釋現象「為什麼會這樣」的句子（通常含 because / due to / this suggests）",
+      "example": "“This suggests that determining compatibility is not easy and that a more sophisticated compatibility function than dot product may be beneficial.” (Section 6.2)"
+    },
+    "Concession": {
+      "meaning": "讓步 — 承認自己方法的缺陷 / 限制 / 代價",
+      "example": "“...at the cost of reduced effective resolution due to averaging attention-weighted positions...” (Section 2)"
+    },
+    "Compensation": {
+      "meaning": "補償 — 給出彌補上述缺陷的方案",
+      "example": "“...an effect we counteract with Multi-Head Attention as described in section 3.2.” (Section 2，跟在 Concession 後面)"
+    },
+    "Specific": {
+      "meaning": "具體實例 — 特定情境下的細節描述",
+      "example": "“In Table 3 rows (A), we vary the number of attention heads and the attention key and value dimensions, keeping the amount of computation constant” (Section 6.2)"
+    },
+    "Generalization": {
+      "meaning": "一般化 — 把具體實例推廣成普遍結論",
+      "example": "“We show that the Transformer generalizes well to other tasks by applying it successfully to English constituency parsing” (Abstract)"
+    },
+    "Restatement": {
+      "meaning": "重申 — 重複前面提過的主張或結論（通常在 Conclusion）",
+      "example": "“In this work, we presented the Transformer, the first sequence transduction model based entirely on attention” (Conclusion，重申 Abstract 主張)"
+    },
+    "MetaDiscourse": {
+      "meaning": "元論述 — 論文結構的導引語（「接下來要講...」「我們會在 Section X 討論」）",
+      "example": "“In the following sections, we will describe the Transformer, motivate self-attention and discuss its advantages over models such as [17, 18] and [9].” (Section 2 結尾)"
+    },
+    "Other": {
+      "meaning": "其他 — 不屬於上述 14 種的修辭單元",
+      "example": "致謝段（Acknowledgements）、註腳、版權聲明等。"
+    }
+  },
+  "rstTypes": {
+    "Elaboration": {
+      "meaning": "細化 — 衛星句細化主角句的內容（給更多細節）",
+      "example": "Nucleus: “We propose a new simple network architecture, the Transformer” / Satellite: “based solely on attention mechanisms, dispensing with recurrence and convolutions entirely” (Abstract — 後句細化前句)"
+    },
+    "Background": {
+      "meaning": "背景 — 衛星句提供主角句的時空 / 知識背景",
+      "example": "Satellite: “Recurrent neural networks, long short-term memory and gated recurrent neural networks in particular, have been firmly established as state of the art” (Intro 開頭，為後續批判 RNN 鋪背景)"
+    },
+    "Cause": {
+      "meaning": "原因 — 衛星句是主角句的原因",
+      "example": "Cause: “for large values of dk, the dot products grow large in magnitude” / Effect: “pushing the softmax function into regions where it has extremely small gradients” (Section 3.2.1)"
+    },
+    "Result": {
+      "meaning": "結果 — 衛星句是主角句的結果（與 Cause 相反方向）",
+      "example": "Action: “we scale the dot products by 1/√dk” / Result: 解決了上面 cause 帶來的梯度消失問題 (Section 3.2.1)"
+    },
+    "Contrast": {
+      "meaning": "對比 — 衛星句與主角句呈對立關係（兩面）",
+      "example": "舊方法 vs 新方法: “The dominant ... models are based on complex RNN/CNN” (satellite) ↔ “We propose the Transformer, based solely on attention” (nucleus) (Abstract)"
+    },
+    "Concession": {
+      "meaning": "讓步 — 衛星句承認某事即使如此但主角句仍成立",
+      "example": "Concession: “at the cost of reduced effective resolution” (satellite) / Nucleus: “In the Transformer this is reduced to a constant number of operations” (Section 2 — 雖然有代價但仍有優勢)"
+    },
+    "Evidence": {
+      "meaning": "證據 — 衛星句為主角句提供具體證據（不是 Cause，是支持性的數據 / 引用）",
+      "example": "Claim: “the big transformer model outperforms the best previously reported models” / Evidence: “by more than 2.0 BLEU, establishing a new state-of-the-art BLEU score of 28.4” (Section 6.1)"
+    },
+    "Justify": {
+      "meaning": "合理化 — 衛星句為主角句的「行動 / 選擇」提供理由",
+      "example": "Choice: “We chose the sinusoidal version” / Justify: “because it may allow the model to extrapolate to sequence lengths longer than the ones encountered during training” (Section 3.5)"
+    },
+    "Motivation": {
+      "meaning": "動機 — 衛星句說明為何需要解決主角句提到的問題（讓讀者願意往下讀）",
+      "example": "Problem: “inherently sequential nature precludes parallelization” / Motivation: “which becomes critical at longer sequence lengths, as memory constraints limit batching across examples” (Intro)"
+    },
+    "Solutionhood": {
+      "meaning": "解法 — 衛星句是主角句問題的解法（強對應）",
+      "example": "Problem: “reduced effective resolution due to averaging attention-weighted positions” / Solution: “an effect we counteract with Multi-Head Attention” (Section 2)"
+    },
+    "Sequence": {
+      "meaning": "順序 — 多個句子按時序串連（first / then / finally）",
+      "example": "“We compute the dot products → divide each by √dk → apply a softmax function → obtain the weights on the values” (Section 3.2.1 — 演算法步驟序列)"
+    },
+    "Restatement": {
+      "meaning": "重申 — 衛星句以不同方式重述主角句",
+      "example": "Abstract: “The Transformer ... based solely on attention mechanisms” ↔ Conclusion: “the first sequence transduction model based entirely on attention” (跨章節重申)"
+    },
+    "Summary": {
+      "meaning": "摘要 — 衛星句把多個前述要點濃縮成一句",
+      "example": "Conclusion 開頭 “In this work, we presented the Transformer, the first sequence transduction model based entirely on attention, replacing the recurrent layers most commonly used in encoder-decoder architectures with multi-headed self-attention.” (Section 7 — 一句話摘要全文)"
+    },
+    "Condition": {
+      "meaning": "條件 — 衛星句陳述「在某條件下」主角句才成立（if-then 結構）",
+      "example": "Condition: “While for small values of dk” / Nucleus: “the two mechanisms perform similarly” (Section 3.2.1)"
+    },
+    "Other": {
+      "meaning": "其他 — 不屬於上述 14 種的修辭關係",
+      "example": "腳註、致謝、版權聲明等的句間關係。"
+    }
+  },
+  "rds": {
+    "p1": "4 張表，互不重疊 — metadata、analysis result、cost log、human judgments。設計準則：結構性語意進 Neo4j，流水/評估資料進 SQLite。",
+    "diagramCaption": "圖 5-1：SQLite ERD — 4 張表的關聯（PK 後面備註: results.paper_id 也是 FK CASCADE; llm_calls/defect_judgments 是軟關聯）",
+    "erd": {
+      "rel1to1": "1對1 CASCADE",
+      "rel1toManyCalls": "1對多 軟關聯",
+      "rel1toManyJudgments": "1對多 軟關聯",
+      "relLogical": "邏輯關聯"
+    },
+    "schemaHeading": "四張表詳細欄位（中文說明）",
+    "tableColCol": "欄位",
+    "tableColType": "型別",
+    "tableColDesc": "中文說明",
+    "tablePurpose": "用途：",
+    "tableKeyDesign": "設計重點：",
+    "tables": {
+      "papers": {
+        "purpose": "論文中繼資料 + 上傳去重快取",
+        "keyDesign": "content_hash 是 SHA-256，第二次傳同一份檔案直接秒回不重跑 LLM",
+        "cols": {
+          "paper_id": "論文唯一識別 (格式 paper:xxxxxxxx，8 個 hex 字元)",
+          "title": "論文標題（使用者填或檔名）",
+          "content_hash": "檔案內容 SHA-256，用於上傳去重快取",
+          "pdf_path": "PDF 原檔在 backend/uploads/ 的絕對路徑",
+          "created_at": "建立時間 (ISO 8601 UTC)"
+        }
+      },
+      "results": {
+        "purpose": "完整分析結果（KG + Defects + RuleMeta）",
+        "keyDesign": "JSON 嵌套結構一次性讀寫，沒查詢需求拆表；CASCADE 與 papers 綁定（刪 paper 連帶刪 result）",
+        "cols": {
+          "paper_id": "對應 papers.paper_id，CASCADE 刪除",
+          "result_json": "完整 AnalysisResult JSON（內含 graph + defects + rule_meta）",
+          "finished_at": "分析完成時間 (ISO 8601 UTC)"
+        }
+      },
+      "llm_calls": {
+        "purpose": "每次 LLM 呼叫的 token / cost log",
+        "keyDesign": "每呼叫一次 Anthropic API 就 INSERT 一筆；給 /api/cost 結算 + context 使用率監控 + 找最貴的 stage",
+        "cols": {
+          "id": "流水號",
+          "paper_id": "屬於哪篇論文（可 NULL，未來預留 system call）",
+          "stage": "pipeline 階段，例 edu:Method / er:Intro / rule_check:REL-09 / cross_section_pass / chat",
+          "model": "使用的 Claude model id（如 claude-sonnet-4-6）",
+          "input_tokens": "此次 input token 數",
+          "output_tokens": "此次 output token 數",
+          "cache_read_tokens": "從 prompt cache 讀的 token（比 input 便宜 10×）",
+          "cache_write_tokens": "寫入 prompt cache 的 token（首次）",
+          "cost_usd": "此次美元成本（依 llm.py PRICING 計算）",
+          "created_at": "呼叫時間 (ISO 8601 UTC)"
+        }
+      },
+      "defect_judgments": {
+        "purpose": "Human-as-judge 標註（人工評估）",
+        "keyDesign": "複合主鍵 (paper_id, defect_id) 確保同缺陷一個 verdict；verdict CHECK 限定三選一防髒資料",
+        "cols": {
+          "paper_id": "缺陷所屬論文",
+          "defect_id": "缺陷 id，對應 results.result_json 內 defects[].id",
+          "rule_id": "該缺陷觸發的規則 (REL-01 ~ REL-13)",
+          "verdict": "必為 correct (判對) / wrong (誤判) / partial (部分對) 三選一",
+          "note": "學長補充說明（選填）",
+          "created_at": "標註時間 (ISO 8601 UTC)"
+        }
+      }
+    },
+    "strengthHeading": "關係強度說明",
+    "strengthColRel": "關係",
+    "strengthColStrength": "強度",
+    "strengthColWhy": "為什麼",
+    "strength": {
+      "papersResults": { "strength": "Hard FK + CASCADE", "why": "沒了 paper 留 result 沒意義" },
+      "papersCalls": { "strength": "軟關聯", "why": "刪 paper 要保留 cost log 給歷史 audit" },
+      "papersJudgments": { "strength": "軟關聯", "why": "judgments 是人工評估資料，刪 paper 不該丟" },
+      "judgmentsResults": { "strength": "邏輯關聯", "why": "defect_id 在 JSON 內，靠程式層保證一致" }
+    }
+  },
+  "rules": {
+    "p1": "從 51 條章節分層規則 (Intro 12 / Method 12 / Exp 15 / Conclusion 12) MECE 收斂為 13 條。檢核採兩階段 hybrid：",
+    "diagramCaption": "圖 6-1：規則檢核兩階段 hybrid 設計",
+    "diagram": {
+      "yaml": "rules.yaml<br/>13 條<br/>學長維護",
+      "step1": "Step 1<br/>Cypher 候選查詢<br/>純 graph pattern<br/>確定性, 不用 LLM",
+      "candidates": "候選子圖列表",
+      "step2": "Step 2<br/>LLM 判讀<br/>tool use 強制 JSON<br/>verdict + severity + confidence",
+      "defect": "Defect<br/>含 evidence_edu_ids"
+    },
+    "listHeading": "13 條規則一覽（含 Vaswani 2017 範例）",
+    "listIntro": "每條規則都按「中文意義 / 觸發條件 / Vaswani 範例」三欄說明。REL-04 / REL-08 / REL-12 需要跨章節推理，會在 cross-section second pass 重跑。",
+    "card": {
+      "meaningLabel": "中文意義：",
+      "triggerLabel": "觸發條件：",
+      "exampleLabel": "Vaswani 範例（中文說明）：",
+      "englishLabel": "英文原句（出自 {location}）",
+      "hitFire": "Vaswani 觸發",
+      "hitPartial": "Vaswani 部分對",
+      "hitHealthy": "Vaswani 健康範例"
+    }
+  },
+  "relRules": {
+    "REL-01": {
+      "name": "Claim-Evidence",
+      "meaning": "每個主張都應該有對應的證據（量化數據、引用、實驗結果或邏輯推論）支撐。",
+      "trigger": "Abstract / Intro / Results / Discussion 章節有 Claim FRU，但同章節鄰近沒有 Evidence FRU 支撐。",
+      "example": "Intro 寫「Transformer 允許顯著更多平行化、12 小時就達 SOTA」是大主張，但證據（Table 2 BLEU 分數）放在 Section 6 才出現，Intro 段內沒附證據。"
+    },
+    "REL-02": {
+      "name": "Baseline-Critique",
+      "meaning": "提到 baseline 做比較時，應該批判其侷限或不足，不能只列數字了事。",
+      "trigger": "Method / Experiment 章節提到 baseline Entity，但沒有 FRU 批判其侷限。",
+      "example": "Section 6.1 Table 2 列出 ByteNet / GNMT / ConvS2S 等 baseline 的 BLEU 分數，但沒解釋這些 baseline 為何輸（設計侷限是什麼）。"
+    },
+    "REL-03": {
+      "name": "Action-Justification",
+      "meaning": "對每個關鍵研究行動（選某資料集 / 某指標 / 某架構）都應該有合理化說明。",
+      "trigger": "Method 章節有 MethodStep FRU，但鄰近沒有 Motivation FRU 解釋為什麼這樣做。",
+      "example": "Section 5.3 寫「我們用 Adam optimizer 配 β1=0.9, β2=0.98」— 為何選 Adam 而非 SGD？論文只給參數沒給選擇理由。"
+    },
+    "REL-04": {
+      "name": "Macro-Decomposition",
+      "meaning": "論文整體應有清楚的巨觀結構拆解 — 大問題拆成子問題，子問題拆成子方法。",
+      "trigger": "跨章節 — Intro 提出多個子問題，但 Method 沒對應到子方法的明確映射。",
+      "example": "Intro 提出 (1) 平行化困難 (2) 長程依賴 兩個子問題，但 Method 沒明說「Multi-Head 解問題 1、Self-Attention 解問題 2」這種對應。"
+    },
+    "REL-05": {
+      "name": "Process-Sequence",
+      "meaning": "Method 章節中的步驟應有明確時序，並用適當連接詞或編號表達。",
+      "trigger": "Method 章節步驟順序不清晰（沒有 first/then/finally 或編號）。",
+      "example": "Section 3 Model Architecture 用 3.1 / 3.2 / 3.3 / 3.4 / 3.5 編號清楚展開（Encoder → Decoder → Attention → FFN → Embedding → Positional）— 健康範例，不會 fire。"
+    },
+    "REL-06": {
+      "name": "Concept-Formalization",
+      "meaning": "新引入的概念 / 術語 / 變數應該被形式化定義（數學定義、操作型定義或公式），不能只用比喻或模糊描述。",
+      "trigger": "Entity 被使用但鄰近沒有 Definition FRU 給出形式化定義。",
+      "example": "Abstract 寫「more parallelizable」沒給數學定義（什麼叫平行？要等到 Section 4 Table 1 才用 Sequential Operations 欄位定義）。"
+    },
+    "REL-07": {
+      "name": "Setup-Scoping",
+      "meaning": "實驗章節應交代實驗設定範圍（資料集 / 評估指標 / 硬體 / 超參數）。",
+      "trigger": "Experiment 章節缺乏完整的設定範圍說明。",
+      "example": "Section 5 完整列出 dataset (WMT 2014)、batch size (25K tokens)、硬體 (8 P100 GPUs)、step time (0.4s)、訓練時間 (12 小時) — 健康範例，不會 fire。"
+    },
+    "REL-08": {
+      "name": "Problem-Solution",
+      "meaning": "Intro 提出的問題在 Method 應該有對應的解法說明。",
+      "trigger": "跨章節 — Intro 提到問題但 Method 沒重述該問題就直接給解法。",
+      "example": "Intro 提到「averaging attention-weighted positions 會降解析度」這個問題，Method 直接給 Multi-Head Attention 解法但沒重述「我們要解的就是這個降解析度問題」。"
+    },
+    "REL-09": {
+      "name": "Observation-Attribution",
+      "meaning": "看到實驗現象（Observation）後，應該給歸因解釋為什麼會這樣。",
+      "trigger": "Results / Discussion 章節有 Observation FRU，但鄰近 [-3, +8] EDU 範圍沒有 Attribution FRU。",
+      "example": "Section 6.2 Table 3 row (A) 寫「太多 head 也會使品質下降」但完全沒解釋為什麼。對比 row (B) 旁邊就有「This suggests that determining compatibility is not easy」— 一句歸因就差別很大。"
+    },
+    "REL-10": {
+      "name": "Concession-Compensation",
+      "meaning": "承認自己方法的缺陷 / 限制（Concession）時，應該給出補償（Compensation）方案說明如何彌補。",
+      "trigger": "有 Concession FRU 但鄰近沒有 Compensation FRU。",
+      "example": "Section 2 提「Transformer 用 attention-weighted positions 會降解析度」是 concession，作者馬上補「我們用 Multi-Head Attention 來補償」— 健康範例，補償到位不會 fire。"
+    },
+    "REL-11": {
+      "name": "Specific-Generalization",
+      "meaning": "具體實例（Specific）與一般化結論（Generalization）應該平衡 — 不能只有例子沒結論，或只有結論沒例子。",
+      "trigger": "Specific FRU 與 Generalization FRU 數量比例失衡。",
+      "example": "Abstract 寫「Transformer generalizes well to other tasks」是強泛化主張，但只實驗了 1 個其他任務（English constituency parsing）— 泛化主張過強相對於具體實例。"
+    },
+    "REL-12": {
+      "name": "Core-Restatement",
+      "meaning": "結論章節應該重申摘要 / 引言提出的核心主張，不能跑題或漏掉。",
+      "trigger": "跨章節 — Abstract 強調的主張在 Conclusion 沒重申。",
+      "example": "Abstract 強調「Transformer generalizes well」（含 constituency parsing）但 Conclusion 主要回顧翻譯 SOTA、沒重申 parsing 結果 — Abstract 與 Conclusion 在泛化主張上輕微錯位。"
+    },
+    "REL-13": {
+      "name": "Meta-Discourse",
+      "meaning": "論文章節之間應有適當的元論述（meta-discourse） — 例如「In the following sections, we will...」這種導引語。",
+      "trigger": "章節間缺乏導引 / 過渡語句，讀者難以追蹤論述脈絡。",
+      "example": "Section 2 結尾寫「In the following sections, we will describe the Transformer, motivate self-attention...」— 完美的 meta-discourse，幫讀者預告接下來會看到什麼。健康範例。"
+    }
+  },
+  "example": {
+    "intro": "用 Vaswani 論文中的一句話，從頭到尾看系統怎麼找出問題。這是 <b>REL-09 觀察沒歸因</b> 的範例。",
+    "stepLabel": "Step {n}",
+    "step1": {
+      "title": "原句長這樣",
+      "translation": "中文白話翻譯：「單頭 attention 比最佳設定差 0.9 BLEU；head 太多的話品質也會掉。」",
+      "location": "出現位置：論文第 9 頁，Section 6.2 講 Table 3 row (A) 的實驗結果。"
+    },
+    "step2": {
+      "title": "系統怎麼讀這句話",
+      "intro": "系統把這句話切成幾個小命題（EDU），然後貼上三種便利貼：",
+      "observationLabel": "觀察類便利貼",
+      "observation": "（Observation FRU）：「這句話是在『描述實驗看到什麼』。」",
+      "locationLabel": "位置便利貼",
+      "location": "：「在 Results 章節，第 9 頁。」",
+      "rstLabel": "修辭關係便利貼",
+      "rst": "（RST）：「這句話跟 Table 3 的數據有 Result 因果關係。」",
+      "key": "關鍵：**沒有貼上「歸因類」便利貼**（Attribution FRU）— 因為原文真的沒解釋為什麼。"
+    },
+    "step3": {
+      "title": "REL-09 規則開始工作",
+      "intro": "規則邏輯只看一件事：",
+      "quote": "「這個觀察句旁邊（前 3 句到後 8 句範圍內），有沒有貼著『歸因類』便利貼？」",
+      "body": "系統在這句話的附近找了一圈 — <b>沒找到任何歸因類便利貼</b>。所以系統就把這句話列為「可疑候選」，準備交給 LLM 確認。",
+      "contrast": "對比：Section 6.2 row (B) 講「reducing dk hurts quality」之後就有一句「This suggests that determining compatibility is not easy」— 那就是「歸因類」便利貼，所以 row (B) 不會被列為候選。"
+    },
+    "step4": {
+      "title": "LLM 做最終判決",
+      "intro": "系統把這個候選交給 Claude 看，問它「這真的是缺陷嗎？」LLM 讀完原文 + 鄰近段落後回覆：",
+      "verdictLabel": "是的，這是缺陷",
+      "verdict": "（violates = true）",
+      "severityLabel": "嚴重度：中",
+      "severity": "（不破壞核心論證但削弱說服力）",
+      "confidenceLabel": "信心：75%",
+      "confidence": "（蠻確定但有點懷疑作者可能是故意精簡）",
+      "suggestionLabel": "建議補充",
+      "suggestion": "：「太多 head 會讓每個 head 維度太小（dk = dmodel / h），attention 表達能力下降。」"
+    },
+    "step5": {
+      "title": "使用者看到的結果",
+      "defectName": "觀察沒歸因",
+      "severityBadge": "中嚴重",
+      "body": "作者觀察到「太多 head 會降低品質」，但沒解釋為什麼。讀者只看到現象不知道原因。",
+      "suggestionLabel": "建議：",
+      "suggestion": "補上「太多 head 時每個 head 維度過小（dk = dmodel / h），導致 attention 表達能力不足」之類的歸因說明。",
+      "footnote": "點這個缺陷卡片 → PDF viewer 自動 scroll 到該段落並高亮原句。"
+    },
+    "step6": {
+      "title": "學長判定 → 量化系統品質",
+      "body1Prefix": "學長看到這條缺陷後可以按三個鈕：",
+      "verdictCorrect": "判對",
+      "verdictPartial": "部分對",
+      "verdictWrong": "誤判",
+      "body1Suffix": "。判定會存到 SQLite。",
+      "body2Prefix": "這些判定用來計算每條規則的 soft precision（correct + 0.5 × partial），也能匯出成 ground truth。",
+      "body2Bold": "判定只用於評估與分析，不會回寫進 prompt 影響後續判讀",
+      "body2Suffix": "，每次檢核都是獨立的 zero-shot，結果可重現。"
+    }
+  },
+  "phase2": {
+    "p1Prefix": "系統判讀完後，由學長對每個缺陷做人工檢查（判對 / 部分對 / 誤判），用來量化系統品質。判定資料只用於評估與匯出 ground truth，",
+    "p1Bold": "不會回饋進 prompt",
+    "p1Suffix": "——每次檢核都是獨立 zero-shot，結果可重現。",
+    "diagramCaption": "圖 8-1：人工評估流程",
+    "diagram": {
+      "newPaper": "新論文",
+      "cypher": "Cypher 候選",
+      "llm": "LLM zero-shot 判讀",
+      "defectList": "Defect 清單<br/>含 confidence + rule_meta",
+      "manualLabel": "手動標 correct / partial / wrong",
+      "sqlite": "SQLite<br/>defect_judgments",
+      "summary": "GET /api/judgments/summary<br/>per-rule soft precision",
+      "export": "GET /api/judgments/export<br/>匯出 ground truth"
+    },
+    "p2": "人工判定提供量化指標（per-rule soft precision =（correct + 0.5 × partial）/ 已判數），可作為論文的評估結果與 ground truth，佐證規則品質。"
+  },
+  "guards": {
+    "p1": "右下角浮動抽屜，限定討論本篇論文。四層保險：",
+    "scopeLabel": "Scope refuse",
+    "scope": " — 只能討論這篇論文，問其他主題婉拒並引導回論文",
+    "citeLabel": "強制 cite",
+    "citePrefix": " — 引用必須帶 ",
+    "citeMid": " / ",
+    "citeSuffix": "，前端解析成可點 chip",
+    "injectionLabel": "Prompt injection 偵測",
+    "injection": " — 8 種 pattern (例如 「ignore previous instructions」、「you are now X」、「system:」) 命中時 system prompt 加警告",
+    "rateLabel": "Rate limit",
+    "rate": " — 每 paper 每分鐘 15 次（in-memory bucket）"
+  },
+  "literature": {
+    "p1": "系統的每一層設計都對得到一篇被引爆的論文：",
+    "colDesign": "系統設計",
+    "colWork": "關鍵文獻",
+    "items": {
+      "transformer": "Transformer 抽取能力",
+      "rst": "RST 修辭結構",
+      "argMining": "Argument Mining",
+      "kgLlm": "KG + LLM 結合",
+      "neurosymbolic": "Neurosymbolic AI",
+      "toolUse": "Tool Use 強制 schema",
+      "longContext": "Long-context 失準",
+      "hallucination": "Hallucination 緩解",
+      "humanJudge": "Human-as-judge 評估"
+    }
+  },
+  "perf": {
+    "p1Prefix": "一篇正常論文的分析會送出約 ",
+    "p1Calls": "30–40 次 LLM 呼叫",
+    "p1Mid": "（每章節 3 次：EDU / ER / RST·FRU；13 條 REL 規則各 1 次；跨章節 1 次）。這些呼叫原本是「一個接一個」序列執行，token 密集的中文段落單次就要 4–10 秒，整篇分析常常要 ",
+    "p1Minutes": "~9 分鐘",
+    "p1Suffix": "。下面三項改動把它壓到約 1/5。",
+    "h1": "11.1 瓶頸診斷（用真實數據，不靠猜）",
+    "h1p": "系統把每次 LLM 呼叫的 stage、模型、token、時間都記到 SQLite（{table} 表）。用同一篇論文的實測拆解，時間幾乎平均分布在兩個區塊，而且各自內部都是序列：",
+    "diag1ColBlock": "區塊",
+    "diag1ColCalls": "呼叫數",
+    "diag1ColTime": "序列耗時",
+    "diag1": {
+      "extractBlock": "段落抽取（EDU/ER/RST·FRU × 各章節）",
+      "extractCalls": "~18–24",
+      "extractTime": "~246s",
+      "rulesBlock": "13 條 REL 規則檢核",
+      "rulesCalls": "13",
+      "rulesTime": "~288s",
+      "crossBlock": "跨章節 second pass",
+      "crossCalls": "1",
+      "crossTime": "~13s",
+      "totalBlock": "合計",
+      "totalCalls": "~32–38",
+      "totalTime": "~538s（9 分鐘）"
+    },
+    "h2": "11.2 平行化：把獨立的呼叫同時送出",
+    "h2p": "各章節彼此獨立、13 條規則也彼此獨立，所以用一個有上限的 thread pool 把它們同時送出（{maxWorkers}，預設 6）。為什麼用 thread 而不改 async：這些都是 I/O-bound 的 API 等待，OpenAI client 是同步的，thread pool 就足夠且改動最小。",
+    "h2li": {
+      "crossSectionLabel": "跨章節平行",
+      "crossSection": "：每個章節的 EDU→ER→RST·FRU 三步仍有先後依賴（ER、RST 都吃 EDU），所以章節內維持序列；章節之間才平行。",
+      "crossRuleLabel": "跨規則平行",
+      "crossRule": "：13 條規則直接整批平行——這是最大的單點收益。",
+      "safeLabel": "為何安全",
+      "safe": "：SQLite 每次呼叫開新連線 + WAL 模式、Neo4j 每次開新 session（driver 本身 thread-safe）、Neo4j 寫入在平行區段之後才做；{poolMap} 保留輸入順序，所以結果組裝是 deterministic 的。",
+      "rateLabel": "rate limit",
+      "ratePrefix": "：pool 有上限避免狂撞 OpenAI 限流，底層的 ",
+      "rateSuffix": " 也已內建 429／5xx 的指數退避重試。"
+    },
+    "h3": "11.3 輸出瘦身：只有「真的違規」才寫理由",
+    "h3p1Prefix": "規則檢核原本要求 LLM 對",
+    "h3p1Bold": "每一個",
+    "h3p1Suffix": "候選都回傳 severity / section / description / suggestion 等欄位——但系統其實只留違規的、其餘全部丟掉。對候選很多的規則，這等於逼模型寫一大堆繁體中文然後扔掉。例如 REL-06（Concept-Formalization）一篇就有 60–70 個候選、只有 5 個違規，卻吐了 ~7000 個 output token、花 ~100 秒。",
+    "h3p2Prefix": "改成「非違規只回 ",
+    "h3p2Suffix": "，細節欄位只有違規時才填」。缺陷結果完全不變（非違規本來就丟掉），但 REL-06 從 7069 → 1554 token、101s → 20s。",
+    "h4": "11.4 量測結果（同一篇論文，前後對比）",
+    "h4ColStage": "階段",
+    "h4ColBefore": "原本（序列＋胖 schema）",
+    "h4ColAfter": "現在（平行＋瘦 schema）",
+    "diag4": {
+      "buildBefore": "~246s",
+      "buildAfter": "~67s",
+      "checkBefore": "~288s",
+      "checkAfter": "~26s",
+      "crossBefore": "~13s",
+      "crossAfter": "~13s",
+      "totalStage": "合計",
+      "totalBefore": "~9 分鐘",
+      "totalAfter": "~1.8 分鐘（約 5×）"
+    },
+    "h5": "11.5 PDF OCR 容錯",
+    "h5p": "部分 LaTeX 論文用了沒有 ToUnicode CMap 的字型，複製／抽取出來是亂碼（{garbled} 其實是 {chapter}）。系統會在原生抽取後做一個輕量偵測（看 backtick／星號等噪音字元比例），若判定為亂碼就自動 fallback 到 tesseract OCR（繁中＋英文），並保留每段文字的頁碼與 bbox 座標。文字抽取移到背景任務，OCR（30 頁約 3–5 分鐘）不會卡住上傳請求。",
+    "h6": "11.6 單元測試守住這些機制",
+    "h6p": "這些重構改了不少 orchestration 邏輯，所以加了一組毫秒級、不碰網路／LLM／Neo4j 的單元測試（{tests}）：亂碼偵測（真實亂碼樣本、乾淨中英文、統計符號多的文字防誤判）與原生→OCR 路由（mock 掉抽取器只測決策）。亂碼偵測這條本來就出過一次 bug，測試也用「紅→綠」驗證過確實抓得到該 bug。"
+  },
+  "footer": {
+    "prefix": "論文檢核系統 · 系統說明文件 · 詳細設計請見 "
+  }
+}

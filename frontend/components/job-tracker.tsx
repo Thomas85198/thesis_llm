@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
   createContext,
   useCallback,
@@ -11,13 +11,17 @@ import {
 } from "react";
 import { toast } from "sonner";
 
+import { useRouter } from "@/i18n/navigation";
 import { fetchJob, fetchPaperResult, type JobStatus } from "@/lib/api";
 import { isProcessingStatus } from "@/lib/job-status";
 import { fireDoneNotification, requestNotifyPermission } from "@/lib/notify";
 
 const POLL_MS = 2000;
 const STORAGE_KEY = "paperchecker:activeJob";
-const DONE_TITLE = "✅ 分析完成 — 論文檢核系統";
+// Cross-tab title flash (shown when the user is on another tab) — kept in
+// English regardless of locale, since the active UI locale isn't meaningful
+// for an out-of-focus tab.
+const DONE_TITLE = "✅ Analysis complete — Paper Review System";
 // Auto-dismiss the "done" pill if the user never acts on it.
 const DONE_AUTO_DISMISS_MS = 180_000; // 3 minutes
 
@@ -46,6 +50,7 @@ export function useJobTracker(): JobTrackerValue {
 
 export function JobTrackerProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const t = useTranslations("jobIndicator");
   const [active, setActive] = useState<ActiveJob | null>(null);
   const origTitleRef = useRef<string | null>(null);
   // Guards against firing the completion toast/notification more than once for
@@ -97,13 +102,14 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
     (paperId: string, title: string, defectCount: number | null) => {
       setActive((p) =>
         p
-          ? { ...p, status: "done", message: "完成" }
-          : { jobId: "", paperId, title, status: "done", message: "完成" }
+          ? { ...p, status: "done", message: "done" }
+          : { jobId: "", paperId, title, status: "done", message: "done" }
       );
       const open = () => router.push(`/papers/${encodeURIComponent(paperId)}`);
-      toast.success("分析完成", {
-        description: defectCount != null ? `共 ${defectCount} 個缺陷` : undefined,
-        action: { label: "查看結果", onClick: open },
+      toast.success(t("toastDone"), {
+        description:
+          defectCount != null ? t("toastDefects", { count: defectCount }) : undefined,
+        action: { label: t("viewResults"), onClick: open },
         duration: 12000,
       });
       fireDoneNotification({ title, defectCount, onOpen: open });
@@ -113,7 +119,7 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
         document.title = DONE_TITLE;
       }
     },
-    [router]
+    [router, t]
   );
 
   // Restore the flashed tab title once the user comes back.

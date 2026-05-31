@@ -1,16 +1,21 @@
 "use client";
 
+import { useLocale, useTranslations } from "next-intl";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { pickLocalized } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { Defect, EDU, Severity, Verdict } from "@/lib/api";
 
-const SEVERITY_LABEL: Record<Severity, string> = {
-  high: "高",
-  medium: "中",
-  low: "低",
+// Maps each severity / verdict / confidence tier to its message key under the
+// "defects" namespace. The visible text lives in messages/*.json so the labels
+// switch with the active locale.
+const SEVERITY_KEY: Record<Severity, string> = {
+  high: "severityHigh",
+  medium: "severityMedium",
+  low: "severityLow",
 };
 
 const SEVERITY_BORDER: Record<Severity, string> = {
@@ -27,26 +32,25 @@ const SEVERITY_BADGE: Record<Severity, string> = {
 
 const SEVERITY_RANK: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
 
-const VERDICT_OPTIONS: {
-  value: Verdict;
-  label: string;
-  active: string;
-}[] = [
+const VERDICT_KEY: Record<Verdict, string> = {
+  correct: "verdictCorrect",
+  partial: "verdictPartial",
+  wrong: "verdictWrong",
+};
+
+const VERDICT_OPTIONS: { value: Verdict; active: string }[] = [
   {
     value: "correct",
-    label: "判對",
     active:
       "bg-green-100 text-green-800 ring-2 ring-green-500 dark:bg-green-950 dark:text-green-200",
   },
   {
     value: "partial",
-    label: "部分對",
     active:
       "bg-yellow-100 text-yellow-800 ring-2 ring-yellow-500 dark:bg-yellow-950 dark:text-yellow-200",
   },
   {
     value: "wrong",
-    label: "誤判",
     active:
       "bg-red-100 text-red-800 ring-2 ring-red-500 dark:bg-red-950 dark:text-red-200",
   },
@@ -60,6 +64,7 @@ type Props = {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onJumpToPdf?: (defectId: string) => void;
+  onFocusEdu?: (eduId: string) => void;
   judgments: Map<string, Verdict>;
   onJudge: (defectId: string, ruleId: string, verdict: Verdict | null) => void;
 };
@@ -70,9 +75,11 @@ export function DefectPanel({
   selectedId,
   onSelect,
   onJumpToPdf,
+  onFocusEdu,
   judgments,
   onJudge,
 }: Props) {
+  const t = useTranslations("defects");
   const [groupBy, setGroupBy] = useState<GroupBy>("severity");
 
   const groups = useMemo(
@@ -83,7 +90,7 @@ export function DefectPanel({
   if (defects.length === 0) {
     return (
       <div className="flex h-full items-center justify-center rounded-md border bg-muted/30 p-6 text-center">
-        <p className="text-sm text-muted-foreground">沒有發現缺陷</p>
+        <p className="text-sm text-muted-foreground">{t("none")}</p>
       </div>
     );
   }
@@ -91,7 +98,7 @@ export function DefectPanel({
   return (
     <div className="flex h-full flex-col rounded-md border">
       <div className="flex items-center gap-1 border-b bg-muted/30 px-2 py-1.5 text-[11px]">
-        <span className="text-muted-foreground">分組：</span>
+        <span className="text-muted-foreground">{t("groupByLabel")}</span>
         <button
           type="button"
           onClick={() => setGroupBy("severity")}
@@ -102,7 +109,7 @@ export function DefectPanel({
               : "text-muted-foreground hover:text-foreground"
           )}
         >
-          嚴重度
+          {t("groupSeverity")}
         </button>
         <button
           type="button"
@@ -114,7 +121,7 @@ export function DefectPanel({
               : "text-muted-foreground hover:text-foreground"
           )}
         >
-          規則
+          {t("groupRule")}
         </button>
       </div>
 
@@ -123,7 +130,7 @@ export function DefectPanel({
           {groups.map((g) => (
             <section key={g.key}>
               <h3 className="sticky top-0 z-10 mb-1 flex items-baseline gap-2 bg-background/95 px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground backdrop-blur-sm">
-                <span>{g.label}</span>
+                <span>{g.severity ? t(SEVERITY_KEY[g.severity]) : g.rawLabel}</span>
                 <span className="text-[10px] font-normal">({g.items.length})</span>
               </h3>
               <div className="space-y-2">
@@ -138,6 +145,7 @@ export function DefectPanel({
                       onSelect(selectedId === d.id ? null : d.id)
                     }
                     onJumpToPdf={onJumpToPdf ? () => onJumpToPdf(d.id) : undefined}
+                    onFocusEdu={onFocusEdu}
                     onJudge={(v) => onJudge(d.id, d.rule_id, v)}
                   />
                 ))}
@@ -157,6 +165,7 @@ function DefectCard({
   currentVerdict,
   onSelect,
   onJumpToPdf,
+  onFocusEdu,
   onJudge,
 }: {
   defect: Defect;
@@ -165,11 +174,16 @@ function DefectCard({
   currentVerdict: Verdict | null;
   onSelect: () => void;
   onJumpToPdf?: () => void;
+  onFocusEdu?: (eduId: string) => void;
   onJudge: (v: Verdict | null) => void;
 }) {
-  const evidenceTexts = d.evidence_edu_ids
-    .map((eid) => eduMap.get(eid)?.text)
-    .filter((t): t is string => Boolean(t));
+  const t = useTranslations("defects");
+  const locale = useLocale();
+  // Keep each evidence EDU's id alongside its text so a quote can navigate the
+  // PDF to that exact sentence (parity with the KG side's per-EDU locate).
+  const evidence = d.evidence_edu_ids
+    .map((eid) => ({ eid, text: eduMap.get(eid)?.text }))
+    .filter((x): x is { eid: string; text: string } => Boolean(x.text));
 
   // 跨章節 / 全局類缺陷常常沒有可解析的證據 EDU（evidence_edu_ids 為空或對不到
   // 圖譜節點），這時 PDF 跳轉沒有目標。沒有定位就不要給「在 PDF 中查看」按鈕，
@@ -215,7 +229,7 @@ function DefectCard({
               SEVERITY_BADGE[d.severity]
             )}
           >
-            {SEVERITY_LABEL[d.severity]}嚴重
+            {t(SEVERITY_KEY[d.severity])}
           </span>
           <Badge variant="secondary" className="text-[10px]">
             {d.section}
@@ -223,21 +237,42 @@ function DefectCard({
           <ConfidenceBadge value={d.confidence ?? null} />
         </div>
 
-        {evidenceTexts.length > 0 && (
+        {evidence.length > 0 && (
           <div className="mt-2 space-y-1 border-l-2 border-muted-foreground/30 pl-3">
-            {evidenceTexts.map((t, i) => (
-              <p
-                key={i}
-                title={t.trim()}
-                className={cn(
-                  "text-xs italic leading-relaxed text-muted-foreground",
-                  // 選中時完整顯示原句；未選中保持 line-clamp-3
-                  isSelected ? "" : "line-clamp-3 hover:line-clamp-none"
-                )}
-              >
-                「{t.trim()}」
-              </p>
-            ))}
+            {evidence.map(({ eid, text }, i) => {
+              // 選中時完整顯示原句；未選中保持 line-clamp-3
+              const clamp = isSelected ? "" : "line-clamp-3 hover:line-clamp-none";
+              const quote = `「${text.trim()}」`;
+              // Locatable sentences become clickable → jump the PDF to that EDU.
+              return onFocusEdu && eduMap.has(eid) ? (
+                <button
+                  key={i}
+                  type="button"
+                  title={t("locateSentence")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFocusEdu(eid);
+                  }}
+                  className={cn(
+                    "block w-full cursor-pointer text-left text-xs italic leading-relaxed text-muted-foreground transition-colors hover:text-foreground hover:underline hover:decoration-dotted hover:underline-offset-2",
+                    clamp
+                  )}
+                >
+                  {quote}
+                </button>
+              ) : (
+                <p
+                  key={i}
+                  title={text.trim()}
+                  className={cn(
+                    "text-xs italic leading-relaxed text-muted-foreground",
+                    clamp
+                  )}
+                >
+                  {quote}
+                </p>
+              );
+            })}
           </div>
         )}
 
@@ -247,7 +282,7 @@ function DefectCard({
             isSelected ? "" : "line-clamp-3"
           )}
         >
-          {d.description}
+          {pickLocalized(d.description, locale)}
         </p>
 
         <div
@@ -256,8 +291,8 @@ function DefectCard({
             isSelected ? "" : "line-clamp-3"
           )}
         >
-          <span className="font-semibold">建議：</span>
-          {d.suggestion}
+          <span className="font-semibold">{t("suggestion")}</span>
+          {pickLocalized(d.suggestion, locale)}
         </div>
       </div>
 
@@ -272,15 +307,16 @@ function DefectCard({
             "mt-2 inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-medium",
             "transition-colors hover:bg-accent"
           )}
-          title="跳到 PDF 中對應位置並高亮"
+          title={t("viewInPdfTitle")}
         >
-          在 PDF 中查看
+          {t("viewInPdf")}
         </button>
       )}
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2">
         {VERDICT_OPTIONS.map((opt) => {
           const isActive = currentVerdict === opt.value;
+          const label = t(VERDICT_KEY[opt.value]);
           return (
             <button
               key={opt.value}
@@ -294,9 +330,9 @@ function DefectCard({
                 "hover:opacity-90",
                 isActive ? opt.active : "bg-muted text-muted-foreground"
               )}
-              title={isActive ? "點擊取消" : `標為 ${opt.label}`}
+              title={isActive ? t("verdictCancel") : t("verdictMark", { label })}
             >
-              {opt.label}
+              {label}
             </button>
           );
         })}
@@ -306,6 +342,7 @@ function DefectCard({
 }
 
 function ConfidenceBadge({ value }: { value: number | null }) {
+  const t = useTranslations("defects");
   if (value === null) return null;
   const pct = Math.round(value * 100);
   let cls: string;
@@ -313,14 +350,14 @@ function ConfidenceBadge({ value }: { value: number | null }) {
   if (value >= 0.8) {
     cls =
       "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300";
-    label = "高信心";
+    label = t("confidenceHigh");
   } else if (value >= 0.5) {
     cls = "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300";
-    label = "中信心";
+    label = t("confidenceMedium");
   } else {
     cls =
       "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
-    label = "低信心";
+    label = t("confidenceLow");
   }
   return (
     <span
@@ -328,14 +365,19 @@ function ConfidenceBadge({ value }: { value: number | null }) {
         "rounded px-1.5 py-0.5 font-mono text-[10px] font-medium",
         cls
       )}
-      title={`LLM 信心：${pct}%（${label}）`}
+      title={t("confidenceTitle", { pct, label })}
     >
       {pct}%
     </span>
   );
 }
 
-type Group = { key: string; label: string; items: Defect[] };
+type Group = {
+  key: string;
+  severity: Severity | null;
+  rawLabel: string | null;
+  items: Defect[];
+};
 
 function groupDefects(defects: Defect[], by: GroupBy): Group[] {
   if (by === "severity") {
@@ -349,7 +391,8 @@ function groupDefects(defects: Defect[], by: GroupBy): Group[] {
       .filter((s) => buckets.has(s))
       .map((s) => ({
         key: s,
-        label: `${SEVERITY_LABEL[s]}嚴重`,
+        severity: s,
+        rawLabel: null,
         items: buckets.get(s)!,
       }));
   }
@@ -363,7 +406,9 @@ function groupDefects(defects: Defect[], by: GroupBy): Group[] {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([rule_id, items]) => ({
       key: rule_id,
-      label: `${rule_id} · ${items[0].defect_type}`,
+      severity: null,
+      // rule_id and defect_type are backend data — kept as-is, not translated.
+      rawLabel: `${rule_id} · ${items[0].defect_type}`,
       items: items.sort(
         (x, y) => SEVERITY_RANK[x.severity] - SEVERITY_RANK[y.severity]
       ),

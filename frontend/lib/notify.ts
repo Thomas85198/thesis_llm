@@ -49,11 +49,13 @@ export function fireDoneNotification(opts: {
 }): void {
   if (!canSystemNotify() || Notification.permission !== "granted") return;
   try {
+    // OS-level notification — kept in English regardless of UI locale (it can
+    // fire while the user is in another app, where the in-app locale is moot).
     const body =
       opts.defectCount != null
-        ? `「${opts.title}」分析完成，共 ${opts.defectCount} 個缺陷`
-        : `「${opts.title}」分析完成`;
-    const n = new Notification("分析完成", {
+        ? `"${opts.title}" analyzed — ${opts.defectCount} defects`
+        : `"${opts.title}" analyzed`;
+    const n = new Notification("Analysis complete", {
       body,
       icon: "/icon.svg",
       tag: "paperchecker-done",

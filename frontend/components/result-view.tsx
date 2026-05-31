@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -34,6 +35,8 @@ const PdfViewer = dynamic(
 );
 
 export function ResultView({ result }: { result: AnalysisResult }) {
+  const t = useTranslations("defects");
+  const locale = useLocale();
   const [selectedDefectId, setSelectedDefectId] = useState<string | null>(null);
   const [focusedEduId, setFocusedEduId] = useState<string | null>(null);
   const [judgments, setJudgments] = useState<Map<string, Verdict>>(new Map());
@@ -112,7 +115,7 @@ export function ResultView({ result }: { result: AnalysisResult }) {
   // jump the PDF viewer / defect panel to that location.
   function handleChatEduClick(eduId: string) {
     if (!eduMap.has(eduId)) {
-      toast.error("找不到該段落（EDU 已不存在）");
+      toast.error(t("notFoundEdu"));
       return;
     }
     setFocusedEduId(eduId);
@@ -125,7 +128,7 @@ export function ResultView({ result }: { result: AnalysisResult }) {
   function handleChatDefectClick(defectId: string) {
     const d = result.defects.find((x) => x.id === defectId);
     if (!d) {
-      toast.error("找不到該缺陷");
+      toast.error(t("notFoundDefect"));
       return;
     }
     setSelectedDefectId(d.id);
@@ -156,7 +159,7 @@ export function ResultView({ result }: { result: AnalysisResult }) {
         });
       }
     } catch (err) {
-      toast.error("儲存判定失敗", {
+      toast.error(t("saveJudgeFailed"), {
         description: err instanceof Error ? err.message : String(err),
       });
       // Roll back: re-fetch to recover server state.
@@ -172,7 +175,7 @@ export function ResultView({ result }: { result: AnalysisResult }) {
   }
 
   function handleExport() {
-    const csv = defectsToCsv(result.defects, eduMap);
+    const csv = defectsToCsv(result.defects, eduMap, locale);
     const safeId = result.paper_id.replace(/[^\w-]/g, "_");
     const stamp = new Date().toISOString().slice(0, 10);
     downloadCsv(`defects_${safeId}_${stamp}.csv`, csv);
@@ -216,16 +219,23 @@ export function ResultView({ result }: { result: AnalysisResult }) {
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span>
               <span className="font-semibold">{result.defects.length}</span>
-              <span className="text-muted-foreground"> 個缺陷</span>
+              <span className="text-muted-foreground"> {t("countSuffix")}</span>
             </span>
             {result.defects.length > 0 && (
               <span className="text-xs text-muted-foreground">
-                · 已判 <span className="font-semibold">{judgedCount}</span>/
-                {result.defects.length}
+                ·{" "}
+                {t("judgedProgress", {
+                  judged: judgedCount,
+                  total: result.defects.length,
+                })}
                 {judgedCount > 0 && (
                   <>
                     {" "}
-                    （判對 {correctCount} · 部分對 {partialCount} · 誤判 {wrongCount}）
+                    {t("verdictBreakdown", {
+                      correct: correctCount,
+                      partial: partialCount,
+                      wrong: wrongCount,
+                    })}
                   </>
                 )}
               </span>
@@ -237,7 +247,7 @@ export function ResultView({ result }: { result: AnalysisResult }) {
             onClick={handleExport}
             disabled={result.defects.length === 0}
           >
-            下載 CSV
+            {t("downloadCsv")}
           </Button>
         </div>
         <div className="flex-1 min-h-0">
@@ -247,6 +257,7 @@ export function ResultView({ result }: { result: AnalysisResult }) {
             selectedId={selectedDefectId}
             onSelect={handleSelectDefect}
             onJumpToPdf={handleJumpToPdf}
+            onFocusEdu={handleHighlightClick}
             judgments={judgments}
             onJudge={handleJudge}
           />

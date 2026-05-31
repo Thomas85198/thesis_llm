@@ -1,24 +1,26 @@
 "use client";
 
 import { Check, RefreshCwIcon, XIcon } from "lucide-react";
-import Link from "next/link";
+import { useTranslations } from "next-intl";
 
 import { useJobTracker } from "@/components/job-tracker";
+import { Link } from "@/i18n/navigation";
 import { STATUS_PROGRESS } from "@/lib/job-status";
 
 export function JobIndicator() {
   const { active, isProcessing, clearJob } = useJobTracker();
+  const t = useTranslations("jobIndicator");
   if (!active) return null;
 
   if (isProcessing) {
     return (
       <Link
         href="/"
-        title="分析進行中，點擊回到進度"
+        title={t("backToProgress")}
         className="flex items-center gap-1.5 rounded-full border bg-muted/60 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
       >
         <RefreshCwIcon className="h-3.5 w-3.5 shrink-0 animate-spin" />
-        <span>分析中</span>
+        <span>{t("analyzing")}</span>
         <span className="tabular-nums">{STATUS_PROGRESS[active.status]}%</span>
       </Link>
     );
@@ -33,11 +35,11 @@ export function JobIndicator() {
         className="flex items-center gap-1.5"
       >
         <Check className="h-3.5 w-3.5 shrink-0" />
-        分析完成 · 查看
+        {t("doneView")}
       </Link>
       <button
         onClick={clearJob}
-        aria-label="關閉"
+        aria-label={t("close")}
         className="rounded-full p-0.5 hover:bg-emerald-100 dark:hover:bg-emerald-900"
       >
         <XIcon className="h-3.5 w-3.5" />

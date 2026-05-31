@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { setRequestLocale } from "next-intl/server";
@@ -32,11 +33,11 @@ export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
 }
 
-// Runs before first paint (blocking inline script): reads the `theme` cookie and
-// applies `.dark` to <html> so a reload never flashes the wrong theme. Falls
-// back to the OS preference for first-time visitors who have no cookie yet. The
-// toggle (components/theme-toggle) keeps the cookie in sync afterwards.
-const THEME_INIT_SCRIPT = `(function(){try{var m=document.cookie.match(/(?:^|; )theme=([^;]+)/);var t=m&&m[1];if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark');}}catch(e){}})();`;
+// First-visit fallback only. When the user has already chosen a theme we render
+// the `.dark` class on <html> server-side (see below), so a reload never flashes.
+// This blocking <head> script covers the no-cookie case: it follows the OS
+// preference before first paint. The toggle keeps the cookie in sync afterwards.
+const THEME_INIT_SCRIPT = `(function(){try{if(!/(?:^|; )theme=/.test(document.cookie)&&window.matchMedia('(prefers-color-scheme: dark)').matches){document.documentElement.classList.add('dark');}}catch(e){}})();`;
 
 export default async function LocaleLayout({
   children,
@@ -49,17 +50,24 @@ export default async function LocaleLayout({
   if (!hasLocale(routing.locales, locale)) {
     notFound();
   }
-  // Enable static rendering for this locale segment.
   setRequestLocale(locale);
+
+  // Read the saved theme server-side so the SSR'd <html> already carries `.dark`
+  // — the reload paints the correct theme from the very first frame, no flash.
+  const isDark = (await cookies()).get("theme")?.value === "dark";
 
   return (
     <html
       lang={locale}
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased${
+        isDark ? " dark" : ""
+      }`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col bg-muted/30">
+      <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+      <body className="min-h-full flex flex-col bg-muted/30">
         <NextIntlClientProvider>
           <JobTrackerProvider>
             <SiteHeader />

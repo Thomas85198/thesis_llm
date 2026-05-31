@@ -1,0 +1,143 @@
+{
+  "header": {
+    "appName": "論文檢核系統",
+    "appNameAria": "論文檢核系統",
+    "versionTitle": "版本紀錄",
+    "upload": "上傳",
+    "history": "歷史",
+    "ruleStats": "規則統計",
+    "changelog": "版本紀錄",
+    "language": "語言"
+  },
+  "nav": {
+    "menuTitle": "選單",
+    "menuAria": "選單"
+  },
+  "jobIndicator": {
+    "analyzing": "分析中",
+    "backToProgress": "分析進行中，點擊回到進度",
+    "doneView": "分析完成 · 查看",
+    "close": "關閉",
+    "toastDone": "分析完成",
+    "toastDefects": "共 {count} 個缺陷",
+    "viewResults": "查看結果"
+  },
+  "guard": {
+    "leaveConfirm": "分析進行中，離開會關閉這個進度畫面（分析仍會在背景完成，可從上方「分析中」狀態回來）。確定離開？"
+  },
+  "versionWatcher": {
+    "updated": "系統已更新到新版本，請重新整理以套用。",
+    "updateNow": "立即更新"
+  },
+  "home": {
+    "title": "上傳論文，自動找出邏輯缺陷",
+    "description": "系統會把論文拆成 EDU、抽 Entity 與關係、標 RST/FRU 結構，寫入 Neo4j Knowledge Graph，最後用 13 條 REL 規則檢核並列出修改建議。",
+    "backendError": "後端未連線",
+    "backendStart": "請啟動："
+  },
+  "upload": {
+    "cardTitle": "上傳論文",
+    "fileReplace": "點擊或拖放可更換",
+    "dropHint": "拖放檔案到此，或點擊選擇",
+    "formats": "支援 PDF / TXT / MD（中・英）",
+    "titleLabel": "標題（選填）",
+    "titlePlaceholder": "留空則自動從論文內容偵測標題",
+    "titleHelp": "通常不用填，系統會自動讀出論文標題；想覆寫再手動輸入。",
+    "analyzing": "分析中…",
+    "start": "開始分析",
+    "etaHint": "通常需要 1–10 分鐘，視論文長度",
+    "bgHint": "可切到其他頁或關掉分頁去做別的事 — 分析會在背景完成，完成時通知你。",
+    "errorTitle": "錯誤",
+    "cacheHitTitle": "命中快取",
+    "cacheHitDesc": "相同檔案已分析過，跳過重新處理",
+    "uploadFailed": "上傳失敗"
+  },
+  "jobStatus": {
+    "queued": "排隊中",
+    "extracting": "抽取 EDU / ER / RST / FRU",
+    "checking": "執行 13 條 REL 規則檢核",
+    "done": "完成",
+    "error": "失敗"
+  },
+  "papers": {
+    "title": "分析歷史",
+    "description": "所有已分析過的論文（持久化於 SQLite）",
+    "deleteSelected": "刪除選取 ({count})",
+    "uploadNew": "上傳新論文",
+    "listError": "無法取得列表",
+    "empty": "還沒有分析過的論文",
+    "uploadFirst": "上傳第一篇",
+    "selectAll": "全選",
+    "deselectAll": "取消全選",
+    "totalCount": "共 {count} 篇",
+    "selectAria": "選取",
+    "deselectAria": "取消選取",
+    "defectsBadge": "{count} 缺陷",
+    "confirmDelete": "確定刪除 {count} 篇論文？\n會一併清除其分析結果、學長判定與成本紀錄，此動作無法復原。",
+    "deletePartial": "成功 {ok} 篇 / 失敗 {fail} 篇",
+    "deleteOk": "已刪除 {ok} 篇"
+  },
+  "paperLayout": {
+    "defectsBadge": "{count} 缺陷",
+    "tabDefects": "缺陷 + PDF",
+    "tabGraph": "Knowledge Graph",
+    "llmCalls": "{count} 次 LLM 呼叫"
+  },
+  "paperResult": {
+    "notFound": "找不到結果",
+    "notFoundHint": "可能原因：後端伺服器重啟導致 in-memory 結果遺失。請重新上傳論文。",
+    "backToUpload": "回上傳頁"
+  },
+  "defects": {
+    "countSuffix": "個缺陷",
+    "judgedProgress": "已判 {judged}/{total}",
+    "verdictBreakdown": "（判對 {correct} · 部分對 {partial} · 誤判 {wrong}）",
+    "downloadCsv": "下載 CSV",
+    "none": "沒有發現缺陷",
+    "groupByLabel": "分組：",
+    "groupSeverity": "嚴重度",
+    "groupRule": "規則",
+    "severityHigh": "高嚴重",
+    "severityMedium": "中嚴重",
+    "severityLow": "低嚴重",
+    "suggestion": "建議：",
+    "viewInPdf": "在 PDF 中查看",
+    "viewInPdfTitle": "跳到 PDF 中對應位置並高亮",
+    "locateSentence": "在 PDF 中定位此句",
+    "verdictCorrect": "判對",
+    "verdictPartial": "部分對",
+    "verdictWrong": "誤判",
+    "verdictCancel": "點擊取消",
+    "verdictMark": "標為 {label}",
+    "confidenceHigh": "高信心",
+    "confidenceMedium": "中信心",
+    "confidenceLow": "低信心",
+    "confidenceTitle": "LLM 信心：{pct}%（{label}）",
+    "notFoundEdu": "找不到該段落（EDU 已不存在）",
+    "notFoundDefect": "找不到該缺陷",
+    "saveJudgeFailed": "儲存判定失敗"
+  },
+  "chat": {
+    "fab": "論文助手",
+    "openAria": "開啟論文助手",
+    "title": "論文助手",
+    "description": "只能討論這篇論文的內容與檢出的缺陷。回答會引用 [EDU:xxx] / [DEFECT:xxx]。",
+    "thinking": "助手思考中…",
+    "placeholder": "問這篇論文一個問題…（Enter 送出 / Shift+Enter 換行）",
+    "sendAria": "送出",
+    "clear": "清空對話",
+    "tryAsk": "試試問問看：",
+    "roleUser": "你",
+    "roleAssistant": "助手",
+    "emptyReply": "(空回覆)",
+    "tooLong": "訊息過長（上限 {max} 字）",
+    "rateLimited": "聊天頻率過快，請 {seconds} 秒後再試",
+    "chatFailed": "聊天失敗",
+    "eduJump": "點擊跳到該段落",
+    "defectFocus": "點擊聚焦該缺陷",
+    "suggestion1": "這篇論文的核心 claim 是什麼？",
+    "suggestion2": "幫我整理目前發現的最嚴重缺陷",
+    "suggestion3": "Method 章節有沒有沒交代清楚的步驟？",
+    "suggestion4": "REL-09 為什麼會抓到這個段落？"
+  }
+}

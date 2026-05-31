@@ -1,17 +1,20 @@
-import Link from "next/link";
+import { useTranslations } from "next-intl";
 
 import { GuardedLink } from "@/components/guarded-link";
 import { JobIndicator } from "@/components/job-indicator";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { MobileNav } from "@/components/mobile-nav";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { Link } from "@/i18n/navigation";
 import { CURRENT_VERSION } from "@/lib/version-log";
 
 export function SiteHeader() {
+  const t = useTranslations("header");
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-4 px-4 sm:px-6">
-        <Link href="/" aria-label="論文檢核系統" className="flex items-center">
+        <Link href="/" aria-label={t("appNameAria")} className="flex items-center">
           <svg
             viewBox="0 0 32 32"
             className="h-7 w-7 shrink-0"
@@ -33,7 +36,7 @@ export function SiteHeader() {
             />
           </svg>
         </Link>
-        <GuardedLink href="/changelog" title="版本紀錄">
+        <GuardedLink href="/changelog" title={t("versionTitle")}>
           <Badge
             variant="secondary"
             className="font-mono text-[10px] transition-colors hover:bg-accent"
@@ -44,28 +47,30 @@ export function SiteHeader() {
         <JobIndicator />
         <nav className="ml-auto hidden items-center gap-1 sm:flex">
           <Link href="/" className={buttonVariants({ variant: "ghost", size: "sm" })}>
-            上傳
+            {t("upload")}
           </Link>
           <GuardedLink
             href="/papers"
             className={buttonVariants({ variant: "ghost", size: "sm" })}
           >
-            歷史
+            {t("history")}
           </GuardedLink>
           <GuardedLink
             href="/stats"
             className={buttonVariants({ variant: "ghost", size: "sm" })}
           >
-            規則統計
+            {t("ruleStats")}
           </GuardedLink>
           <GuardedLink
             href="/changelog"
             className={buttonVariants({ variant: "ghost", size: "sm" })}
           >
-            版本紀錄
+            {t("changelog")}
           </GuardedLink>
+          <LanguageSwitcher />
         </nav>
-        <div className="ml-auto sm:hidden">
+        <div className="ml-auto flex items-center gap-1 sm:hidden">
+          <LanguageSwitcher />
           <MobileNav />
         </div>
       </div>

@@ -1,4 +1,4 @@
-import type { Defect, EDU } from "@/lib/api";
+import { pickLocalized, type Defect, type EDU } from "@/lib/api";
 
 function csvField(value: unknown): string {
   const s = value === null || value === undefined ? "" : String(value);
@@ -21,7 +21,8 @@ const HEADERS = [
 
 export function defectsToCsv(
   defects: Defect[],
-  eduMap: Map<string, EDU>
+  eduMap: Map<string, EDU>,
+  locale: string
 ): string {
   const rows = defects.map((d) => {
     const evidenceTexts = d.evidence_edu_ids
@@ -42,8 +43,8 @@ export function defectsToCsv(
       d.section,
       pages.join(" / "),
       evidenceTexts.join(" || ").trim(),
-      d.description,
-      d.suggestion,
+      pickLocalized(d.description, locale),
+      pickLocalized(d.suggestion, locale),
     ];
   });
 

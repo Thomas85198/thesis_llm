@@ -101,6 +101,11 @@ class Severity(str, Enum):
     LOW = "low"
 
 
+# Locale-keyed text, e.g. {"zh-Hant": "…", "en": "…"}. Stored as data (a JSON
+# map) so adding a language never changes this schema — see app/i18n.py.
+LocalizedText = dict[str, str]
+
+
 class Defect(BaseModel):
     id: str
     rule_id: str
@@ -108,8 +113,8 @@ class Defect(BaseModel):
     severity: Severity
     section: SectionName
     evidence_edu_ids: list[str]
-    description: str
-    suggestion: str
+    description: LocalizedText  # {locale: text}; generated in PRIMARY, rest translated
+    suggestion: LocalizedText
     confidence: float | None = None  # 0.0–1.0; None = not scored
 
 

@@ -10,8 +10,15 @@ from typing import Any
 
 import yaml
 
+from .i18n import LANG_NAME, PRIMARY_LOCALE, SUPPORTED_LOCALES
 from .kg import resolve_evidence_to_edus, run_cypher
-from .llm import call_with_tool, llm_max_workers, model_cross_section, model_heavy
+from .llm import (
+    call_with_tool,
+    llm_max_workers,
+    model_cross_section,
+    model_heavy,
+    model_light,
+)
 from .prompts import load_prompt
 from .schemas import EDU, Defect, RuleRunMeta, Severity
 
@@ -54,14 +61,15 @@ VERDICT_SCHEMA = {
                     "description": {
                         "type": "string",
                         "description": (
-                            "Why it violates the rule, in 繁體中文. "
-                            "Only fill when violates=true."
+                            "Why it violates the rule, in the language requested "
+                            "by the system prompt. Only fill when violates=true."
                         ),
                     },
                     "suggestion": {
                         "type": "string",
                         "description": (
-                            "Concrete fix in 繁體中文. Only fill when violates=true."
+                            "Concrete fix, in the language requested by the system "
+                            "prompt. Only fill when violates=true."
                         ),
                     },
                     "confidence": {
@@ -118,6 +126,7 @@ def check_rule(
             rule_id=rule["id"],
             rule_name=rule["name"],
             rule_description=rule["description"],
+            language=LANG_NAME[PRIMARY_LOCALE],
         ),
         user_content=json.dumps(payload, ensure_ascii=False, default=str)[:120_000],
         tool_name="emit_verdicts",
@@ -153,8 +162,8 @@ def check_rule(
                 severity=severity,
                 section=v.get("section", "Other"),
                 evidence_edu_ids=evidence_edu_ids,
-                description=description,
-                suggestion=v.get("suggestion", ""),
+                description={PRIMARY_LOCALE: description},
+                suggestion={PRIMARY_LOCALE: v.get("suggestion", "")},
                 confidence=_clamp_confidence(v.get("confidence")),
             )
         )
@@ -334,7 +343,10 @@ def cross_section_pass(
     model = model_cross_section()
     out = call_with_tool(
         model=model,
-        system=load_prompt("cross_section").format(rules_block=rules_block),
+        system=load_prompt("cross_section").format(
+            rules_block=rules_block,
+            language=LANG_NAME[PRIMARY_LOCALE],
+        ),
         user_content=user_content,
         tool_name="emit_cross_section_defects",
         tool_description="Emit cross-section defects for the listed rules.",
@@ -361,10 +373,82 @@ def cross_section_pass(
                 severity=Severity(v.get("severity", "medium")),
                 section=v.get("section", "Other"),
                 evidence_edu_ids=ev_ids,
-                description=v["description"],
-                suggestion=v["suggestion"],
+                description={PRIMARY_LOCALE: v["description"]},
+                suggestion={PRIMARY_LOCALE: v["suggestion"]},
                 confidence=_clamp_confidence(v.get("confidence")),
             )
         )
     meta.defect_count = len(defects)
     return defects, meta
+
+
+# ---------- Translation pass (fill non-primary locales) ----------
+# Defects are generated in PRIMARY_LOCALE; this fills every other supported
+# locale by translating description+suggestion in one batched call per locale
+# (cheap model). Stored as a {locale: text} map so the UI switches instantly.
+# Adding a language never changes this code — it iterates SUPPORTED_LOCALES.
+
+TRANSLATE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "translations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "index": {"type": "integer"},
+                    "description": {"type": "string"},
+                    "suggestion": {"type": "string"},
+                },
+                "required": ["index", "description", "suggestion"],
+            },
+        }
+    },
+    "required": ["translations"],
+}
+
+
+def localize_defects(defects: list[Defect], paper_id: str) -> None:
+    """In place, fill every non-primary supported locale on each defect's
+    description/suggestion by translating the PRIMARY_LOCALE text.
+
+    Best-effort: a failed locale leaves that locale absent (the UI then falls
+    back to PRIMARY via i18n.pick / pickLocalized).
+    """
+    targets = [loc for loc in SUPPORTED_LOCALES if loc != PRIMARY_LOCALE]
+    if not defects or not targets:
+        return
+
+    items = [
+        {
+            "index": i,
+            "description": d.description.get(PRIMARY_LOCALE, ""),
+            "suggestion": d.suggestion.get(PRIMARY_LOCALE, ""),
+        }
+        for i, d in enumerate(defects)
+    ]
+    payload = json.dumps(items, ensure_ascii=False)[:120_000]
+
+    for target in targets:
+        try:
+            out = call_with_tool(
+                model=model_light(),
+                system=load_prompt("translate").format(language=LANG_NAME[target]),
+                user_content=payload,
+                tool_name="emit_translations",
+                tool_description="Emit the translated description+suggestion per index.",
+                tool_input_schema=TRANSLATE_SCHEMA,
+                paper_id=paper_id,
+                stage=f"translate:{target}",
+            )
+        except Exception as exc:  # noqa: BLE001 — translation is best-effort
+            print(f"[translate] locale={target} failed: {exc!r}")
+            continue
+        for t in out.get("translations", []):
+            idx = t.get("index")
+            if not isinstance(idx, int) or not (0 <= idx < len(defects)):
+                continue
+            if t.get("description"):
+                defects[idx].description[target] = t["description"]
+            if t.get("suggestion"):
+                defects[idx].suggestion[target] = t["suggestion"]

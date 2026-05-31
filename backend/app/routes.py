@@ -32,6 +32,7 @@ class ChatMessage(BaseModel):
 
 class ChatIn(BaseModel):
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=40)
+    lang: str | None = None  # UI locale; assistant reads context + replies in it
 
 router = APIRouter()
 
@@ -90,7 +91,7 @@ def _run_analysis(
         # Extraction moved here from the upload handler so the OCR fallback
         # (used when the PDF has no ToUnicode CMap) doesn't block the HTTP
         # request — OCR on a 30-page paper can take minutes.
-        _set_job(job_id, status="extracting", message="PDF 解析中…")
+        _set_job(job_id, status="extracting", message="Parsing PDF…")
 
         def _on_ocr_fallback() -> None:
             # Flipped once the native extractor returns glyph-cipher garbage
@@ -98,7 +99,7 @@ def _run_analysis(
             # reason for the long wait instead of an indefinite spinner.
             _set_job(
                 job_id,
-                message="PDF 字型無法直接讀取，改用 OCR 辨識中（約需 3-5 分鐘）",
+                message="PDF text layer unreadable — running OCR (about 3–5 min)…",
             )
 
         spans = pipeline.extract_spans_from_bytes(
@@ -112,7 +113,7 @@ def _run_analysis(
         # falling back to the filename. Saves users from retyping / renaming.
         resolved_title = title.strip()
         if not resolved_title:
-            _set_job(job_id, message="辨識論文標題中…")
+            _set_job(job_id, message="Detecting paper title…")
             resolved_title = (
                 pipeline.detect_paper_title(spans, paper_id=paper_id) or filename
             )
@@ -145,6 +146,13 @@ def _run_analysis(
                     job_id,
                     cross_section_warning=f"cross-section pass skipped: {cs_exc!r}",
                 )
+
+        # Fill non-primary locales (e.g. en) on every defect's description/
+        # suggestion via a batched translation pass — best-effort, never fatal.
+        try:
+            rules.localize_defects(defects, paper_id)
+        except Exception as tr_exc:
+            _set_job(job_id, translate_warning=f"translation pass skipped: {tr_exc!r}")
 
         result = AnalysisResult(
             paper_id=paper_id, graph=graph, defects=defects, rule_meta=rule_meta
@@ -451,6 +459,7 @@ def paper_chat(paper_id: str, body: ChatIn) -> dict[str, Any]:
             paper_id=paper_id,
             paper_title=paper.get("title") or "",
             messages=[m.model_dump() for m in body.messages],
+            lang=body.lang,
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e

@@ -10,7 +10,7 @@ For each rule, examine the WHOLE paper and decide if the paper violates it. Emit
 - If a single section already covers the issue, the per-section pass already caught it — do NOT re-flag here.
 - Confidence: 0.9+ unambiguous cross-section violation, 0.6-0.9 likely, 0.3-0.6 = do not flag.
 - Severity: high = breaks the paper's core argumentation arc; medium = weakens it; low = stylistic inconsistency.
-- Description and suggestion in 繁體中文. Description must reference the specific cross-section gap.
+- Description and suggestion in {language}. Description must reference the specific cross-section gap.
 - description and suggestion are read by a human reviewer, NOT a developer.
   Write them as plain prose about the PAPER's content. NEVER mention internal
   artifacts: node ids (e.g. `paper:...:fru:...`, `[EDU:...]`), candidate-JSON

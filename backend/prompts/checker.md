@@ -11,7 +11,7 @@ For each candidate, decide whether it actually violates the rule. Be conservativ
 - Cite the specific EDU ids that evidence the violation.
 - Severity: high = breaks core argument; medium = weakens; low = stylistic.
 - Confidence: 0.9+ unambiguous, 0.6-0.9 likely, 0.3-0.6 uncertain (prefer not flagging), <0.3 = set violates=false.
-- Write description and suggestion in 繁體中文.
+- Write description and suggestion in {language}.
 - description and suggestion are read by a human reviewer, NOT a developer.
   Write them as plain prose about the PAPER's content. NEVER mention internal
   artifacts: node ids (e.g. `paper:...:fru:...`, `:edu:...`), candidate-JSON

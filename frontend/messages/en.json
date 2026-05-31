@@ -1,0 +1,143 @@
+{
+  "header": {
+    "appName": "Paper Review System",
+    "appNameAria": "Paper Review System",
+    "versionTitle": "Changelog",
+    "upload": "Upload",
+    "history": "History",
+    "ruleStats": "Rule Stats",
+    "changelog": "Changelog",
+    "language": "Language"
+  },
+  "nav": {
+    "menuTitle": "Menu",
+    "menuAria": "Menu"
+  },
+  "jobIndicator": {
+    "analyzing": "Analyzing",
+    "backToProgress": "Analysis in progress — click to return",
+    "doneView": "Analysis complete · View",
+    "close": "Close",
+    "toastDone": "Analysis complete",
+    "toastDefects": "{count} defects",
+    "viewResults": "View results"
+  },
+  "guard": {
+    "leaveConfirm": "An analysis is in progress. Leaving will close this progress view (the analysis keeps running in the background — return via the “Analyzing” badge above). Leave anyway?"
+  },
+  "versionWatcher": {
+    "updated": "A new version is available. Please refresh to apply.",
+    "updateNow": "Update now"
+  },
+  "home": {
+    "title": "Upload a paper to automatically surface logical flaws",
+    "description": "The system splits the paper into EDUs, extracts entities and relations, annotates RST/FRU structure, writes a Neo4j knowledge graph, then runs 13 REL rules to check it and list revision suggestions.",
+    "backendError": "Backend not connected",
+    "backendStart": "Please start:"
+  },
+  "upload": {
+    "cardTitle": "Upload a paper",
+    "fileReplace": "click or drag to replace",
+    "dropHint": "Drop a file here, or click to choose",
+    "formats": "Supports PDF / TXT / MD (Chinese · English)",
+    "titleLabel": "Title (optional)",
+    "titlePlaceholder": "Leave blank to auto-detect the title from the paper",
+    "titleHelp": "Usually no need to fill this in — the system reads the paper's title automatically; enter one manually to override.",
+    "analyzing": "Analyzing…",
+    "start": "Start analysis",
+    "etaHint": "Usually takes 1–10 minutes, depending on paper length",
+    "bgHint": "You can switch to another page or close the tab and do something else — the analysis finishes in the background and notifies you when done.",
+    "errorTitle": "Error",
+    "cacheHitTitle": "Cache hit",
+    "cacheHitDesc": "This file has already been analyzed; skipping reprocessing.",
+    "uploadFailed": "Upload failed"
+  },
+  "jobStatus": {
+    "queued": "Queued",
+    "extracting": "Extracting EDU / ER / RST / FRU",
+    "checking": "Running 13 REL rule checks",
+    "done": "Done",
+    "error": "Failed"
+  },
+  "papers": {
+    "title": "Analysis history",
+    "description": "All previously analyzed papers (persisted in SQLite)",
+    "deleteSelected": "Delete selected ({count})",
+    "uploadNew": "Upload a new paper",
+    "listError": "Failed to load the list",
+    "empty": "No papers analyzed yet",
+    "uploadFirst": "Upload the first one",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "totalCount": "{count} total",
+    "selectAria": "Select",
+    "deselectAria": "Deselect",
+    "defectsBadge": "{count} defects",
+    "confirmDelete": "Delete {count} paper(s)?\nThis also removes their analysis results, reviewer judgments and cost records. This action cannot be undone.",
+    "deletePartial": "{ok} succeeded / {fail} failed",
+    "deleteOk": "Deleted {ok}"
+  },
+  "paperLayout": {
+    "defectsBadge": "{count} defects",
+    "tabDefects": "Defects + PDF",
+    "tabGraph": "Knowledge Graph",
+    "llmCalls": "{count} LLM calls"
+  },
+  "paperResult": {
+    "notFound": "Result not found",
+    "notFoundHint": "Possible cause: the backend server restarted and lost the in-memory result. Please re-upload the paper.",
+    "backToUpload": "Back to upload"
+  },
+  "defects": {
+    "countSuffix": "defects",
+    "judgedProgress": "Judged {judged}/{total}",
+    "verdictBreakdown": "(Correct {correct} · Partial {partial} · Wrong {wrong})",
+    "downloadCsv": "Download CSV",
+    "none": "No defects found",
+    "groupByLabel": "Group by:",
+    "groupSeverity": "Severity",
+    "groupRule": "Rule",
+    "severityHigh": "High",
+    "severityMedium": "Medium",
+    "severityLow": "Low",
+    "suggestion": "Suggestion: ",
+    "viewInPdf": "View in PDF",
+    "viewInPdfTitle": "Jump to the matching position in the PDF and highlight it",
+    "locateSentence": "Locate this sentence in the PDF",
+    "verdictCorrect": "Correct",
+    "verdictPartial": "Partial",
+    "verdictWrong": "Wrong",
+    "verdictCancel": "Click to cancel",
+    "verdictMark": "Mark as {label}",
+    "confidenceHigh": "High confidence",
+    "confidenceMedium": "Medium confidence",
+    "confidenceLow": "Low confidence",
+    "confidenceTitle": "LLM confidence: {pct}% ({label})",
+    "notFoundEdu": "That passage was not found (the EDU no longer exists)",
+    "notFoundDefect": "That defect was not found",
+    "saveJudgeFailed": "Failed to save judgment"
+  },
+  "chat": {
+    "fab": "Paper Assistant",
+    "openAria": "Open the paper assistant",
+    "title": "Paper Assistant",
+    "description": "Can only discuss this paper's content and the detected defects. Replies cite [EDU:xxx] / [DEFECT:xxx].",
+    "thinking": "Assistant is thinking…",
+    "placeholder": "Ask a question about this paper… (Enter to send / Shift+Enter for newline)",
+    "sendAria": "Send",
+    "clear": "Clear chat",
+    "tryAsk": "Try asking:",
+    "roleUser": "You",
+    "roleAssistant": "Assistant",
+    "emptyReply": "(empty reply)",
+    "tooLong": "Message too long (limit {max} characters)",
+    "rateLimited": "Chatting too fast, please retry in {seconds} seconds",
+    "chatFailed": "Chat failed",
+    "eduJump": "Click to jump to this passage",
+    "defectFocus": "Click to focus this defect",
+    "suggestion1": "What is this paper's core claim?",
+    "suggestion2": "Summarize the most severe defects found so far",
+    "suggestion3": "Are there any under-specified steps in the Method section?",
+    "suggestion4": "Why did REL-09 flag this passage?"
+  }
+}

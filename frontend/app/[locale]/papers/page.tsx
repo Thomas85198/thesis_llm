@@ -1,7 +1,7 @@
 "use client";
 
 import { Check } from "lucide-react";
-import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -16,10 +16,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Link } from "@/i18n/navigation";
 import { deletePaper, listPapers, type PaperListItem } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export default function PapersPage() {
+  const t = useTranslations("papers");
   const [papers, setPapers] = useState<PaperListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -59,13 +61,7 @@ export default function PapersPage() {
   async function handleBulkDelete() {
     if (selected.size === 0) return;
     const count = selected.size;
-    if (
-      !window.confirm(
-        `確定刪除 ${count} 篇論文？\n` +
-          `會一併清除其分析結果、學長判定與成本紀錄，此動作無法復原。`
-      )
-    )
-      return;
+    if (!window.confirm(t("confirmDelete", { count }))) return;
 
     setDeleting(true);
     const ids = Array.from(selected);
@@ -83,9 +79,9 @@ export default function PapersPage() {
     setSelected(new Set());
     setDeleting(false);
     if (failCount > 0) {
-      toast.error(`成功 ${okCount} 篇 / 失敗 ${failCount} 篇`);
+      toast.error(t("deletePartial", { ok: okCount, fail: failCount }));
     } else {
-      toast.success(`已刪除 ${okCount} 篇`);
+      toast.success(t("deleteOk", { ok: okCount }));
     }
     reload();
   }
@@ -93,8 +89,8 @@ export default function PapersPage() {
   return (
     <div className="mx-auto w-full max-w-4xl flex-1 px-4 py-8 sm:px-6">
       <PageHeader
-        title="分析歷史"
-        description="所有已分析過的論文（持久化於 SQLite）"
+        title={t("title")}
+        description={t("description")}
         actions={
           <div className="flex items-center gap-2">
             {selected.size > 0 && (
@@ -104,11 +100,11 @@ export default function PapersPage() {
                 onClick={handleBulkDelete}
                 disabled={deleting}
               >
-                刪除選取 ({selected.size})
+                {t("deleteSelected", { count: selected.size })}
               </Button>
             )}
             <Link href="/" className={buttonVariants()}>
-              上傳新論文
+              {t("uploadNew")}
             </Link>
           </div>
         }
@@ -118,7 +114,7 @@ export default function PapersPage() {
         <Card className="border-destructive/40 bg-destructive/5">
           <CardHeader>
             <CardTitle className="text-destructive text-base">
-              無法取得列表
+              {t("listError")}
             </CardTitle>
             <CardDescription>{error}</CardDescription>
           </CardHeader>
@@ -132,14 +128,12 @@ export default function PapersPage() {
       ) : papers.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-            <p className="text-sm text-muted-foreground">
-              還沒有分析過的論文
-            </p>
+            <p className="text-sm text-muted-foreground">{t("empty")}</p>
             <Link
               href="/"
               className={buttonVariants({ variant: "outline", size: "sm" })}
             >
-              上傳第一篇
+              {t("uploadFirst")}
             </Link>
           </CardContent>
         </Card>
@@ -151,9 +145,11 @@ export default function PapersPage() {
               onClick={toggleAll}
               className="hover:text-foreground"
             >
-              {selected.size === papers.length ? "取消全選" : "全選"}
+              {selected.size === papers.length
+                ? t("deselectAll")
+                : t("selectAll")}
             </button>
-            <span>共 {papers.length} 篇</span>
+            <span>{t("totalCount", { count: papers.length })}</span>
           </div>
           <div className="grid gap-3">
             {papers.map((p) => {
@@ -169,7 +165,7 @@ export default function PapersPage() {
                         ? "border-primary bg-primary/10 text-primary"
                         : "hover:bg-accent"
                     )}
-                    aria-label={isSelected ? "取消選取" : "選取"}
+                    aria-label={isSelected ? t("deselectAria") : t("selectAria")}
                   >
                     {isSelected ? <Check className="h-4 w-4" /> : null}
                   </button>
@@ -203,7 +199,7 @@ export default function PapersPage() {
                               p.defect_count > 0 ? "destructive" : "secondary"
                             }
                           >
-                            {p.defect_count} 缺陷
+                            {t("defectsBadge", { count: p.defect_count })}
                           </Badge>
                         </div>
                       </CardContent>

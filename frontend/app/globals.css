@@ -137,3 +137,88 @@
     font-size: 17px;
   }
 }
+/* ============================================================
+   編輯模式 (TipTap) 內容排版
+   ------------------------------------------------------------
+   ProseMirror renders bare semantic HTML with no default styling, so the
+   writing surface needs explicit spacing/sizing. Scoped to .tiptap-content
+   (set via editorProps.attributes.class) so it never leaks to the rest of the
+   app. Colours use the existing theme tokens so dark mode just works.
+   ============================================================ */
+.tiptap-content {
+  min-height: 60vh;
+  line-height: 1.75;
+}
+.tiptap-content > * + * {
+  margin-top: 0.85em;
+}
+.tiptap-content h1 {
+  font-size: 1.7rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 1.4em;
+}
+.tiptap-content h2 {
+  font-size: 1.4rem;
+  font-weight: 650;
+  line-height: 1.3;
+  margin-top: 1.3em;
+}
+.tiptap-content h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-top: 1.2em;
+}
+.tiptap-content ul,
+.tiptap-content ol {
+  padding-left: 1.6em;
+}
+.tiptap-content ul {
+  list-style: disc;
+}
+.tiptap-content ol {
+  list-style: decimal;
+}
+.tiptap-content li > p {
+  margin: 0;
+}
+.tiptap-content blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 1em;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.tiptap-content code {
+  background: var(--muted);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.35em;
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+.tiptap-content pre {
+  background: var(--muted);
+  border-radius: 0.5rem;
+  padding: 0.85em 1em;
+  overflow-x: auto;
+}
+.tiptap-content pre code {
+  background: transparent;
+  padding: 0;
+}
+/* Placeholder for an empty document's first line. */
+.tiptap-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  opacity: 0.5;
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* AI autocomplete ghost text (inline suggestion, not part of the document). */
+.tiptap-ghost {
+  color: var(--muted-foreground);
+  opacity: 0.55;
+  pointer-events: none;
+  white-space: pre-wrap;
+}

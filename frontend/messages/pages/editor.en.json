@@ -1,0 +1,42 @@
+{
+  "title": "My Documents",
+  "subtitle": "Write your paper from scratch with the AI writing editor.",
+  "newDocument": "New document",
+  "empty": "No documents yet — create your first one.",
+  "updatedAt": "Last edited",
+  "delete": "Delete",
+  "confirmDelete": "Delete this document? This cannot be undone.",
+  "deleted": "Document deleted",
+  "notFound": "Document not found",
+  "backToList": "Back to documents",
+  "outline": "Outline",
+  "outlineEmpty": "Add headings and they'll show up here.",
+  "titlePlaceholder": "Untitled document",
+  "titleAria": "Document title",
+  "editorAria": "Document content editor",
+  "save": {
+    "idle": "Editing…",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "error": "Save failed"
+  },
+  "ai": {
+    "on": "AI autocomplete (on — click to disable)",
+    "off": "AI autocomplete (off — click to enable)",
+    "hint": "Tab to accept · Esc to dismiss"
+  },
+  "tools": {
+    "h1": "Heading 1",
+    "h2": "Heading 2",
+    "h3": "Heading 3",
+    "bold": "Bold",
+    "italic": "Italic",
+    "strike": "Strikethrough",
+    "code": "Inline code",
+    "bullet": "Bullet list",
+    "ordered": "Numbered list",
+    "quote": "Blockquote",
+    "undo": "Undo",
+    "redo": "Redo"
+  }
+}

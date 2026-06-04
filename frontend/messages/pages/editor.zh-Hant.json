@@ -1,0 +1,42 @@
+{
+  "title": "我的文件",
+  "subtitle": "用 AI 寫作編輯器從零撰寫你的論文。",
+  "newDocument": "新增文件",
+  "empty": "還沒有任何文件，建立第一份吧。",
+  "updatedAt": "最後編輯",
+  "delete": "刪除",
+  "confirmDelete": "確定要刪除這份文件嗎？此動作無法復原。",
+  "deleted": "已刪除文件",
+  "notFound": "找不到這份文件",
+  "backToList": "回到文件列表",
+  "outline": "大綱",
+  "outlineEmpty": "加入標題後，大綱會出現在這裡。",
+  "titlePlaceholder": "未命名文件",
+  "titleAria": "文件標題",
+  "editorAria": "文件內容編輯區",
+  "save": {
+    "idle": "編輯中…",
+    "saving": "儲存中…",
+    "saved": "已儲存",
+    "error": "儲存失敗"
+  },
+  "ai": {
+    "on": "AI 補全（開啟中，點擊關閉）",
+    "off": "AI 補全（已關閉，點擊開啟）",
+    "hint": "Tab 接受 · Esc 略過"
+  },
+  "tools": {
+    "h1": "標題 1",
+    "h2": "標題 2",
+    "h3": "標題 3",
+    "bold": "粗體",
+    "italic": "斜體",
+    "strike": "刪除線",
+    "code": "行內程式碼",
+    "bullet": "項目符號清單",
+    "ordered": "編號清單",
+    "quote": "引用區塊",
+    "undo": "復原",
+    "redo": "重做"
+  }
+}

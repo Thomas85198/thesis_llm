@@ -17,10 +17,15 @@ import { Link } from "@/i18n/navigation";
 
 const LINKS = [
   { href: "/", key: "upload" },
+  { href: "/editor", key: "editor" },
   { href: "/papers", key: "history" },
   { href: "/stats", key: "ruleStats" },
   { href: "/changelog", key: "changelog" },
 ] as const;
+
+// These routes are independent of an in-progress analysis, so they navigate
+// directly instead of going through the analysis-guard prompt.
+const UNGUARDED = new Set<string>(["/", "/editor"]);
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
@@ -42,8 +47,8 @@ export function MobileNav() {
             const cls =
               "rounded-md px-3 py-2.5 text-base transition-colors hover:bg-accent";
             const close = () => setOpen(false);
-            // "/" goes to the progress view itself, so it never needs a guard.
-            return l.href === "/" ? (
+            // Unguarded routes (upload progress view, editor) navigate directly.
+            return UNGUARDED.has(l.href) ? (
               <Link key={l.href} href={l.href} onClick={close} className={cls}>
                 {t(l.key)}
               </Link>

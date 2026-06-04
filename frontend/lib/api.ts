@@ -417,3 +417,166 @@ export async function sendChat(
   if (!res.ok) throw new Error(`chat failed: ${res.status} ${await res.text()}`);
   return res.json();
 }
+
+// ---------- editor mode: writing documents ----------
+
+// TipTap/ProseMirror serialized document. Kept structurally opaque here so the
+// API layer doesn't depend on the editor library; the editor casts it to its
+// own JSONContent type.
+export type ProseMirrorDoc = Record<string, unknown>;
+
+export type EditorDoc = {
+  doc_id: string;
+  title: string;
+  content_json: ProseMirrorDoc;
+  locale: string;
+  created_at: string;
+  updated_at: string;
+};
+
+// List view omits the heavy content blob.
+export type EditorDocListItem = Omit<EditorDoc, "content_json">;
+
+export type DocumentVersion = {
+  id: number;
+  label: string;
+  created_at: string;
+};
+
+export async function listDocuments(): Promise<EditorDocListItem[]> {
+  return get<EditorDocListItem[]>("/api/editor/documents");
+}
+
+export async function createDocument(body: {
+  title?: string;
+  locale: string;
+  content_json?: ProseMirrorDoc;
+}): Promise<EditorDoc> {
+  const res = await fetch(`${API_BASE}/api/editor/documents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`createDocument failed: ${await res.text()}`);
+  return res.json();
+}
+
+export async function fetchDocument(docId: string): Promise<EditorDoc> {
+  return get<EditorDoc>(`/api/editor/documents/${encodeURIComponent(docId)}`);
+}
+
+export async function updateDocument(
+  docId: string,
+  body: { title?: string; content_json?: ProseMirrorDoc }
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/editor/documents/${encodeURIComponent(docId)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) throw new Error(`updateDocument failed: ${await res.text()}`);
+}
+
+export async function deleteDocument(docId: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/editor/documents/${encodeURIComponent(docId)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) throw new Error(`deleteDocument failed: ${await res.text()}`);
+}
+
+export async function snapshotDocument(
+  docId: string,
+  content_json: ProseMirrorDoc,
+  label = "autosave"
+): Promise<{ version_id: number }> {
+  const res = await fetch(
+    `${API_BASE}/api/editor/documents/${encodeURIComponent(docId)}/versions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content_json, label }),
+    }
+  );
+  if (!res.ok) throw new Error(`snapshotDocument failed: ${await res.text()}`);
+  return res.json();
+}
+
+export async function listDocumentVersions(
+  docId: string
+): Promise<DocumentVersion[]> {
+  return get<DocumentVersion[]>(
+    `/api/editor/documents/${encodeURIComponent(docId)}/versions`
+  );
+}
+
+// ---------- editor mode: AI autocomplete (SSE) ----------
+
+export type AutocompleteRequest = {
+  doc_id: string;
+  text_before: string;
+  title: string;
+  outline: string;
+  locale: string;
+};
+
+/**
+ * Stream an inline writing suggestion. Calls `onDelta` for each token as it
+ * arrives. Pass an AbortSignal to cancel an in-flight request (the caller does
+ * this on every keystroke). A 429 (rate limit) resolves silently — autocomplete
+ * is best-effort and should never interrupt the writer. AbortError is swallowed.
+ */
+export async function streamAutocomplete(
+  body: AutocompleteRequest,
+  onDelta: (text: string) => void,
+  signal: AbortSignal
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/editor/autocomplete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") return;
+    throw e;
+  }
+  if (res.status === 429) return; // rate-limited: skip this suggestion silently
+  if (!res.ok || !res.body) {
+    throw new Error(`autocomplete failed: ${res.status} ${await res.text()}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE events are separated by a blank line.
+      const events = buffer.split("\n\n");
+      buffer = events.pop() ?? "";
+      for (const evt of events) {
+        const line = evt.trim();
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") return;
+        try {
+          const parsed = JSON.parse(data) as { t?: string; error?: string };
+          if (parsed.t) onDelta(parsed.t);
+        } catch {
+          // ignore malformed chunk
+        }
+      }
+    }
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") return;
+    throw e;
+  }
+}

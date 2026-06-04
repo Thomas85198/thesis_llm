@@ -10,9 +10,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from . import autocomplete as autocomplete_mod
 from . import chat as chat_mod
 from . import db, kg, pipeline, rules
 from .schemas import AnalysisResult
@@ -33,6 +34,39 @@ class ChatMessage(BaseModel):
 class ChatIn(BaseModel):
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=40)
     lang: str | None = None  # UI locale; assistant reads context + replies in it
+
+
+# ---------- editor mode (寫作模式) request bodies ----------
+
+# A blank TipTap/ProseMirror document — one empty paragraph. Used as the seed
+# content when a new document is created without explicit content.
+EMPTY_DOC: dict[str, Any] = {"type": "doc", "content": [{"type": "paragraph"}]}
+
+
+class DocumentCreateIn(BaseModel):
+    title: str = Field("", max_length=300)
+    locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
+    content_json: dict[str, Any] | None = None
+
+
+class DocumentUpdateIn(BaseModel):
+    """Partial patch — autosave sends content only; rename sends title only."""
+    title: str | None = Field(None, max_length=300)
+    content_json: dict[str, Any] | None = None
+
+
+class VersionCreateIn(BaseModel):
+    content_json: dict[str, Any]
+    label: str = Field("autosave", max_length=120)
+
+
+class AutocompleteIn(BaseModel):
+    doc_id: str
+    text_before: str = Field(..., max_length=20000)  # capped again server-side
+    title: str = Field("", max_length=300)
+    outline: str = Field("", max_length=4000)
+    locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
+
 
 router = APIRouter()
 
@@ -472,3 +506,104 @@ def paper_chat(paper_id: str, body: ChatIn) -> dict[str, Any]:
                 f"chat rate limit reached, retry in ~{wait}s",
             ) from e
         raise HTTPException(500, msg) from e
+
+
+# ---------- editor mode: writing documents ----------
+# Independent of the paper-analysis flow above. These power the new WYSIWYG
+# writing editor (/[locale]/editor): create a doc, autosave its ProseMirror
+# JSON, and keep version snapshots. No account system yet — docs are global.
+
+@router.post("/api/editor/documents")
+def create_document(body: DocumentCreateIn) -> dict[str, Any]:
+    doc_id = f"doc:{uuid.uuid4().hex[:8]}"
+    title = body.title.strip() or "未命名文件"
+    content = body.content_json if body.content_json is not None else EMPTY_DOC
+    return db.create_document(doc_id, title, content, body.locale)
+
+
+@router.get("/api/editor/documents")
+def list_documents() -> list[dict[str, Any]]:
+    return db.list_documents()
+
+
+@router.get("/api/editor/documents/{doc_id}")
+def get_document(doc_id: str) -> dict[str, Any]:
+    doc = db.get_document(doc_id)
+    if doc is None:
+        raise HTTPException(404, "document not found")
+    return doc
+
+
+@router.put("/api/editor/documents/{doc_id}")
+def update_document(doc_id: str, body: DocumentUpdateIn) -> dict[str, Any]:
+    """Autosave / rename. Sends only the changed fields (see DocumentUpdateIn)."""
+    if body.title is None and body.content_json is None:
+        raise HTTPException(400, "nothing to update")
+    ok = db.update_document(
+        doc_id,
+        title=body.title.strip() if body.title is not None else None,
+        content_json=body.content_json,
+    )
+    if not ok:
+        raise HTTPException(404, "document not found")
+    return {"status": "ok", "doc_id": doc_id}
+
+
+@router.delete("/api/editor/documents/{doc_id}")
+def delete_document(doc_id: str) -> dict[str, str]:
+    if db.get_document(doc_id) is None:
+        raise HTTPException(404, "document not found")
+    db.delete_document(doc_id)
+    return {"status": "deleted", "doc_id": doc_id}
+
+
+@router.post("/api/editor/documents/{doc_id}/versions")
+def create_document_version(doc_id: str, body: VersionCreateIn) -> dict[str, Any]:
+    """Save a version snapshot (autosave-pruned, or a permanent named version)."""
+    if db.get_document(doc_id) is None:
+        raise HTTPException(404, "document not found")
+    version_id = db.snapshot_document(doc_id, body.content_json, label=body.label)
+    return {"status": "ok", "version_id": version_id}
+
+
+@router.get("/api/editor/documents/{doc_id}/versions")
+def list_document_versions(doc_id: str) -> list[dict[str, Any]]:
+    if db.get_document(doc_id) is None:
+        raise HTTPException(404, "document not found")
+    return db.list_document_versions(doc_id)
+
+
+@router.get("/api/editor/documents/{doc_id}/versions/{version_id}")
+def get_document_version(doc_id: str, version_id: int) -> dict[str, Any]:
+    version = db.get_document_version(doc_id, version_id)
+    if version is None:
+        raise HTTPException(404, "version not found")
+    return version
+
+
+@router.post("/api/editor/autocomplete")
+def autocomplete(body: AutocompleteIn) -> StreamingResponse:
+    """Stream an inline writing suggestion as Server-Sent Events.
+
+    Rate-limited per document up front (a 429 before any bytes stream), then the
+    body streams `data: {"t": "<delta>"}` chunks ending with `data: [DONE]`.
+    """
+    allowed, wait = autocomplete_mod.check_rate_limit(body.doc_id)
+    if not allowed:
+        raise HTTPException(429, f"autocomplete rate limit reached, retry in ~{wait}s")
+    return StreamingResponse(
+        autocomplete_mod.sse_stream(
+            doc_id=body.doc_id,
+            text_before=body.text_before,
+            title=body.title,
+            outline=body.outline,
+            locale=body.locale,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # Disable proxy buffering (Caddy/nginx) so tokens flush immediately.
+            "X-Accel-Buffering": "no",
+        },
+    )

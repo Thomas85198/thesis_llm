@@ -147,6 +147,16 @@
   "table": {
     "word": "Table"
   },
+  "tableMenu": {
+    "colBefore": "Insert column left",
+    "colAfter": "Insert column right",
+    "colDelete": "Delete column",
+    "rowBefore": "Insert row above",
+    "rowAfter": "Insert row below",
+    "rowDelete": "Delete row",
+    "toggleHeader": "Toggle header row",
+    "deleteTable": "Delete table"
+  },
   "tableList": {
     "title": "List of Tables",
     "empty": "No tables in the document yet."

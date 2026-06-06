@@ -147,6 +147,16 @@
   "table": {
     "word": "表"
   },
+  "tableMenu": {
+    "colBefore": "左側插入欄",
+    "colAfter": "右側插入欄",
+    "colDelete": "刪除此欄",
+    "rowBefore": "上方插入列",
+    "rowAfter": "下方插入列",
+    "rowDelete": "刪除此列",
+    "toggleHeader": "切換表頭列",
+    "deleteTable": "刪除整個表格"
+  },
   "tableList": {
     "title": "表目錄",
     "empty": "文件中還沒有任何表格。"

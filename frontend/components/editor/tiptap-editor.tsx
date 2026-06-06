@@ -55,6 +55,7 @@ import {
   TableList,
 } from "@/components/editor/table-extension";
 import { SlashCommand, type SlashItem } from "@/components/editor/slash-command";
+import { TableToolbar } from "@/components/editor/table-toolbar";
 import { SlashMenu } from "@/components/editor/slash-menu";
 import { Button } from "@/components/ui/button";
 import {
@@ -587,14 +588,26 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
         </div>
       </div>
 
-      {/* Select a sentence → find a citation for it */}
+      {/* Cursor inside a table → row/column editing toolbar */}
       <BubbleMenu
         editor={editor}
+        pluginKey="tableMenu"
+        shouldShow={({ editor }) => editor.isActive("table")}
+      >
+        <TableToolbar editor={editor} />
+      </BubbleMenu>
+
+      {/* Select a sentence → find a citation for it (not inside tables — the
+          table toolbar takes over there) */}
+      <BubbleMenu
+        editor={editor}
+        pluginKey="textMenu"
         // Only for real text selections — not when a node (e.g. an image/figure)
         // is selected, where "rewrite"/"cite" make no sense.
         shouldShow={({ editor }) => {
           const { selection } = editor.state;
           if (selection.empty || selection instanceof NodeSelection) return false;
+          if (editor.isActive("table")) return false;
           return (
             editor.state.doc.textBetween(selection.from, selection.to).trim().length > 0
           );

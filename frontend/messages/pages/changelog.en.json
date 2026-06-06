@@ -29,6 +29,16 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_1_0": {
+      "title": "Differentiation moat: citation traffic-light verification, defect checking, semantic RAG",
+      "summary": "On top of Jenni parity, this adds capabilities others don't have — bringing correctness into the act of writing via a neuro-symbolic engine and RAG. Verify whether a cited source actually supports your claim (🟢/🟡/🔴 + the supporting sentence); run the 13 REL rules over the whole draft for structural defects with inline marks; re-rank citation search by semantic similarity (with a shown %); and click a citation to fetch the cited paper's full text and surface the sentences that best support you.",
+      "changes": {
+        "0": "Citation traffic-light verification: in the recommend list and on inserted references, one click checks whether a source actually supports your claim → 🟢 supports / 🟡 partial / 🔴 unsupported, surfacing the supporting sentence and reason (an LLM judges from the abstract, not just keywords).",
+        "1": "Defect check at writing time: a toolbar action runs the 13 REL rules over the draft (claims without evidence, methods without motivation, misaligned conclusions…), lists defects in a side panel, marks them inline with red/amber/blue wavy underlines, and jumps to the sentence. The existing paper-review engine, wired into writing — something Jenni can't do.",
+        "2": "Semantic citation ranking: search candidates are re-ordered by semantic similarity between your claim and each abstract (OpenAI embeddings), beating raw keyword relevance; each candidate shows a 'semantic %'.",
+        "3": "Full-text grounding: 'Find supporting text' on an inserted citation fetches the cited paper's open-access full text (arXiv etc.), splits it into sentences, and surfaces the ones that best support your claim with a similarity % (falls back to the abstract); full-text vectors are cached locally for instant repeat."
+      }
+    },
     "4_0_0": {
       "title": "New “Writing Editor”: draft a paper from scratch — Jenni-AI parity plus Notion/Heptabase-style block editing",
       "summary": "This release expands the product from “analyze an existing PDF” to “write a paper from scratch” with a standalone /editor mode: a TipTap v3 rich-text editor, document management with version history, AI sentence autocomplete (ghost text), highlight-to-rewrite, outline generation, OpenAlex-backed smart citations (six styles, dual full-text+DOI links, one-click link refresh), and DOCX/LaTeX/HTML export. It adds Notion/Heptabase-style structured block editing: a “/” slash menu to swap blocks, Markdown shortcuts, image upload with an auto List of Figures, KaTeX math, and tables with an auto List of Tables plus an add/remove row-column toolbar.",

@@ -7,6 +7,7 @@ content_json), so there's nothing to store server-side.
 """
 from __future__ import annotations
 
+import math
 import re
 import threading
 import time
@@ -84,19 +85,54 @@ def check_rate_limit(doc_id: str) -> tuple[bool, int]:
     return True, 0
 
 
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(x * x for x in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def rerank_by_claim(claim: str, candidates: list[dict]) -> list[dict]:
+    """Re-order candidates by semantic similarity of claim ↔ abstract.
+
+    OpenAlex's keyword relevance often mis-ranks for nuanced claims; embedding
+    the claim against each abstract surfaces the ones that actually match the
+    meaning. Graceful: <2 abstracts, or any embedding failure → original order.
+    Candidates without an abstract keep their order and sink to the end.
+    """
+    with_abs = [c for c in candidates if (c.get("abstract") or "").strip()]
+    without_abs = [c for c in candidates if not (c.get("abstract") or "").strip()]
+    if len(with_abs) < 2:
+        return candidates
+    try:
+        vecs = llm.embed([claim] + [c["abstract"] for c in with_abs])
+    except Exception:  # noqa: BLE001 — no quota / API blip: keep keyword order
+        return candidates
+    claim_vec, abs_vecs = vecs[0], vecs[1:]
+    ranked = sorted(
+        zip(with_abs, abs_vecs), key=lambda p: _cosine(claim_vec, p[1]), reverse=True
+    )
+    return [c for c, _ in ranked] + without_abs
+
+
 def recommend(
-    claim: str, per_page: int = 15, year_from: int | None = None
+    claim: str, per_page: int = 15, year_from: int | None = None, rerank: bool = True
 ) -> list[dict]:
-    """Return OpenAlex candidates for a claim, in relevance order.
+    """Return OpenAlex candidates for a claim.
 
     The claim is first turned into an English keyword query (no-op for English
     input), then searched with the quality + year filters applied upstream.
+    When `rerank` (default), the results are semantically re-ordered by how well
+    each abstract matches the original claim (beats raw keyword relevance).
     """
     query = to_search_query(claim)
     try:
-        return openalex.search_works(query, per_page=per_page, year_from=year_from)
+        candidates = openalex.search_works(query, per_page=per_page, year_from=year_from)
     except httpx.HTTPError as exc:
         raise CitationSearchError(str(exc)) from exc
+    if rerank and claim.strip():
+        candidates = rerank_by_claim(claim.strip(), candidates)
+    return candidates
 
 
 def refresh(openalex_ids: list[str]) -> dict[str, dict]:

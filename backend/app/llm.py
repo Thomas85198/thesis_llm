@@ -84,6 +84,23 @@ def model_cross_section() -> str:
     return os.getenv("OPENAI_MODEL_CROSS_SECTION", "gpt-5.4")
 
 
+def model_embed() -> str:
+    return os.getenv("OPENAI_MODEL_EMBED", "text-embedding-3-small")
+
+
+def embed(texts: list[str]) -> list[list[float]]:
+    """Return an embedding vector per input text (OpenAI embeddings).
+
+    Used for semantic re-ranking / grounding. Empty input → []. Raises on
+    network/API failure; callers that want graceful degradation should catch.
+    """
+    items = [t if t and t.strip() else " " for t in texts]
+    if not items:
+        return []
+    resp = client().embeddings.create(model=model_embed(), input=items)
+    return [d.embedding for d in resp.data]
+
+
 def llm_temperature() -> float:
     # Defect detection wants reproducible verdicts, not creative variety —
     # default to 0 (greedy decoding). Override via env for experiments.

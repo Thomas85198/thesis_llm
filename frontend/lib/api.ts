@@ -725,10 +725,11 @@ export type ExportFormat = "docx" | "latex";
 export async function exportDocument(body: {
   title: string;
   content_json: ProseMirrorDoc;
-  style: string; // "apa" | "numeric"
+  style: string; // citation style
   locale: string;
   format: ExportFormat;
-}): Promise<Blob> {
+  template?: string; // LaTeX only: article | twocolumn | ieee
+}): Promise<{ blob: Blob; filename: string }> {
   const res = await fetch(`${API_BASE}/api/editor/export`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -737,7 +738,17 @@ export async function exportDocument(body: {
   if (!res.ok) {
     throw new Error(`exportDocument failed: ${res.status} ${await res.text()}`);
   }
-  return res.blob();
+  // The backend's real extension may differ from `format` (LaTeX with figures
+  // is returned as a .zip), so honor the Content-Disposition filename.
+  const cd = res.headers.get("Content-Disposition") || "";
+  let filename = "";
+  const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  if (star) filename = decodeURIComponent(star[1]);
+  else {
+    const m = cd.match(/filename="?([^";]+)"?/i);
+    if (m) filename = m[1];
+  }
+  return { blob: await res.blob(), filename };
 }
 
 // ---------- editor mode: outline generation ----------

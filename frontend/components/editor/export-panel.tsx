@@ -32,21 +32,24 @@ export function ExportPanel({ editor }: { editor: Editor }) {
   const citationStyle = useEditorStore((s) => s.citationStyle);
 
   const [busy, setBusy] = useState<ExportFormat | null>(null);
+  const [template, setTemplate] = useState("article");
 
   async function handleExport(format: ExportFormat) {
     setBusy(format);
     try {
-      const blob = await exportDocument({
+      const { blob, filename } = await exportDocument({
         title,
         content_json: editor.getJSON() as ProseMirrorDoc,
         style: citationStyle,
         locale,
         format,
+        template,
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${(title || "document").trim() || "document"}.${EXT[format]}`;
+      a.download =
+        filename || `${(title || "document").trim() || "document"}.${EXT[format]}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -70,6 +73,18 @@ export function ExportPanel({ editor }: { editor: Editor }) {
           </SheetDescription>
         </SheetHeader>
         <div className="flex flex-col gap-2 px-4 pb-4">
+          <label className="mb-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>{t("export.template")}</span>
+            <select
+              value={template}
+              onChange={(e) => setTemplate(e.target.value)}
+              className="rounded-md border bg-background px-2 py-1 text-xs text-foreground"
+            >
+              <option value="article">{t("export.tplArticle")}</option>
+              <option value="twocolumn">{t("export.tplTwoColumn")}</option>
+              <option value="ieee">{t("export.tplIeee")}</option>
+            </select>
+          </label>
           <Button
             type="button"
             variant="outline"

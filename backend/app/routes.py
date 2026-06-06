@@ -128,6 +128,7 @@ class ExportIn(BaseModel):
     style: str = Field("apa", pattern="^(apa|mla|chicago|harvard|ieee|numeric)$")
     locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
     format: str = Field("docx", pattern="^(docx|latex)$")
+    template: str = Field("article", pattern="^(article|twocolumn|ieee)$")  # LaTeX only
 
 
 router = APIRouter()
@@ -823,9 +824,24 @@ def export_document(body: ExportIn) -> Response:
         media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ext = "docx"
     else:  # latex (pattern-validated)
-        data = export_doc.to_latex(document, body.style, refs_label).encode("utf-8")
-        media = "application/x-tex"
-        ext = "tex"
+        tex, images = export_doc.to_latex(document, body.style, refs_label, body.template)
+        if images:
+            # Bundle .tex + referenced images so the export compiles as-is.
+            import io
+            import zipfile
+
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("main.tex", tex)
+                for fname, fdata in images:
+                    zf.writestr(fname, fdata)
+            data = buf.getvalue()
+            media = "application/zip"
+            ext = "zip"
+        else:
+            data = tex.encode("utf-8")
+            media = "application/x-tex"
+            ext = "tex"
     # RFC 5987 filename* carries the (possibly CJK) title; ascii filename is a fallback.
     name = quote((body.title or "document").strip() or "document")
     headers = {

@@ -8,9 +8,58 @@ reads exactly like what the author sees on screen.
 from __future__ import annotations
 
 import io
+import os
+import re
+from pathlib import Path
 from typing import Any
 
+import httpx
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches
+
+
+# ---------- image fetching (for embedding figures in export) ----------
+
+_IMG_EXTS = {"png", "jpg", "jpeg", "gif", "webp"}
+_IMG_PATH_RE = re.compile(r"/api/editor/images/([\w.\-]+)$")
+_MAX_IMG_BYTES = 10 * 1024 * 1024
+
+
+def _upload_dir() -> Path:
+    # Mirror routes._resolve_upload_dir (avoid a circular import).
+    explicit = os.getenv("UPLOAD_DIR")
+    if explicit:
+        return Path(explicit)
+    data_dir = os.getenv("DATA_DIR")
+    if data_dir:
+        return Path(data_dir) / "uploads"
+    return Path(__file__).parent.parent / "uploads"
+
+
+def _image_bytes(src: str) -> tuple[bytes, str] | None:
+    """Resolve a figure src to (bytes, ext). Reads our own uploads from disk;
+    fetches external image URLs over HTTP. None on any failure."""
+    if not src:
+        return None
+    try:
+        m = _IMG_PATH_RE.search(src)
+        if m:
+            p = _upload_dir() / m.group(1)
+            if not p.is_file():
+                return None
+            ext = p.suffix.lstrip(".").lower() or "png"
+            return p.read_bytes(), (ext if ext in _IMG_EXTS else "png")
+        with httpx.Client(timeout=15.0, follow_redirects=True) as cli:
+            resp = cli.get(src)
+            resp.raise_for_status()
+            data = resp.content
+        if len(data) > _MAX_IMG_BYTES:
+            return None
+        ext = src.rsplit(".", 1)[-1].split("?")[0].lower() if "." in src else "png"
+        return data, (ext if ext in _IMG_EXTS else "png")
+    except Exception:  # noqa: BLE001 — best-effort; fall back to caption text
+        return None
 
 
 # ---------- citation formatting (mirror frontend lib/citation-format.ts) ----------
@@ -170,11 +219,18 @@ def _render_block_docx(docx: Document, block: dict, style: str, order: list[str]
     elif t == "horizontalRule":
         docx.add_paragraph("―" * 20)
     elif t == "figure":
-        # Image embedding is a later export slice; for now keep the caption text
-        # (clearly marked) so nothing is silently lost.
-        cap = (block.get("attrs") or {}).get("caption") or ""
-        p = docx.add_paragraph()
-        p.add_run(f"[{cap or 'image'}]").italic = True
+        attrs = block.get("attrs") or {}
+        cap = attrs.get("caption") or ""
+        img = _image_bytes(attrs.get("src", ""))
+        if img:
+            try:
+                docx.add_picture(io.BytesIO(img[0]), width=Inches(5.5))
+                docx.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            except Exception:  # noqa: BLE001 — unsupported image → caption only
+                img = None
+        capp = docx.add_paragraph()
+        capp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        capp.add_run(cap or ("" if img else "[image]")).italic = True
     elif t == "figureList":
         pass  # an editor-only live aid; the figures themselves render inline
     elif t == "mathBlock":
@@ -264,7 +320,7 @@ def _inline_latex(nodes: list[dict], style: str, order: list[str]) -> str:
     return "".join(parts)
 
 
-def _render_block_latex(block: dict, style: str, order: list[str]) -> str:
+def _render_block_latex(block: dict, style: str, order: list[str], ctx: dict) -> str:
     t = block.get("type")
     if t == "heading":
         level = (block.get("attrs") or {}).get("level", 1)
@@ -290,7 +346,19 @@ def _render_block_latex(block: dict, style: str, order: list[str]) -> str:
     if t == "horizontalRule":
         return "\\hrulefill\n\n"
     if t == "figure":
-        cap = (block.get("attrs") or {}).get("caption") or ""
+        attrs = block.get("attrs") or {}
+        cap = attrs.get("caption") or ""
+        img = _image_bytes(attrs.get("src", ""))
+        if img:
+            data, ext = img
+            ctx["fig_n"] += 1
+            fname = f"fig{ctx['fig_n']}.{ext}"
+            ctx["images"].append((fname, data))
+            capline = f"\\caption{{{_esc(cap)}}}\n" if cap else ""
+            return (
+                "\\begin{figure}[h]\n\\centering\n"
+                f"\\includegraphics[width=0.8\\linewidth]{{{fname}}}\n{capline}\\end{{figure}}\n\n"
+            )
         return f"\\textit{{[{_esc(cap or 'image')}]}}\n\n"
     if t == "figureList":
         return ""  # an editor-only live aid; the figures render inline
@@ -315,13 +383,27 @@ def _render_block_latex(block: dict, style: str, order: list[str]) -> str:
     return _inline_latex(_children(block), style, order) + "\n\n"
 
 
-def to_latex(document: dict, style: str, refs_label: str) -> str:
+# LaTeX submission templates → the \documentclass line.
+_LATEX_TEMPLATES = {
+    "article": "\\documentclass{article}",
+    "twocolumn": "\\documentclass[twocolumn]{article}",
+    "ieee": "\\documentclass[conference]{IEEEtran}",
+}
+
+
+def to_latex(
+    document: dict, style: str, refs_label: str, template: str = "article"
+) -> tuple[str, list[tuple[str, bytes]]]:
+    """Render to LaTeX. Returns (tex_source, images) where images is
+    [(filename, bytes)] referenced by \\includegraphics — the route bundles them
+    into a .zip when non-empty. `template` picks the \\documentclass."""
     content = document.get("content_json") or {}
     title = document.get("title") or "(untitled)"
     citations = collect_citations(content)
     order = [c.get("openalexId") for c in citations]
 
-    body = "".join(_render_block_latex(b, style, order) for b in _children(content))
+    ctx: dict = {"images": [], "fig_n": 0}
+    body = "".join(_render_block_latex(b, style, order, ctx) for b in _children(content))
     refs = ""
     if citations:
         items = "\n".join(
@@ -330,10 +412,12 @@ def to_latex(document: dict, style: str, refs_label: str) -> str:
         )
         refs = f"\\section*{{{_esc(refs_label)}}}\n\\begin{{itemize}}\n{items}\n\\end{{itemize}}\n\n"
 
-    # ctex makes CJK compile under XeLaTeX/pdfLaTeX; ulem for \sout, hyperref for links.
-    return (
-        "\\documentclass{article}\n"
+    docclass = _LATEX_TEMPLATES.get(template, _LATEX_TEMPLATES["article"])
+    # ctex → CJK; graphicx → figures; ulem → \sout; hyperref → links.
+    tex = (
+        f"{docclass}\n"
         "\\usepackage{ctex}\n"
+        "\\usepackage{graphicx}\n"
         "\\usepackage[normalem]{ulem}\n"
         "\\usepackage{hyperref}\n"
         f"\\title{{{_esc(title)}}}\n"
@@ -343,3 +427,4 @@ def to_latex(document: dict, style: str, refs_label: str) -> str:
         + refs
         + "\\end{document}\n"
     )
+    return tex, ctx["images"]

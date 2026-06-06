@@ -209,8 +209,12 @@
     "panelDesc": "選擇格式下載。引用會以目前的「{style}」格式輸出，並附上參考文獻。",
     "docx": "Word（.docx）",
     "docxDesc": "可在 Word／Google 文件開啟編輯",
-    "latex": "LaTeX（.tex）",
-    "latexDesc": "含 ctex 中文支援，可直接編譯",
+    "latex": "LaTeX（.tex / .zip）",
+    "latexDesc": "含 ctex 中文支援；有圖片時打包成 .zip（含圖檔）",
+    "template": "LaTeX 模板",
+    "tplArticle": "單欄 article",
+    "tplTwoColumn": "雙欄 article",
+    "tplIeee": "IEEE（IEEEtran）",
     "done": "已開始下載"
   }
 }

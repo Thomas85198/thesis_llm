@@ -209,8 +209,12 @@
     "panelDesc": "Pick a format to download. Citations are written in the current “{style}” style with a reference list.",
     "docx": "Word (.docx)",
     "docxDesc": "Open and edit in Word / Google Docs",
-    "latex": "LaTeX (.tex)",
-    "latexDesc": "Includes ctex CJK support, ready to compile",
+    "latex": "LaTeX (.tex / .zip)",
+    "latexDesc": "ctex CJK support; bundled as .zip (with images) when figures exist",
+    "template": "LaTeX template",
+    "tplArticle": "Single column (article)",
+    "tplTwoColumn": "Two column (article)",
+    "tplIeee": "IEEE (IEEEtran)",
     "done": "Download started"
   }
 }

@@ -134,7 +134,13 @@
     "divider": "分隔線",
     "image": "圖片",
     "imageHint": "上傳圖片並加標題",
-    "figureList": "圖目錄"
+    "figureList": "圖目錄",
+    "mathInline": "行內數學",
+    "mathBlock": "數學區塊"
+  },
+  "math": {
+    "inlinePlaceholder": "LaTeX，例如 E=mc^2",
+    "blockPlaceholder": "LaTeX，例如 \\int_0^1 x\\,dx"
   },
   "figure": {
     "word": "圖",

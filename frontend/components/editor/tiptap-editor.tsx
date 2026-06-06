@@ -27,9 +27,11 @@ import {
   Quote,
   Redo2,
   Search,
+  Sigma,
   Sparkles,
   Strikethrough,
   Undo2,
+  Variable,
   Wand2,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
@@ -41,6 +43,7 @@ import { Citation } from "@/components/editor/citation-extension";
 import { CitationPanel } from "@/components/editor/citation-panel";
 import { ExportPanel } from "@/components/editor/export-panel";
 import { Figure, FigureList } from "@/components/editor/figure-extension";
+import { MathBlock, MathInline } from "@/components/editor/math-extension";
 import { OutlinePanel } from "@/components/editor/outline-panel";
 import { RewritePanel } from "@/components/editor/rewrite-panel";
 import { SlashCommand, type SlashItem } from "@/components/editor/slash-command";
@@ -330,6 +333,12 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).run(); openImagePicker(); } },
     { title: t("slash.figureList"), icon: Images, keywords: ["figures", "list", "圖目錄", "目錄"],
       command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertFigureList().run() },
+    { title: t("slash.mathInline"), icon: Variable,
+      keywords: ["math", "inline", "equation", "latex", "數學", "行內", "公式"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertMathInline().run() },
+    { title: t("slash.mathBlock"), icon: Sigma,
+      keywords: ["math", "block", "equation", "latex", "數學", "區塊", "公式"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertMathBlock().run() },
     ],
     [t, openImagePicker]
   );
@@ -353,6 +362,8 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           untitled: t("figure.untitled"),
         },
       }),
+      MathInline.configure({ labels: { placeholder: t("math.inlinePlaceholder") } }),
+      MathBlock.configure({ labels: { placeholder: t("math.blockPlaceholder") } }),
       // items are only invoked when the user types "/", never during render —
       // the ref-access heuristic misfires on the image item's file picker.
       // eslint-disable-next-line react-hooks/refs

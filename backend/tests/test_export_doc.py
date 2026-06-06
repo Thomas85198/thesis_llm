@@ -113,6 +113,20 @@ def test_figure_caption_kept_figurelist_skipped():
     assert "流程圖" in text
 
 
+def test_math_exports_native_latex():
+    doc = {"type": "doc", "content": [
+        {"type": "paragraph", "content": [
+            {"type": "text", "text": "其中 "},
+            {"type": "mathInline", "attrs": {"latex": "E=mc^2"}},
+            {"type": "text", "text": " 成立。"},
+        ]},
+        {"type": "mathBlock", "attrs": {"latex": "\\int_0^1 x\\,dx"}},
+    ]}
+    tex = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "References")
+    assert "$E=mc^2$" in tex  # inline math passes through verbatim (not escaped)
+    assert "\\[\\int_0^1 x\\,dx\\]" in tex  # block math
+
+
 def test_to_latex_empty_doc_no_references_section():
     tex = export_doc.to_latex({"title": "t", "content_json": {"type": "doc", "content": []}}, "apa", "References")
     assert "\\section*{References}" not in tex  # no citations → no ref list

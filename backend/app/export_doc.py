@@ -123,6 +123,8 @@ def _add_inline_docx(paragraph, nodes: list[dict], style: str, order: list[str])
             a = n.get("attrs") or {}
             num = _citation_number(order, a.get("openalexId"))
             paragraph.add_run(in_text_label(a, style, num))
+        elif t == "mathInline":
+            paragraph.add_run(f"${(n.get('attrs') or {}).get('latex', '')}$")
 
 
 def _render_block_docx(docx: Document, block: dict, style: str, order: list[str]) -> None:
@@ -155,6 +157,9 @@ def _render_block_docx(docx: Document, block: dict, style: str, order: list[str]
         p.add_run(f"[{cap or 'image'}]").italic = True
     elif t == "figureList":
         pass  # an editor-only live aid; the figures themselves render inline
+    elif t == "mathBlock":
+        p = docx.add_paragraph()
+        p.add_run(f"$${(block.get('attrs') or {}).get('latex', '')}$$")
     else:  # paragraph and any unknown block → a plain paragraph of its inline content
         p = docx.add_paragraph()
         _add_inline_docx(p, _children(block), style, order)
@@ -220,6 +225,9 @@ def _inline_latex(nodes: list[dict], style: str, order: list[str]) -> str:
             a = n.get("attrs") or {}
             num = _citation_number(order, a.get("openalexId"))
             parts.append(_esc(in_text_label(a, style, num)))
+        elif t == "mathInline":
+            # LaTeX source goes through verbatim — do NOT escape.
+            parts.append(f"${(n.get('attrs') or {}).get('latex', '')}$")
     return "".join(parts)
 
 
@@ -253,6 +261,8 @@ def _render_block_latex(block: dict, style: str, order: list[str]) -> str:
         return f"\\textit{{[{_esc(cap or 'image')}]}}\n\n"
     if t == "figureList":
         return ""  # an editor-only live aid; the figures render inline
+    if t == "mathBlock":
+        return f"\\[{(block.get('attrs') or {}).get('latex', '')}\\]\n\n"
     return _inline_latex(_children(block), style, order) + "\n\n"
 
 

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from . import autocomplete as autocomplete_mod
 from . import chat as chat_mod
 from . import citation as citation_mod
+from . import outline as outline_mod
 from . import rewrite as rewrite_mod
 from . import db, kg, pipeline, rules
 from .schemas import AnalysisResult
@@ -85,6 +86,12 @@ class RewriteIn(BaseModel):
     doc_id: str
     text: str = Field(..., min_length=1, max_length=4000)  # the selected passage
     instruction: str = Field(..., max_length=500)  # a preset key or a custom directive
+    locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
+
+
+class OutlineIn(BaseModel):
+    doc_id: str
+    topic: str = Field(..., min_length=1, max_length=500)  # what the paper is about
     locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
 
 
@@ -692,3 +699,21 @@ def rewrite(body: RewriteIn) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/api/editor/outline")
+def generate_outline(body: OutlineIn) -> dict[str, Any]:
+    """Generate a thesis outline (heading tree) from a topic.
+
+    Rate-limited per document (429). Returns {headings: [{level, text}]} for the
+    client to insert as heading nodes. The fixed IMRaD template is built
+    client-side, so this endpoint only serves the AI "Smart Headings" path.
+    """
+    allowed, wait = outline_mod.check_rate_limit(body.doc_id)
+    if not allowed:
+        raise HTTPException(429, f"outline rate limit reached, retry in ~{wait}s")
+    try:
+        headings = outline_mod.generate(body.topic, body.doc_id, body.locale)
+    except Exception as exc:  # noqa: BLE001 — LLM/quota failure → 502
+        raise HTTPException(502, f"outline generation failed: {exc}") from exc
+    return {"headings": headings}

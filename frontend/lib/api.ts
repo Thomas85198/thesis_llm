@@ -653,6 +653,36 @@ export async function streamRewrite(
   }
 }
 
+// ---------- editor mode: outline generation ----------
+
+export type OutlineHeading = { level: number; text: string };
+
+/**
+ * Generate a thesis outline (heading tree) from a topic. A 429 throws
+ * ChatRateLimitError so the caller can show a retry hint.
+ */
+export async function generateOutline(
+  docId: string,
+  topic: string,
+  locale: string
+): Promise<OutlineHeading[]> {
+  const res = await fetch(`${API_BASE}/api/editor/outline`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ doc_id: docId, topic, locale }),
+  });
+  if (res.status === 429) {
+    const text = await res.text();
+    const m = text.match(/~(\d+)s/);
+    throw new ChatRateLimitError(text, m ? Number(m[1]) : 30);
+  }
+  if (!res.ok) {
+    throw new Error(`generateOutline failed: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as { headings: OutlineHeading[] };
+  return data.headings;
+}
+
 // ---------- editor mode: Smart Citation (OpenAlex) ----------
 
 // Flat candidate shape returned by /api/editor/citations/recommend, in

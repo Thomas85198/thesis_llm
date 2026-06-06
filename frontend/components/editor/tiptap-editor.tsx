@@ -17,6 +17,7 @@ import {
   Italic,
   List,
   ListOrdered,
+  ListTree,
   Quote,
   Redo2,
   Search,
@@ -31,6 +32,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Autocomplete } from "@/components/editor/autocomplete-extension";
 import { Citation } from "@/components/editor/citation-extension";
 import { CitationPanel } from "@/components/editor/citation-panel";
+import { OutlinePanel } from "@/components/editor/outline-panel";
 import { RewritePanel } from "@/components/editor/rewrite-panel";
 import { Button } from "@/components/ui/button";
 import { streamAutocomplete, type EditorDoc, type ProseMirrorDoc } from "@/lib/api";
@@ -147,6 +149,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   const saveState = useEditorStore((s) => s.saveState);
   const openCitePanel = useEditorStore((s) => s.openCitePanel);
   const openRewrite = useEditorStore((s) => s.openRewrite);
+  const openOutline = useEditorStore((s) => s.openOutline);
   const citationStyle = useEditorStore((s) => s.citationStyle);
   const setCitationStyle = useEditorStore((s) => s.setCitationStyle);
 
@@ -349,6 +352,9 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
             <Redo2 className="h-4 w-4" />
           </ToolbarButton>
           <div className="mx-1 h-5 w-px bg-border" />
+          <ToolbarButton label={t("outline.find")} onClick={openOutline}>
+            <ListTree className="h-4 w-4" />
+          </ToolbarButton>
           <ToolbarButton
             label={t("citation.find")}
             onClick={() => openCitePanel("", editor.state.selection.to)}
@@ -436,6 +442,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
 
       <CitationPanel editor={editor} docId={doc.doc_id} />
       <RewritePanel editor={editor} docId={doc.doc_id} />
+      <OutlinePanel editor={editor} docId={doc.doc_id} />
     </div>
   );
 }

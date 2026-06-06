@@ -93,5 +93,29 @@
       "academic": "Academic tone",
       "fix_grammar": "Fix grammar"
     }
+  },
+  "outline": {
+    "find": "Outline",
+    "panelTitle": "Outline generator",
+    "panelDesc": "Apply the standard IMRaD structure, or type a topic and let AI generate a tailored heading tree.",
+    "imradTitle": "IMRaD standard structure",
+    "imradDesc": "Intro · Literature · Methods · Results · Discussion · Conclusion",
+    "smartTitle": "AI-generated outline",
+    "topicPlaceholder": "Enter a topic, e.g. “the effect of flow on online learning motivation”",
+    "generate": "Generate",
+    "working": "Generating outline…",
+    "prompt": "Enter a topic and generate to preview the heading tree here.",
+    "insert": "Insert",
+    "insertGenerated": "Insert this outline",
+    "inserted": "Outline inserted",
+    "rateLimited": "Too many requests, retry in {seconds}s.",
+    "imrad": {
+      "intro": "Introduction",
+      "litReview": "Literature Review",
+      "methods": "Methodology",
+      "results": "Results",
+      "discussion": "Discussion",
+      "conclusion": "Conclusion"
+    }
   }
 }

@@ -93,5 +93,29 @@
       "academic": "學術語氣",
       "fix_grammar": "修正文法"
     }
+  },
+  "outline": {
+    "find": "大綱",
+    "panelTitle": "大綱生成",
+    "panelDesc": "套用 IMRaD 標準結構，或輸入主題讓 AI 生成量身的標題樹。",
+    "imradTitle": "IMRaD 標準結構",
+    "imradDesc": "緒論・文獻探討・方法・結果・討論・結論",
+    "smartTitle": "AI 生成大綱",
+    "topicPlaceholder": "輸入論文主題，例如「心流對線上學習動機的影響」",
+    "generate": "生成",
+    "working": "生成大綱中…",
+    "prompt": "輸入主題並生成，會在這裡預覽標題樹。",
+    "insert": "插入",
+    "insertGenerated": "插入此大綱",
+    "inserted": "已插入大綱",
+    "rateLimited": "生成太頻繁，請 {seconds} 秒後再試。",
+    "imrad": {
+      "intro": "緒論",
+      "litReview": "文獻探討",
+      "methods": "研究方法",
+      "results": "研究結果",
+      "discussion": "討論",
+      "conclusion": "結論"
+    }
   }
 }

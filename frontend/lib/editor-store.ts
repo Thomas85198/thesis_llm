@@ -51,6 +51,13 @@ type EditorStore = {
   rewriteNonce: number;
   openRewrite: (text: string, from: number, to: number) => void;
   closeRewrite: () => void;
+
+  // ----- Outline -----
+  /** Outline generator panel. Nonce remounts the body on each open. */
+  outlineOpen: boolean;
+  outlineNonce: number;
+  openOutline: () => void;
+  closeOutline: () => void;
 };
 
 let contentTimer: ReturnType<typeof setTimeout> | null = null;
@@ -109,6 +116,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         rewriteOpen: false,
         rewriteText: "",
         rewriteRange: null,
+        outlineOpen: false,
       });
     },
 
@@ -141,5 +149,11 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         rewriteNonce: s.rewriteNonce + 1,
       })),
     closeRewrite: () => set({ rewriteOpen: false }),
+
+    // ----- Outline -----
+    outlineOpen: false,
+    outlineNonce: 0,
+    openOutline: () => set((s) => ({ outlineOpen: true, outlineNonce: s.outlineNonce + 1 })),
+    closeOutline: () => set({ outlineOpen: false }),
   };
 });

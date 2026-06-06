@@ -9,6 +9,7 @@ ranking decision); semantic rerank is a later phase.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -162,13 +163,50 @@ def search_works(
     params = {
         "search": query[:500],  # search is keyword-y; cap pathological input
         "per-page": max(1, min(per_page, 25)),
-        "mailto": _MAILTO,
-        "select": _SELECT,
         "filter": ",".join(filters),
     }
+    return [normalize(w) for w in _fetch_results(params)]
+
+
+# A refresh re-fetches every citation in a document at once; cap the batch so a
+# pathological doc can't fan out into a huge OpenAlex query.
+REFRESH_MAX_IDS = 100
+
+
+def get_works_by_ids(openalex_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Re-fetch works by OpenAlex id → {openalex_id: normalized candidate}.
+
+    Used to refresh stale citation metadata (chiefly links that have rotted, or
+    that predate the trusted-source logic). Ids that OpenAlex no longer knows
+    (deleted / merged) simply won't appear in the result, so the caller can leave
+    those citations untouched. Batched into OR-filtered queries (OpenAlex allows
+    up to 50 ids per filter). Raises httpx.HTTPError on network/HTTP failure.
+    """
+    # Keep only well-formed work ids (W + digits). OpenAlex 400s the whole batch
+    # if any id is malformed, so a single junk attr would otherwise sink the
+    # refresh; dropping it just leaves that citation untouched.
+    ids = [
+        i.strip()
+        for i in openalex_ids
+        if re.fullmatch(r"W\d+", i.strip())
+    ][:REFRESH_MAX_IDS]
+    out: dict[str, dict[str, Any]] = {}
+    for i in range(0, len(ids), 50):
+        chunk = ids[i : i + 50]
+        params = {"filter": "openalex_id:" + "|".join(chunk), "per-page": len(chunk)}
+        for w in _fetch_results(params):
+            norm = normalize(w)
+            if norm["openalex_id"]:
+                out[norm["openalex_id"]] = norm
+    return out
+
+
+def _fetch_results(params: dict[str, Any]) -> list[dict[str, Any]]:
+    """GET the works endpoint with our standard select + polite-pool params."""
+    params = {**params, "mailto": _MAILTO, "select": _SELECT}
     headers = {"User-Agent": f"thesis-llm-demo/1.0 (mailto:{_MAILTO})"}
     with httpx.Client(timeout=_TIMEOUT, headers=headers) as cli:
         resp = cli.get(_BASE_URL, params=params)
         resp.raise_for_status()
         data = resp.json()
-    return [normalize(w) for w in (data.get("results") or [])]
+    return data.get("results") or []

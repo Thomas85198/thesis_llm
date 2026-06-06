@@ -14,6 +14,7 @@ import {
   Link2,
   Loader2,
   Plus,
+  RefreshCw,
   Search,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -23,6 +24,7 @@ import { toast } from "sonner";
 import {
   ChatRateLimitError,
   recommendCitations,
+  refreshCitations,
   type CitationCandidate,
 } from "@/lib/api";
 import {
@@ -170,6 +172,8 @@ function CitationPanelBody({
     return () => abortRef.current?.abort();
   }, [initialQuery, doSearch]);
 
+  const [refreshing, setRefreshing] = useState(false);
+
   function handleInsert(c: CitationCandidate) {
     const anchor = useEditorStore.getState().citeAnchor;
     editor
@@ -179,6 +183,27 @@ function CitationPanelBody({
       .run();
     toast.success(t("citation.inserted"));
     closeCitePanel();
+  }
+
+  // Re-pull every citation from OpenAlex and patch chip attrs in place — fixes
+  // metadata frozen at insert time (chiefly links that have since rotted).
+  async function handleRefreshLinks() {
+    const ids = refs.map((r) => r.openalexId).filter(Boolean);
+    if (ids.length === 0) return;
+    setRefreshing(true);
+    try {
+      const fresh = await refreshCitations(ids);
+      const byId: Record<string, CitationAttrs> = {};
+      for (const [id, c] of Object.entries(fresh)) byId[id] = candidateToAttrs(c);
+      const changed = editor.commands.refreshCitations(byId);
+      toast.success(
+        changed ? t("citation.refreshed") : t("citation.refreshedNoChange")
+      );
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   return (
@@ -319,9 +344,26 @@ function CitationPanelBody({
               {t("citation.referencesEmpty")}
             </div>
           ) : (
-            <ScrollArea className="h-full pr-3">
-              <ol className="flex flex-col gap-3 text-sm">
-                {refs.map((r, i) => {
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="mb-2 flex justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                  onClick={handleRefreshLinks}
+                  disabled={refreshing}
+                  title={t("citation.refreshHint")}
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
+                  />
+                  {t("citation.refreshLinks")}
+                </Button>
+              </div>
+              <ScrollArea className="h-full pr-3">
+                <ol className="flex flex-col gap-3 text-sm">
+                  {refs.map((r, i) => {
                   const text = fullReference(r, citationStyle, i + 1);
                   const links = referenceLinks(r);
                   return (
@@ -357,8 +399,9 @@ function CitationPanelBody({
                     </li>
                   );
                 })}
-              </ol>
-            </ScrollArea>
+                </ol>
+              </ScrollArea>
+            </div>
           )}
         </TabsContent>
       </Tabs>

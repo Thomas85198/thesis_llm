@@ -203,6 +203,28 @@ def test_search_works_empty_query_skips_call(fake_httpx):
     assert fake_httpx.captured == {}  # never hit the network
 
 
+# ---------- get_works_by_ids (refresh) ----------
+
+def test_get_works_by_ids_keys_by_openalex_id(fake_httpx):
+    out = openalex.get_works_by_ids(["W123", "W999"])
+    assert set(out) == {"W123"}  # only the work OpenAlex returned
+    assert out["W123"]["oa_url"] == "https://arxiv.org/abs/1706.03762"
+    # ids forwarded as an OR filter
+    assert fake_httpx.captured["params"]["filter"] == "openalex_id:W123|W999"
+
+
+def test_get_works_by_ids_drops_malformed_ids(fake_httpx):
+    # A malformed id would 400 the whole batch on OpenAlex; we filter it out so
+    # only the well-formed ones are queried.
+    openalex.get_works_by_ids(["W123", "not-an-id", "", "https://openalex.org/W5"])
+    assert fake_httpx.captured["params"]["filter"] == "openalex_id:W123"
+
+
+def test_get_works_by_ids_empty_skips_call(fake_httpx):
+    assert openalex.get_works_by_ids(["  ", "garbage"]) == {}
+    assert fake_httpx.captured == {}
+
+
 # ---------- to_search_query (CJK → English via LLM) ----------
 
 def test_to_search_query_english_passthrough():

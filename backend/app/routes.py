@@ -76,6 +76,10 @@ class CitationRecommendIn(BaseModel):
     year_from: int | None = Field(None, ge=1900, le=2100)  # optional recency filter
 
 
+class CitationRefreshIn(BaseModel):
+    openalex_ids: list[str] = Field(..., max_length=100)  # ids of the doc's citations
+
+
 router = APIRouter()
 
 
@@ -636,3 +640,19 @@ def recommend_citations(body: CitationRecommendIn) -> dict[str, Any]:
     except citation_mod.CitationSearchError as exc:
         raise HTTPException(502, f"OpenAlex unavailable: {exc}") from exc
     return {"candidates": candidates}
+
+
+@router.post("/api/editor/citations/refresh")
+def refresh_citations(body: CitationRefreshIn) -> dict[str, Any]:
+    """Re-fetch the document's citations by OpenAlex id to refresh stale metadata
+    (chiefly rotted links). Returns {openalex_id: fresh candidate}; ids OpenAlex
+    no longer knows are simply absent, so the client leaves those citations as-is.
+    """
+    ids = [i for i in body.openalex_ids if i.strip()]
+    if not ids:
+        return {"citations": {}}
+    try:
+        citations = citation_mod.refresh(ids)
+    except citation_mod.CitationSearchError as exc:
+        raise HTTPException(502, f"OpenAlex unavailable: {exc}") from exc
+    return {"citations": citations}

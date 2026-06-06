@@ -24,6 +24,9 @@ declare module "@tiptap/core" {
     citation: {
       /** Insert a citation chip at `pos` (defaults to the selection end). */
       insertCitation: (attrs: CitationAttrs, pos?: number) => ReturnType;
+      /** Refresh every chip's attrs from a fresh-by-openalexId map (rotted links
+       * etc.). Returns true if any chip changed. */
+      refreshCitations: (byId: Record<string, CitationAttrs>) => ReturnType;
     };
   }
 }
@@ -114,6 +117,24 @@ export const Citation = Node.create({
           return chain()
             .insertContentAt(at, { type: this.name, attrs })
             .run();
+        },
+
+      refreshCitations:
+        (byId) =>
+        ({ tr, state, dispatch }) => {
+          let changed = false;
+          // Attrs-only updates don't shift positions, so iterating the original
+          // doc while writing into `tr` is safe.
+          state.doc.descendants((node, pos) => {
+            if (node.type.name !== this.name) return;
+            const next = byId[node.attrs.openalexId as string];
+            if (next) {
+              tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...next });
+              changed = true;
+            }
+          });
+          if (changed && dispatch) dispatch(tr);
+          return changed;
         },
     };
   },

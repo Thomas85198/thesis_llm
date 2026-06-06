@@ -97,3 +97,16 @@ def recommend(
         return openalex.search_works(query, per_page=per_page, year_from=year_from)
     except httpx.HTTPError as exc:
         raise CitationSearchError(str(exc)) from exc
+
+
+def refresh(openalex_ids: list[str]) -> dict[str, dict]:
+    """Re-fetch citations by OpenAlex id → {id: fresh candidate}.
+
+    Powers the "refresh links" action: a citation's metadata is frozen into the
+    editor node at insert time, so links that have since rotted (or that predate
+    the trusted-source selection) only update when re-pulled from OpenAlex here.
+    """
+    try:
+        return openalex.get_works_by_ids(openalex_ids)
+    except httpx.HTTPError as exc:
+        raise CitationSearchError(str(exc)) from exc

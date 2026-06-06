@@ -632,3 +632,25 @@ export async function recommendCitations(
   const data = (await res.json()) as { candidates: CitationCandidate[] };
   return data.candidates;
 }
+
+/**
+ * Re-fetch citations by OpenAlex id to refresh stale metadata (chiefly links
+ * that have rotted). Returns a map keyed by openalex_id; ids OpenAlex no longer
+ * knows are absent, so the caller leaves those citations untouched.
+ */
+export async function refreshCitations(
+  openalexIds: string[]
+): Promise<Record<string, CitationCandidate>> {
+  const res = await fetch(`${API_BASE}/api/editor/citations/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ openalex_ids: openalexIds }),
+  });
+  if (!res.ok) {
+    throw new Error(`refreshCitations failed: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as {
+    citations: Record<string, CitationCandidate>;
+  };
+  return data.citations;
+}

@@ -9,6 +9,7 @@ dependencies = [
     "python-multipart>=0.0.20",
     "openai>=1.55",
     # "anthropic>=0.40",  # preserved for reference; re-enable to switch back
+    "httpx>=0.27",  # OpenAlex REST (Smart Citation); also OpenAI SDK's own transport
     "neo4j>=5.26",
     "pydantic>=2.10",
     "pymupdf>=1.24",

@@ -222,3 +222,16 @@
   pointer-events: none;
   white-space: pre-wrap;
 }
+
+/* In-text citation chip (NodeView). Clickable, opens the DOI in a new tab. */
+.tiptap-citation {
+  color: var(--primary);
+  cursor: pointer;
+  border-radius: 0.2rem;
+  padding: 0 0.12rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tiptap-citation:hover {
+  background: color-mix(in oklab, var(--primary) 15%, transparent);
+}

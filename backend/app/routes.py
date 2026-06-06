@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from . import autocomplete as autocomplete_mod
 from . import chat as chat_mod
+from . import citation as citation_mod
 from . import db, kg, pipeline, rules
 from .schemas import AnalysisResult
 
@@ -66,6 +67,13 @@ class AutocompleteIn(BaseModel):
     title: str = Field("", max_length=300)
     outline: str = Field("", max_length=4000)
     locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
+
+
+class CitationRecommendIn(BaseModel):
+    doc_id: str
+    claim: str = Field(..., max_length=2000)  # the selected sentence to cite
+    locale: str | None = None  # reserved; OpenAlex search is language-agnostic
+    year_from: int | None = Field(None, ge=1900, le=2100)  # optional recency filter
 
 
 router = APIRouter()
@@ -607,3 +615,24 @@ def autocomplete(body: AutocompleteIn) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/api/editor/citations/recommend")
+def recommend_citations(body: CitationRecommendIn) -> dict[str, Any]:
+    """Find citation candidates (OpenAlex) for a selected claim sentence.
+
+    Rate-limited per document up front (429). Returns OpenAlex's own relevance
+    ordering — no embedding rerank in this slice. Candidate metadata is returned
+    to the client and persisted in the editor's citation marks, not stored here.
+    """
+    allowed, wait = citation_mod.check_rate_limit(body.doc_id)
+    if not allowed:
+        raise HTTPException(429, f"citation search rate limit reached, retry in ~{wait}s")
+    claim = body.claim.strip()
+    if not claim:
+        return {"candidates": []}
+    try:
+        candidates = citation_mod.recommend(claim, year_from=body.year_from)
+    except citation_mod.CitationSearchError as exc:
+        raise HTTPException(502, f"OpenAlex unavailable: {exc}") from exc
+    return {"candidates": candidates}

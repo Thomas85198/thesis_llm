@@ -11,6 +11,7 @@
   "dependencies": {
     "@base-ui/react": "^1.4.1",
     "@dagrejs/dagre": "^3.0.0",
+    "@tiptap/extension-bubble-menu": "^3.24.0",
     "@tiptap/pm": "^3.24.0",
     "@tiptap/react": "^3.24.0",
     "@tiptap/starter-kit": "^3.24.0",

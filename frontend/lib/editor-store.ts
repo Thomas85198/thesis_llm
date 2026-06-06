@@ -9,6 +9,7 @@
 import { create } from "zustand";
 
 import { updateDocument, type ProseMirrorDoc } from "@/lib/api";
+import { type CitationStyle } from "@/lib/citation-format";
 
 const AUTOSAVE_DELAY_MS = 1200;
 
@@ -26,6 +27,20 @@ type EditorStore = {
   queueContentSave: (content: ProseMirrorDoc) => void;
   /** Clear timers + state on unmount. */
   reset: () => void;
+
+  // ----- Smart Citation -----
+  /** Global in-text citation style; flipping it re-renders every chip. */
+  citationStyle: CitationStyle;
+  setCitationStyle: (style: CitationStyle) => void;
+  /** Citation side panel: open state + the initial query + insert pos. The
+   * nonce bumps on every open so the panel body remounts (resets its query
+   * box and results) even when reopened with the same claim. */
+  citePanelOpen: boolean;
+  citeClaim: string;
+  citeAnchor: number | null;
+  citeNonce: number;
+  openCitePanel: (claim: string, anchor: number) => void;
+  closeCitePanel: () => void;
 };
 
 let contentTimer: ReturnType<typeof setTimeout> | null = null;
@@ -72,7 +87,32 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       if (titleTimer) clearTimeout(titleTimer);
       contentTimer = null;
       titleTimer = null;
-      set({ docId: null, title: "", saveState: "idle" });
+      // citationStyle is a global preference — keep it across documents; just
+      // make sure the panel isn't left open when switching docs.
+      set({
+        docId: null,
+        title: "",
+        saveState: "idle",
+        citePanelOpen: false,
+        citeClaim: "",
+        citeAnchor: null,
+      });
     },
+
+    // ----- Smart Citation -----
+    citationStyle: "apa",
+    setCitationStyle: (citationStyle) => set({ citationStyle }),
+    citePanelOpen: false,
+    citeClaim: "",
+    citeAnchor: null,
+    citeNonce: 0,
+    openCitePanel: (citeClaim, citeAnchor) =>
+      set((s) => ({
+        citePanelOpen: true,
+        citeClaim,
+        citeAnchor,
+        citeNonce: s.citeNonce + 1,
+      })),
+    closeCitePanel: () => set({ citePanelOpen: false }),
   };
 });

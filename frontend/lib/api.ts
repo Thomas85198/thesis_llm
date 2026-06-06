@@ -580,3 +580,55 @@ export async function streamAutocomplete(
     throw e;
   }
 }
+
+// ---------- editor mode: Smart Citation (OpenAlex) ----------
+
+// Flat candidate shape returned by /api/editor/citations/recommend, in
+// OpenAlex's own relevance order (no rerank in this slice). snake_case to match
+// the backend payload verbatim.
+export type CitationCandidate = {
+  openalex_id: string;
+  title: string;
+  authors: string[];
+  year: number | null;
+  venue: string;
+  doi: string;
+  oa_url: string; // open-access full text — most useful, but can rot ("" if none)
+  url: string; // always-resolvable source link (OA full text → DOI → … )
+  cited_by_count: number;
+  type: string;
+  abstract: string;
+  relevance_score: number | null;
+};
+
+/**
+ * Recommend citation candidates (OpenAlex) for a selected claim sentence. A 429
+ * surfaces as ChatRateLimitError so the caller can show a retry hint. Pass an
+ * AbortSignal to cancel a superseded search, and `yearFrom` to filter by recency.
+ */
+export async function recommendCitations(
+  docId: string,
+  claim: string,
+  opts: { signal?: AbortSignal; yearFrom?: number } = {}
+): Promise<CitationCandidate[]> {
+  const res = await fetch(`${API_BASE}/api/editor/citations/recommend`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      doc_id: docId,
+      claim,
+      year_from: opts.yearFrom ?? null,
+    }),
+    signal: opts.signal,
+  });
+  if (res.status === 429) {
+    const text = await res.text();
+    const m = text.match(/~(\d+)s/);
+    throw new ChatRateLimitError(text, m ? Number(m[1]) : 30);
+  }
+  if (!res.ok) {
+    throw new Error(`recommendCitations failed: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as { candidates: CitationCandidate[] };
+  return data.candidates;
+}

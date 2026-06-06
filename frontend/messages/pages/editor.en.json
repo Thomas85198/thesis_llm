@@ -38,5 +38,31 @@
     "quote": "Blockquote",
     "undo": "Undo",
     "redo": "Redo"
+  },
+  "citation": {
+    "find": "Find citation",
+    "panelTitle": "Smart Citation",
+    "panelDesc": "Search scholarly works (OpenAlex) by keyword, or select a sentence in your text.",
+    "searchPlaceholder": "Search by keyword or a sentence…",
+    "search": "Search",
+    "searchPrompt": "Type a query above to search scholarly works, or select a sentence in your text.",
+    "searching": "Searching…",
+    "noResults": "No matching works — try rephrasing or a more specific keyword.",
+    "yearLabel": "Year",
+    "yearAll": "Any year",
+    "yearFrom": "Since {year}",
+    "citedBy": "{count} citations",
+    "viewSource": "View source",
+    "linkFulltext": "Full text",
+    "linkDoi": "DOI",
+    "insert": "Insert citation",
+    "inserted": "Citation inserted",
+    "tabRecommend": "Suggestions",
+    "tabReferences": "References",
+    "referencesEmpty": "No citations in this document yet.",
+    "rateLimited": "Too many searches — retry in {seconds}s.",
+    "styleToggle": "Citation style: {style} (click to switch)",
+    "styleApa": "APA (Author, Year)",
+    "styleNumeric": "Numeric [1]"
   }
 }

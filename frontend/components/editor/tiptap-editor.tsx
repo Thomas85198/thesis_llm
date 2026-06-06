@@ -6,6 +6,7 @@ import {
   useEditorState,
   type Editor,
 } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import {
   Bold,
@@ -18,6 +19,7 @@ import {
   ListOrdered,
   Quote,
   Redo2,
+  Search,
   Sparkles,
   Strikethrough,
   Undo2,
@@ -26,6 +28,8 @@ import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Autocomplete } from "@/components/editor/autocomplete-extension";
+import { Citation } from "@/components/editor/citation-extension";
+import { CitationPanel } from "@/components/editor/citation-panel";
 import { Button } from "@/components/ui/button";
 import { streamAutocomplete, type EditorDoc, type ProseMirrorDoc } from "@/lib/api";
 import { useEditorStore, type SaveState } from "@/lib/editor-store";
@@ -139,6 +143,9 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   const queueContentSave = useEditorStore((s) => s.queueContentSave);
   const title = useEditorStore((s) => s.title);
   const saveState = useEditorStore((s) => s.saveState);
+  const openCitePanel = useEditorStore((s) => s.openCitePanel);
+  const citationStyle = useEditorStore((s) => s.citationStyle);
+  const setCitationStyle = useEditorStore((s) => s.setCitationStyle);
 
   const [aiEnabled, setAiEnabled] = useState(true);
 
@@ -213,7 +220,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   }, [triggerAutocomplete]);
 
   const editor = useEditor({
-    extensions: [StarterKit, Autocomplete],
+    extensions: [StarterKit, Autocomplete, Citation],
     content: doc.content_json,
     immediatelyRender: false,
     editorProps: {
@@ -340,6 +347,31 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           </ToolbarButton>
           <div className="mx-1 h-5 w-px bg-border" />
           <ToolbarButton
+            label={t("citation.find")}
+            onClick={() => openCitePanel("", editor.state.selection.to)}
+          >
+            <Search className="h-4 w-4" />
+          </ToolbarButton>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs font-medium tabular-nums"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() =>
+              setCitationStyle(citationStyle === "apa" ? "numeric" : "apa")
+            }
+            title={t("citation.styleToggle", {
+              style:
+                citationStyle === "apa"
+                  ? t("citation.styleApa")
+                  : t("citation.styleNumeric"),
+            })}
+          >
+            {citationStyle === "apa" ? "APA" : "[1]"}
+          </Button>
+          <div className="mx-1 h-5 w-px bg-border" />
+          <ToolbarButton
             active={aiEnabled}
             label={aiEnabled ? t("ai.on") : t("ai.off")}
             onClick={() => setAiEnabled((v) => !v)}
@@ -358,6 +390,32 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           <EditorContent editor={editor} />
         </div>
       </div>
+
+      {/* Select a sentence → find a citation for it */}
+      <BubbleMenu
+        editor={editor}
+        shouldShow={({ editor }) => !editor.state.selection.empty}
+      >
+        <div className="flex items-center gap-1 rounded-lg border bg-popover p-1 shadow-md">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 px-2 text-xs"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              const { from, to } = editor.state.selection;
+              const claim = editor.state.doc.textBetween(from, to, " ").trim();
+              if (claim) openCitePanel(claim, to);
+            }}
+          >
+            <Search className="h-3.5 w-3.5" />
+            {t("citation.find")}
+          </Button>
+        </div>
+      </BubbleMenu>
+
+      <CitationPanel editor={editor} docId={doc.doc_id} />
     </div>
   );
 }

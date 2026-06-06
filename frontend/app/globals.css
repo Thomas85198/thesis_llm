@@ -266,4 +266,11 @@
 }
 .tiptap-table-block {
   margin: 1rem 0;
+  max-width: 100%;
+}
+/* @tiptap/extension-table wraps the grid in .tableWrapper. Let a wide / resized
+   table scroll horizontally inside the editor instead of stretching the page. */
+.tiptap-content .tableWrapper {
+  max-width: 100%;
+  overflow-x: auto;
 }

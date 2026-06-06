@@ -653,6 +653,45 @@ export async function streamRewrite(
   }
 }
 
+// ---------- editor mode: defect check (Thesis Critic on the draft) ----------
+
+export type DraftDefect = {
+  rule_id: string;
+  defect_type: string;
+  severity: string; // high | medium | low
+  section: string;
+  description: string;
+  suggestion: string;
+  confidence: number | null;
+  evidence: string[]; // the EDU sentences the defect cites
+};
+
+/**
+ * Run the Thesis Critic's single-section REL rules on the draft text and return
+ * structural defects. Heavy (several LLM calls); a 429 throws ChatRateLimitError.
+ */
+export async function checkDraft(
+  docId: string,
+  text: string,
+  locale: string
+): Promise<DraftDefect[]> {
+  const res = await fetch(`${API_BASE}/api/editor/check`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ doc_id: docId, text, locale }),
+  });
+  if (res.status === 429) {
+    const t = await res.text();
+    const m = t.match(/~(\d+)s/);
+    throw new ChatRateLimitError(t, m ? Number(m[1]) : 30);
+  }
+  if (!res.ok) {
+    throw new Error(`checkDraft failed: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as { defects: DraftDefect[] };
+  return data.defects;
+}
+
 // ---------- editor mode: image upload ----------
 
 /**

@@ -268,6 +268,27 @@
   margin: 1rem 0;
   max-width: 100%;
 }
+
+/* Defect underlines: wavy underline under the cited sentence, by severity. */
+.tiptap-defect {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.tiptap-defect-high {
+  text-decoration-color: #ef4444;
+  background: color-mix(in oklab, #ef4444 8%, transparent);
+}
+.tiptap-defect-medium {
+  text-decoration-color: #f59e0b;
+  background: color-mix(in oklab, #f59e0b 8%, transparent);
+}
+.tiptap-defect-low {
+  text-decoration-color: #0ea5e9;
+  background: color-mix(in oklab, #0ea5e9 8%, transparent);
+}
 /* @tiptap/extension-table wraps the grid in .tableWrapper. Let a wide / resized
    table scroll horizontally inside the editor instead of stretching the page. */
 .tiptap-content .tableWrapper {

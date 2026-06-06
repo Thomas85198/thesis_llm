@@ -8,7 +8,7 @@
 // partial PUT).
 import { create } from "zustand";
 
-import { updateDocument, type ProseMirrorDoc } from "@/lib/api";
+import { updateDocument, type DraftDefect, type ProseMirrorDoc } from "@/lib/api";
 import { type CitationStyle } from "@/lib/citation-format";
 import { type SlashItem } from "@/components/editor/slash-command";
 
@@ -64,6 +64,15 @@ type EditorStore = {
   exportOpen: boolean;
   openExport: () => void;
   closeExport: () => void;
+
+  // ----- Defect check (Thesis Critic on the draft) -----
+  defectOpen: boolean;
+  defectLoading: boolean;
+  defects: DraftDefect[];
+  openDefects: () => void;
+  closeDefects: () => void;
+  setDefectLoading: (loading: boolean) => void;
+  setDefects: (defects: DraftDefect[]) => void;
 
   // ----- Slash command menu -----
   /** Driven by the slash-command suggestion plugin; rendered by <SlashMenu>. */
@@ -139,6 +148,9 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         rewriteRange: null,
         outlineOpen: false,
         exportOpen: false,
+        defectOpen: false,
+        defects: [],
+        defectLoading: false,
       });
     },
 
@@ -182,6 +194,15 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     exportOpen: false,
     openExport: () => set({ exportOpen: true }),
     closeExport: () => set({ exportOpen: false }),
+
+    // ----- Defect check -----
+    defectOpen: false,
+    defectLoading: false,
+    defects: [],
+    openDefects: () => set({ defectOpen: true }),
+    closeDefects: () => set({ defectOpen: false }),
+    setDefectLoading: (defectLoading) => set({ defectLoading }),
+    setDefects: (defects) => set({ defects }),
 
     // ----- Slash command menu -----
     slashOpen: false,

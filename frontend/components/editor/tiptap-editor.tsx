@@ -28,6 +28,7 @@ import {
   Quote,
   Redo2,
   Search,
+  ShieldAlert,
   Sigma,
   Sparkles,
   Strikethrough,
@@ -44,6 +45,8 @@ import { toast } from "sonner";
 import { Autocomplete } from "@/components/editor/autocomplete-extension";
 import { Citation } from "@/components/editor/citation-extension";
 import { CitationPanel } from "@/components/editor/citation-panel";
+import { DefectHighlight } from "@/components/editor/defect-highlight";
+import { DefectPanel } from "@/components/editor/defect-panel";
 import { ExportPanel } from "@/components/editor/export-panel";
 import { Figure, FigureList } from "@/components/editor/figure-extension";
 import { MathBlock, MathInline } from "@/components/editor/math-extension";
@@ -59,6 +62,8 @@ import { TableToolbar } from "@/components/editor/table-toolbar";
 import { SlashMenu } from "@/components/editor/slash-menu";
 import { Button } from "@/components/ui/button";
 import {
+  ChatRateLimitError,
+  checkDraft,
   streamAutocomplete,
   uploadImage,
   type EditorDoc,
@@ -192,6 +197,9 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   const openRewrite = useEditorStore((s) => s.openRewrite);
   const openOutline = useEditorStore((s) => s.openOutline);
   const openExport = useEditorStore((s) => s.openExport);
+  const openDefects = useEditorStore((s) => s.openDefects);
+  const setDefects = useEditorStore((s) => s.setDefects);
+  const setDefectLoading = useEditorStore((s) => s.setDefectLoading);
   const citationStyle = useEditorStore((s) => s.citationStyle);
   const setCitationStyle = useEditorStore((s) => s.setCitationStyle);
 
@@ -314,6 +322,34 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     []
   );
 
+  // Defect check: run the Thesis Critic on the whole draft (heavy, on demand) →
+  // list defects in the panel + underline the cited sentences inline.
+  const handleCheckDefects = useCallback(async () => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const text = ed.getText().trim();
+    if (!text) {
+      toast.error(t("defect.needsText"));
+      return;
+    }
+    openDefects();
+    setDefectLoading(true);
+    setDefects([]);
+    try {
+      const defects = await checkDraft(doc.doc_id, text, locale);
+      setDefects(defects);
+      ed.commands.setDefectHighlights(
+        defects.flatMap((d) => d.evidence.map((e) => ({ text: e, severity: d.severity })))
+      );
+    } catch (e) {
+      if (e instanceof ChatRateLimitError)
+        toast.error(t("defect.rateLimited", { seconds: e.retryAfter }));
+      else toast.error(String(e));
+    } finally {
+      setDefectLoading(false);
+    }
+  }, [doc.doc_id, locale, t, openDefects, setDefects, setDefectLoading]);
+
   // Slash menu items. `command` deletes the "/query" range, then applies the
   // block change. Memoized per locale (useEditor captures it on mount).
   const slashItems = useMemo<SlashItem[]>(
@@ -382,6 +418,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       TableHeader,
       TableCell,
       TableBlock,
+      DefectHighlight,
       TableCaption.configure({ labels: { tableWord: t("table.word") } }),
       TableList.configure({
         labels: {
@@ -560,6 +597,9 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           <ToolbarButton label={t("export.find")} onClick={openExport}>
             <Download className="h-4 w-4" />
           </ToolbarButton>
+          <ToolbarButton label={t("defect.find")} onClick={handleCheckDefects}>
+            <ShieldAlert className="h-4 w-4" />
+          </ToolbarButton>
           <div className="mx-1 h-5 w-px bg-border" />
           <Button
             type="button"
@@ -652,6 +692,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       <RewritePanel editor={editor} docId={doc.doc_id} />
       <OutlinePanel editor={editor} docId={doc.doc_id} />
       <ExportPanel editor={editor} />
+      <DefectPanel editor={editor} />
       <SlashMenu />
       <input
         ref={fileInputRef}

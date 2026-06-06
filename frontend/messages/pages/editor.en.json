@@ -180,6 +180,22 @@
     "title": "List of Figures",
     "empty": "No figures in the document yet."
   },
+  "defect": {
+    "find": "Defect check",
+    "panelTitle": "Paper defect check",
+    "panelDesc": "Checks structural defects with the 13 REL rules (claims without evidence, methods without motivation, misaligned conclusions…). Click “Locate” to jump to the sentence.",
+    "checking": "Checking… (runs several LLM calls, please wait)",
+    "empty": "No structural defects found.",
+    "needsText": "The document has no content to check yet",
+    "rateLimited": "Too many checks, retry in {seconds}s.",
+    "suggestionLabel": "Suggestion: ",
+    "locate": "Locate",
+    "severity": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    }
+  },
   "export": {
     "find": "Export",
     "panelTitle": "Export document",

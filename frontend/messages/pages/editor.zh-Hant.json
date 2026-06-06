@@ -180,6 +180,22 @@
     "title": "圖目錄",
     "empty": "文件中還沒有任何圖片。"
   },
+  "defect": {
+    "find": "缺陷檢查",
+    "panelTitle": "論文缺陷檢查",
+    "panelDesc": "用 13 條 REL 規則檢查全文結構性缺陷（論點缺證據、方法缺動機、結論不對齊…），點「定位」跳到對應句子。",
+    "checking": "檢查中…（會跑多次 LLM，請稍候）",
+    "empty": "沒有偵測到結構性缺陷。",
+    "needsText": "文件還沒有內容可檢查",
+    "rateLimited": "檢查太頻繁，請 {seconds} 秒後再試。",
+    "suggestionLabel": "建議：",
+    "locate": "定位",
+    "severity": {
+      "high": "高",
+      "medium": "中",
+      "low": "低"
+    }
+  },
   "export": {
     "find": "匯出",
     "panelTitle": "匯出文件",

@@ -18,6 +18,7 @@ from . import autocomplete as autocomplete_mod
 from . import chat as chat_mod
 from . import citation as citation_mod
 from . import claim_verifier as claim_verifier_mod
+from . import draft_check as draft_check_mod
 from . import export_doc
 from . import outline as outline_mod
 from . import rewrite as rewrite_mod
@@ -91,6 +92,12 @@ class CitationVerifyIn(BaseModel):
     title: str = Field("", max_length=500)  # candidate source title (context)
     abstract: str = Field("", max_length=8000)  # candidate abstract (already on the client)
     openalex_id: str | None = None  # references-tab path: re-fetch abstract by id
+    locale: str | None = None
+
+
+class DraftCheckIn(BaseModel):
+    doc_id: str
+    text: str = Field(..., min_length=1, max_length=20000)  # the draft to check
     locale: str | None = None
 
 
@@ -711,6 +718,24 @@ def verify_citation(body: CitationVerifyIn) -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001 — LLM/quota failure → 502
         raise HTTPException(502, f"verification failed: {exc}") from exc
+
+
+@router.post("/api/editor/check")
+def check_draft(body: DraftCheckIn) -> dict[str, Any]:
+    """Run the Thesis Critic's single-section REL rules on the draft text.
+
+    Heavy (several LLM calls) → rate-limited per document (429). Returns
+    {defects: [{rule_id, defect_type, severity, section, description,
+    suggestion, confidence, evidence}]} for the editor to render inline.
+    """
+    allowed, wait = draft_check_mod.check_rate_limit(body.doc_id)
+    if not allowed:
+        raise HTTPException(429, f"defect check rate limit reached, retry in ~{wait}s")
+    try:
+        defects = draft_check_mod.check_draft(body.text, body.doc_id, body.locale)
+    except Exception as exc:  # noqa: BLE001 — pipeline/LLM failure → 502
+        raise HTTPException(502, f"defect check failed: {exc}") from exc
+    return {"defects": defects}
 
 
 @router.post("/api/editor/rewrite")

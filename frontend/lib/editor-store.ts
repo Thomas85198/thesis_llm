@@ -41,6 +41,16 @@ type EditorStore = {
   citeNonce: number;
   openCitePanel: (claim: string, anchor: number) => void;
   closeCitePanel: () => void;
+
+  // ----- AI rewrite -----
+  /** Rewrite panel: open state + the selected passage and its doc range, so
+   * Accept can replace exactly what was highlighted. Nonce remounts the body. */
+  rewriteOpen: boolean;
+  rewriteText: string;
+  rewriteRange: { from: number; to: number } | null;
+  rewriteNonce: number;
+  openRewrite: (text: string, from: number, to: number) => void;
+  closeRewrite: () => void;
 };
 
 let contentTimer: ReturnType<typeof setTimeout> | null = null;
@@ -96,6 +106,9 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         citePanelOpen: false,
         citeClaim: "",
         citeAnchor: null,
+        rewriteOpen: false,
+        rewriteText: "",
+        rewriteRange: null,
       });
     },
 
@@ -114,5 +127,19 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         citeNonce: s.citeNonce + 1,
       })),
     closeCitePanel: () => set({ citePanelOpen: false }),
+
+    // ----- AI rewrite -----
+    rewriteOpen: false,
+    rewriteText: "",
+    rewriteRange: null,
+    rewriteNonce: 0,
+    openRewrite: (rewriteText, from, to) =>
+      set((s) => ({
+        rewriteOpen: true,
+        rewriteText,
+        rewriteRange: { from, to },
+        rewriteNonce: s.rewriteNonce + 1,
+      })),
+    closeRewrite: () => set({ rewriteOpen: false }),
   };
 });

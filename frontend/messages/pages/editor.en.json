@@ -68,5 +68,30 @@
     "styleToggle": "Citation style: {style} (click to switch)",
     "styleApa": "APA (Author, Year)",
     "styleNumeric": "Numeric [1]"
+  },
+  "rewrite": {
+    "find": "AI rewrite",
+    "panelTitle": "AI rewrite",
+    "panelDesc": "Pick a rewrite style or type a custom instruction; AI rewrites your highlighted text.",
+    "originalLabel": "Original",
+    "resultLabel": "Rewrite",
+    "customPlaceholder": "Type a custom instruction, e.g. “make it more concise”",
+    "send": "Send",
+    "working": "Rewriting…",
+    "prompt": "Pick a rewrite style, or type a custom instruction.",
+    "accept": "Accept",
+    "retry": "Retry",
+    "discard": "Discard",
+    "applied": "Rewrite applied",
+    "rateLimited": "Too many rewrites, retry in {seconds}s.",
+    "preset": {
+      "paraphrase": "Paraphrase",
+      "simplify": "Simplify",
+      "expand": "Expand",
+      "shorten": "Shorten",
+      "improve_fluency": "Improve fluency",
+      "academic": "Academic tone",
+      "fix_grammar": "Fix grammar"
+    }
   }
 }

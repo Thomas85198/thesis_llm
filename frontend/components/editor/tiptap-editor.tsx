@@ -23,6 +23,7 @@ import {
   Sparkles,
   Strikethrough,
   Undo2,
+  Wand2,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -30,6 +31,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Autocomplete } from "@/components/editor/autocomplete-extension";
 import { Citation } from "@/components/editor/citation-extension";
 import { CitationPanel } from "@/components/editor/citation-panel";
+import { RewritePanel } from "@/components/editor/rewrite-panel";
 import { Button } from "@/components/ui/button";
 import { streamAutocomplete, type EditorDoc, type ProseMirrorDoc } from "@/lib/api";
 import { useEditorStore, type SaveState } from "@/lib/editor-store";
@@ -144,6 +146,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   const title = useEditorStore((s) => s.title);
   const saveState = useEditorStore((s) => s.saveState);
   const openCitePanel = useEditorStore((s) => s.openCitePanel);
+  const openRewrite = useEditorStore((s) => s.openRewrite);
   const citationStyle = useEditorStore((s) => s.citationStyle);
   const setCitationStyle = useEditorStore((s) => s.setCitationStyle);
 
@@ -405,6 +408,22 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               const { from, to } = editor.state.selection;
+              const text = editor.state.doc.textBetween(from, to, " ").trim();
+              if (text) openRewrite(text, from, to);
+            }}
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            {t("rewrite.find")}
+          </Button>
+          <div className="h-5 w-px bg-border" />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 px-2 text-xs"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              const { from, to } = editor.state.selection;
               const claim = editor.state.doc.textBetween(from, to, " ").trim();
               if (claim) openCitePanel(claim, to);
             }}
@@ -416,6 +435,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       </BubbleMenu>
 
       <CitationPanel editor={editor} docId={doc.doc_id} />
+      <RewritePanel editor={editor} docId={doc.doc_id} />
     </div>
   );
 }

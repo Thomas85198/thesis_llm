@@ -68,5 +68,30 @@
     "styleToggle": "引用格式：{style}（點擊切換）",
     "styleApa": "APA（作者, 年）",
     "styleNumeric": "數字 [1]"
+  },
+  "rewrite": {
+    "find": "AI 改寫",
+    "panelTitle": "AI 改寫",
+    "panelDesc": "選一種改寫方式，或輸入自訂指令，AI 會改寫你反白的文字。",
+    "originalLabel": "原文",
+    "resultLabel": "改寫結果",
+    "customPlaceholder": "輸入自訂指令，例如「改得更精簡」",
+    "send": "送出",
+    "working": "改寫中…",
+    "prompt": "選一個改寫方式，或輸入自訂指令。",
+    "accept": "採用",
+    "retry": "重試",
+    "discard": "捨棄",
+    "applied": "已套用改寫",
+    "rateLimited": "改寫太頻繁，請 {seconds} 秒後再試。",
+    "preset": {
+      "paraphrase": "換句話說",
+      "simplify": "簡化",
+      "expand": "擴寫",
+      "shorten": "精簡",
+      "improve_fluency": "潤飾流暢",
+      "academic": "學術語氣",
+      "fix_grammar": "修正文法"
+    }
   }
 }

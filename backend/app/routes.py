@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from . import autocomplete as autocomplete_mod
 from . import chat as chat_mod
 from . import citation as citation_mod
+from . import rewrite as rewrite_mod
 from . import db, kg, pipeline, rules
 from .schemas import AnalysisResult
 
@@ -78,6 +79,13 @@ class CitationRecommendIn(BaseModel):
 
 class CitationRefreshIn(BaseModel):
     openalex_ids: list[str] = Field(..., max_length=100)  # ids of the doc's citations
+
+
+class RewriteIn(BaseModel):
+    doc_id: str
+    text: str = Field(..., min_length=1, max_length=4000)  # the selected passage
+    instruction: str = Field(..., max_length=500)  # a preset key or a custom directive
+    locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
 
 
 router = APIRouter()
@@ -656,3 +664,31 @@ def refresh_citations(body: CitationRefreshIn) -> dict[str, Any]:
     except citation_mod.CitationSearchError as exc:
         raise HTTPException(502, f"OpenAlex unavailable: {exc}") from exc
     return {"citations": citations}
+
+
+@router.post("/api/editor/rewrite")
+def rewrite(body: RewriteIn) -> StreamingResponse:
+    """Stream an AI rewrite of the selected passage as Server-Sent Events.
+
+    Rate-limited per document up front (429 before any bytes), then the body
+    streams `data: {"t": "<delta>"}` chunks ending with `data: [DONE]`. The
+    instruction is either a preset key (paraphrase, simplify, …) or a custom
+    directive typed by the author.
+    """
+    allowed, wait = rewrite_mod.check_rate_limit(body.doc_id)
+    if not allowed:
+        raise HTTPException(429, f"rewrite rate limit reached, retry in ~{wait}s")
+    return StreamingResponse(
+        rewrite_mod.sse_stream(
+            doc_id=body.doc_id,
+            text=body.text,
+            instruction=body.instruction,
+            locale=body.locale,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

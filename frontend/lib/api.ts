@@ -581,6 +581,78 @@ export async function streamAutocomplete(
   }
 }
 
+// ---------- editor mode: AI rewrite (highlight → rewrite menu) ----------
+
+export type RewriteRequest = {
+  doc_id: string;
+  text: string; // the selected passage
+  instruction: string; // a preset key (paraphrase, simplify, …) or custom directive
+  locale: string;
+};
+
+/**
+ * Stream an AI rewrite of a selected passage. Calls `onDelta` for each token.
+ * Pass an AbortSignal to cancel (e.g. when retrying or closing the menu). A 429
+ * throws ChatRateLimitError so the caller can show a retry hint; AbortError is
+ * swallowed.
+ */
+export async function streamRewrite(
+  body: RewriteRequest,
+  onDelta: (text: string) => void,
+  signal: AbortSignal
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/editor/rewrite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") return;
+    throw e;
+  }
+  if (res.status === 429) {
+    const text = await res.text();
+    const m = text.match(/~(\d+)s/);
+    throw new ChatRateLimitError(text, m ? Number(m[1]) : 30);
+  }
+  if (!res.ok || !res.body) {
+    throw new Error(`rewrite failed: ${res.status} ${await res.text()}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop() ?? "";
+      for (const evt of events) {
+        const line = evt.trim();
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") return;
+        let parsed: { t?: string; error?: string };
+        try {
+          parsed = JSON.parse(data);
+        } catch {
+          continue; // ignore malformed chunk
+        }
+        if (parsed.error) throw new Error(parsed.error);
+        if (parsed.t) onDelta(parsed.t);
+      }
+    }
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") return;
+    throw e;
+  }
+}
+
 // ---------- editor mode: Smart Citation (OpenAlex) ----------
 
 // Flat candidate shape returned by /api/editor/citations/recommend, in

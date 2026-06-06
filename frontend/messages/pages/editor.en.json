@@ -66,6 +66,11 @@
     "verifying": "Verifying…",
     "verifyNeedsClaim": "Type the claim to support in the search box first",
     "verifyNoClaim": "Couldn't find the sentence this citation sits in",
+    "ground": "Find supporting text",
+    "grounding": "Searching full text…",
+    "groundFulltext": "Sentences in the full text that best support you",
+    "groundAbstract": "Sentences in the abstract that best support you (no full text)",
+    "groundNone": "No source text available to match",
     "verdict": {
       "supports": "Supports",
       "partial": "Partial",

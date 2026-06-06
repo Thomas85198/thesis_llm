@@ -66,6 +66,11 @@
     "verifying": "驗證中…",
     "verifyNeedsClaim": "請先在搜尋框輸入要佐證的論點",
     "verifyNoClaim": "找不到此引用所在的句子",
+    "ground": "看原文支撐",
+    "grounding": "查全文中…",
+    "groundFulltext": "全文中最支撐你的句子",
+    "groundAbstract": "摘要中最支撐你的句子（無全文）",
+    "groundNone": "找不到可比對的原文",
     "verdict": {
       "supports": "支持",
       "partial": "部分支持",

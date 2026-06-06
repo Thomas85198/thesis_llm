@@ -14,6 +14,7 @@ import {
   Link2,
   Loader2,
   Plus,
+  Quote,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -25,11 +26,13 @@ import { toast } from "sonner";
 
 import {
   ChatRateLimitError,
+  groundCitation,
   recommendCitations,
   refreshCitations,
   verifyCitation,
   type CitationCandidate,
   type CitationVerdict,
+  type GroundResult,
 } from "@/lib/api";
 import {
   fullReference,
@@ -151,6 +154,8 @@ function CitationPanelBody({
   // against the claim sentence around the inserted chip.
   const [verdicts, setVerdicts] = useState<Record<string, CitationVerdict | "loading">>({});
   const [refVerdicts, setRefVerdicts] = useState<Record<string, CitationVerdict | "loading">>({});
+  // openalexId → full-text grounding result (top supporting sentences), or "loading".
+  const [grounds, setGrounds] = useState<Record<string, GroundResult | "loading">>({});
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -253,6 +258,30 @@ function CitationPanelBody({
     } catch (e) {
       setRefVerdicts((v) => {
         const next = { ...v };
+        delete next[r.openalexId];
+        return next;
+      });
+      if (e instanceof ChatRateLimitError)
+        toast.error(t("citation.rateLimited", { seconds: e.retryAfter }));
+      else toast.error(String(e));
+    }
+  }
+
+  // Full-text grounding: fetch the source's text and show the sentences that
+  // best support the claim around this citation chip.
+  async function handleGround(r: CitationAttrs) {
+    const claim = claimForCitation(editor, r.openalexId);
+    if (!claim) {
+      toast.error(t("citation.verifyNoClaim"));
+      return;
+    }
+    setGrounds((g) => ({ ...g, [r.openalexId]: "loading" }));
+    try {
+      const result = await groundCitation(docId, r.openalexId, r.oaUrl || r.url, claim);
+      setGrounds((g) => ({ ...g, [r.openalexId]: result }));
+    } catch (e) {
+      setGrounds((g) => {
+        const next = { ...g };
         delete next[r.openalexId];
         return next;
       });
@@ -503,7 +532,7 @@ function CitationPanelBody({
                           })}
                         </div>
                       )}
-                      <div className="mt-0.5">
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
                         {refVerdicts[r.openalexId] === "loading" ? (
                           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                             <Loader2 className="h-3 w-3 animate-spin" />
@@ -521,7 +550,25 @@ function CitationPanelBody({
                             {t("citation.verify")}
                           </button>
                         )}
+                        {grounds[r.openalexId] === "loading" ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            {t("citation.grounding")}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleGround(r)}
+                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            <Quote className="h-3 w-3" />
+                            {t("citation.ground")}
+                          </button>
+                        )}
                       </div>
+                      {grounds[r.openalexId] && grounds[r.openalexId] !== "loading" && (
+                        <GroundView result={grounds[r.openalexId] as GroundResult} />
+                      )}
                     </li>
                   );
                 })}
@@ -556,5 +603,33 @@ function VerdictBadge({ verdict }: { verdict: CitationVerdict }) {
       <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
       {t(`citation.verdict.${verdict.verdict}`)}
     </span>
+  );
+}
+
+/** Full-text grounding result: the source sentences that best support the claim,
+ * each with its match %. Labels whether it came from full text or the abstract. */
+function GroundView({ result }: { result: GroundResult }) {
+  const t = useTranslations("editor");
+  if (result.source === "none" || result.supporting.length === 0) {
+    return (
+      <p className="mt-1.5 text-xs text-muted-foreground">{t("citation.groundNone")}</p>
+    );
+  }
+  return (
+    <div className="mt-1.5 rounded-md border bg-muted/30 p-2">
+      <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
+        {t(result.source === "fulltext" ? "citation.groundFulltext" : "citation.groundAbstract")}
+      </p>
+      <ul className="flex flex-col gap-1">
+        {result.supporting.map((s, i) => (
+          <li key={i} className="text-xs leading-snug">
+            <span className="mr-1 font-mono text-[10px] text-primary">
+              {Math.round(s.score * 100)}%
+            </span>
+            「{s.sentence}」
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

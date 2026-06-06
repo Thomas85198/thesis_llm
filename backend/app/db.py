@@ -151,6 +151,22 @@ CREATE TABLE IF NOT EXISTS document_versions (
     created_at    TEXT NOT NULL        -- 快照時間 (ISO 8601 UTC)
 );
 CREATE INDEX IF NOT EXISTS idx_doc_versions_doc ON document_versions(doc_id, created_at);
+
+-- ============================================================
+-- 表 7: paper_chunks — 引用論文全文切句 + 向量快取 (全文句級接地)
+-- ----------------------------------------------------------------
+-- 每筆是某 OpenAlex 論文全文(或摘要)切出的一句 + 其 embedding (JSON 浮點陣列)。
+-- 用於「點引用→看原文哪一句支撐你」:抓 OA 全文→切句→embed 後存這裡,
+-- 之後同一篇直接重用、不重抓不重 embed。source 標記是全文還是退回摘要。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS paper_chunks (
+    openalex_id TEXT NOT NULL,           -- 論文識別 (e.g. 'W2626778328')
+    idx         INTEGER NOT NULL,        -- 句子在文中的序
+    text        TEXT NOT NULL,           -- 句子文字
+    embedding   TEXT NOT NULL,           -- JSON 浮點陣列 (embedding 向量)
+    source      TEXT NOT NULL,           -- 'fulltext' | 'abstract'
+    PRIMARY KEY (openalex_id, idx)
+);
 """
 
 
@@ -884,3 +900,33 @@ def get_document_version(doc_id: str, version_id: int) -> dict[str, Any] | None:
     d = dict(row)
     d["content_json"] = json.loads(d["content_json"])
     return d
+
+
+# ---------- paper_chunks (full-text grounding cache) ----------
+
+def get_paper_chunks(openalex_id: str) -> list[dict[str, Any]]:
+    """Cached sentence chunks + embeddings for a paper, in order. [] if none."""
+    with connect() as c:
+        rows = c.execute(
+            "SELECT idx, text, embedding, source FROM paper_chunks "
+            "WHERE openalex_id=? ORDER BY idx",
+            (openalex_id,),
+        ).fetchall()
+    return [
+        {"idx": r["idx"], "text": r["text"],
+         "embedding": json.loads(r["embedding"]), "source": r["source"]}
+        for r in rows
+    ]
+
+
+def upsert_paper_chunks(
+    openalex_id: str, source: str, chunks: list[tuple[int, str, list[float]]]
+) -> None:
+    """Replace the cached chunks for a paper. chunks = [(idx, text, embedding)]."""
+    with connect() as c:
+        c.execute("DELETE FROM paper_chunks WHERE openalex_id=?", (openalex_id,))
+        c.executemany(
+            "INSERT INTO paper_chunks(openalex_id, idx, text, embedding, source) "
+            "VALUES(?,?,?,?,?)",
+            [(openalex_id, i, t, json.dumps(e), source) for (i, t, e) in chunks],
+        )

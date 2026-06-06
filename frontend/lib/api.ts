@@ -783,6 +783,42 @@ export async function recommendCitations(
   return data.candidates;
 }
 
+// Claim–evidence verdict: does a cited source actually support the claim?
+export type CitationVerdict = {
+  verdict: "supports" | "partial" | "unsupported" | "unknown";
+  evidence: string; // supporting sentence from the abstract ("" if none)
+  reason: string;
+  confidence: number;
+};
+
+/**
+ * Verify whether a candidate source supports a claim (the "traffic light"). The
+ * abstract is sent from the candidate already on the client — no extra fetch. A
+ * 429 throws ChatRateLimitError.
+ */
+export async function verifyCitation(
+  docId: string,
+  claim: string,
+  title: string,
+  abstract: string,
+  locale: string
+): Promise<CitationVerdict> {
+  const res = await fetch(`${API_BASE}/api/editor/citations/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ doc_id: docId, claim, title, abstract, locale }),
+  });
+  if (res.status === 429) {
+    const text = await res.text();
+    const m = text.match(/~(\d+)s/);
+    throw new ChatRateLimitError(text, m ? Number(m[1]) : 30);
+  }
+  if (!res.ok) {
+    throw new Error(`verifyCitation failed: ${res.status} ${await res.text()}`);
+  }
+  return (await res.json()) as CitationVerdict;
+}
+
 /**
  * Re-fetch citations by OpenAlex id to refresh stale metadata (chiefly links
  * that have rotted). Returns a map keyed by openalex_id; ids OpenAlex no longer

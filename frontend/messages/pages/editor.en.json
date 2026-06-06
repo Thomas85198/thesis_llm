@@ -60,6 +60,15 @@
     "viewSource": "View source",
     "linkFulltext": "Full text",
     "linkDoi": "DOI",
+    "verify": "Verify",
+    "verifying": "Verifying…",
+    "verifyNeedsClaim": "Type the claim to support in the search box first",
+    "verdict": {
+      "supports": "Supports",
+      "partial": "Partial",
+      "unsupported": "Unsupported",
+      "unknown": "Unknown"
+    },
     "insert": "Insert citation",
     "inserted": "Citation inserted",
     "tabRecommend": "Suggestions",

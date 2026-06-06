@@ -16,8 +16,9 @@ import {
   Plus,
   RefreshCw,
   Search,
+  ShieldCheck,
 } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -25,7 +26,9 @@ import {
   ChatRateLimitError,
   recommendCitations,
   refreshCitations,
+  verifyCitation,
   type CitationCandidate,
+  type CitationVerdict,
 } from "@/lib/api";
 import {
   fullReference,
@@ -114,6 +117,7 @@ function CitationPanelBody({
   initialQuery: string;
 }) {
   const t = useTranslations("editor");
+  const locale = useLocale();
   const closeCitePanel = useEditorStore((s) => s.closeCitePanel);
   const citationStyle = useEditorStore((s) => s.citationStyle);
 
@@ -122,6 +126,8 @@ function CitationPanelBody({
   const [candidates, setCandidates] = useState<CitationCandidate[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [yearFrom, setYearFrom] = useState<number | undefined>(undefined);
+  // openalex_id → verdict, or "loading" while a verify is in flight.
+  const [verdicts, setVerdicts] = useState<Record<string, CitationVerdict | "loading">>({});
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -183,6 +189,30 @@ function CitationPanelBody({
       .run();
     toast.success(t("citation.inserted"));
     closeCitePanel();
+  }
+
+  // Claim–evidence "traffic light": does this candidate actually support the
+  // claim in the search box? Verifies on demand (one LLM call per click).
+  async function handleVerify(c: CitationCandidate) {
+    const claim = query.trim();
+    if (!claim) {
+      toast.error(t("citation.verifyNeedsClaim"));
+      return;
+    }
+    setVerdicts((v) => ({ ...v, [c.openalex_id]: "loading" }));
+    try {
+      const verdict = await verifyCitation(docId, claim, c.title, c.abstract, locale);
+      setVerdicts((v) => ({ ...v, [c.openalex_id]: verdict }));
+    } catch (e) {
+      setVerdicts((v) => {
+        const next = { ...v };
+        delete next[c.openalex_id];
+        return next;
+      });
+      if (e instanceof ChatRateLimitError)
+        toast.error(t("citation.rateLimited", { seconds: e.retryAfter }));
+      else toast.error(String(e));
+    }
   }
 
   // Re-pull every citation from OpenAlex and patch chip attrs in place — fixes
@@ -318,17 +348,36 @@ function CitationPanelBody({
                         {c.abstract}
                       </p>
                     )}
-                    {c.url && (
-                      <a
-                        href={c.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-1.5 inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        {t("citation.viewSource")}
-                      </a>
-                    )}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      {c.url && (
+                        <a
+                          href={c.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          {t("citation.viewSource")}
+                        </a>
+                      )}
+                      {verdicts[c.openalex_id] === "loading" ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          {t("citation.verifying")}
+                        </span>
+                      ) : verdicts[c.openalex_id] ? (
+                        <VerdictBadge verdict={verdicts[c.openalex_id] as CitationVerdict} />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleVerify(c)}
+                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          <ShieldCheck className="h-3 w-3" />
+                          {t("citation.verify")}
+                        </button>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -406,5 +455,29 @@ function CitationPanelBody({
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+/** Claim–evidence "traffic light" badge: 🟢 supports / 🟡 partial / 🔴 unsupported
+ * / ⚪ unknown. Hovering shows the reason and the supporting sentence. */
+function VerdictBadge({ verdict }: { verdict: CitationVerdict }) {
+  const t = useTranslations("editor");
+  const meta = {
+    supports: { dot: "bg-emerald-500", cls: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" },
+    partial: { dot: "bg-amber-500", cls: "border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" },
+    unsupported: { dot: "bg-red-500", cls: "border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300" },
+    unknown: { dot: "bg-slate-400", cls: "border-slate-300 bg-slate-50 text-slate-600 dark:bg-slate-900 dark:text-slate-300" },
+  }[verdict.verdict];
+  const tip = [verdict.reason, verdict.evidence && `「${verdict.evidence}」`]
+    .filter(Boolean)
+    .join("\n");
+  return (
+    <span
+      title={tip}
+      className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs ${meta.cls}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+      {t(`citation.verdict.${verdict.verdict}`)}
+    </span>
   );
 }

@@ -60,6 +60,15 @@
     "viewSource": "查看來源",
     "linkFulltext": "全文",
     "linkDoi": "DOI",
+    "verify": "驗證",
+    "verifying": "驗證中…",
+    "verifyNeedsClaim": "請先在搜尋框輸入要佐證的論點",
+    "verdict": {
+      "supports": "支持",
+      "partial": "部分支持",
+      "unsupported": "不支持",
+      "unknown": "無法判定"
+    },
     "insert": "插入引用",
     "inserted": "已插入引用",
     "tabRecommend": "推薦",

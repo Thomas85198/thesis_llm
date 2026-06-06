@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from . import autocomplete as autocomplete_mod
 from . import chat as chat_mod
 from . import citation as citation_mod
+from . import claim_verifier as claim_verifier_mod
 from . import export_doc
 from . import outline as outline_mod
 from . import rewrite as rewrite_mod
@@ -82,6 +83,14 @@ class CitationRecommendIn(BaseModel):
 
 class CitationRefreshIn(BaseModel):
     openalex_ids: list[str] = Field(..., max_length=100)  # ids of the doc's citations
+
+
+class CitationVerifyIn(BaseModel):
+    doc_id: str
+    claim: str = Field(..., max_length=2000)  # the sentence to support
+    title: str = Field("", max_length=500)  # candidate source title (context)
+    abstract: str = Field("", max_length=8000)  # candidate abstract (already on the client)
+    locale: str | None = None
 
 
 class RewriteIn(BaseModel):
@@ -681,6 +690,25 @@ def refresh_citations(body: CitationRefreshIn) -> dict[str, Any]:
     except citation_mod.CitationSearchError as exc:
         raise HTTPException(502, f"OpenAlex unavailable: {exc}") from exc
     return {"citations": citations}
+
+
+@router.post("/api/editor/citations/verify")
+def verify_citation(body: CitationVerifyIn) -> dict[str, Any]:
+    """Claim–evidence check: does this source actually support the claim?
+
+    Returns {verdict: supports|partial|unsupported|unknown, evidence, reason,
+    confidence}. The abstract is sent from the client (already on the candidate),
+    so no OpenAlex round-trip. Rate-limited per document.
+    """
+    allowed, wait = claim_verifier_mod.check_rate_limit(body.doc_id)
+    if not allowed:
+        raise HTTPException(429, f"verify rate limit reached, retry in ~{wait}s")
+    try:
+        return claim_verifier_mod.verify(
+            body.claim, body.title, body.abstract, body.doc_id, body.locale
+        )
+    except Exception as exc:  # noqa: BLE001 — LLM/quota failure → 502
+        raise HTTPException(502, f"verification failed: {exc}") from exc
 
 
 @router.post("/api/editor/rewrite")

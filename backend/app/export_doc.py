@@ -105,6 +105,26 @@ def _block_text(block: dict) -> str:
     )
 
 
+def _plain_text(node: dict) -> str:
+    """Recursively gather visible text from a node (used for table cells)."""
+    if node.get("type") == "text":
+        return node.get("text", "")
+    return "".join(_plain_text(ch) for ch in _children(node))
+
+
+def _table_parts(block: dict) -> tuple[str, list[list[str]]]:
+    """Split a tableBlock into (caption, rows-of-cell-text)."""
+    caption = ""
+    rows: list[list[str]] = []
+    for child in _children(block):
+        if child.get("type") == "tableCaption":
+            caption = _plain_text(child).strip()
+        elif child.get("type") == "table":
+            for tr in _children(child):
+                rows.append([_plain_text(cell).strip() for cell in _children(tr)])
+    return caption, rows
+
+
 # ---------- DOCX ----------
 
 def _add_inline_docx(paragraph, nodes: list[dict], style: str, order: list[str]) -> None:
@@ -160,6 +180,19 @@ def _render_block_docx(docx: Document, block: dict, style: str, order: list[str]
     elif t == "mathBlock":
         p = docx.add_paragraph()
         p.add_run(f"$${(block.get('attrs') or {}).get('latex', '')}$$")
+    elif t == "tableBlock":
+        caption, rows = _table_parts(block)
+        if caption:
+            docx.add_paragraph().add_run(caption).italic = True
+        if rows:
+            ncols = max(len(r) for r in rows)
+            tbl = docx.add_table(rows=len(rows), cols=ncols)
+            tbl.style = "Table Grid"
+            for r, cells in enumerate(rows):
+                for c in range(ncols):
+                    tbl.cell(r, c).text = cells[c] if c < len(cells) else ""
+    elif t == "tableList":
+        pass  # editor-only live aid; the tables render inline
     else:  # paragraph and any unknown block → a plain paragraph of its inline content
         p = docx.add_paragraph()
         _add_inline_docx(p, _children(block), style, order)
@@ -263,6 +296,22 @@ def _render_block_latex(block: dict, style: str, order: list[str]) -> str:
         return ""  # an editor-only live aid; the figures render inline
     if t == "mathBlock":
         return f"\\[{(block.get('attrs') or {}).get('latex', '')}\\]\n\n"
+    if t == "tableBlock":
+        caption, rows = _table_parts(block)
+        if not rows:
+            return ""
+        ncols = max(len(r) for r in rows)
+        body = " \\\\\n".join(
+            " & ".join(_esc(r[c] if c < len(r) else "") for c in range(ncols)) for r in rows
+        )
+        cap = f"\\caption{{{_esc(caption)}}}\n" if caption else ""
+        return (
+            "\\begin{table}[h]\n\\centering\n"
+            f"\\begin{{tabular}}{{{'|' + 'l|' * ncols}}}\n\\hline\n"
+            f"{body} \\\\\n\\hline\n\\end{{tabular}}\n{cap}\\end{{table}}\n\n"
+        )
+    if t == "tableList":
+        return ""  # editor-only live aid; the tables render inline
     return _inline_latex(_children(block), style, order) + "\n\n"
 
 

@@ -136,11 +136,20 @@
     "imageHint": "上傳圖片並加標題",
     "figureList": "圖目錄",
     "mathInline": "行內數學",
-    "mathBlock": "數學區塊"
+    "mathBlock": "數學區塊",
+    "table": "表格",
+    "tableList": "表目錄"
   },
   "math": {
     "inlinePlaceholder": "LaTeX，例如 E=mc^2",
     "blockPlaceholder": "LaTeX，例如 \\int_0^1 x\\,dx"
+  },
+  "table": {
+    "word": "表"
+  },
+  "tableList": {
+    "title": "表目錄",
+    "empty": "文件中還沒有任何表格。"
   },
   "figure": {
     "word": "圖",

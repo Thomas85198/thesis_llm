@@ -235,3 +235,35 @@
 .tiptap-citation:hover {
   background: color-mix(in oklab, var(--primary) 15%, transparent);
 }
+
+/* Tables (editable grid). The caption renders above via the tableCaption node. */
+.tiptap-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0;
+  table-layout: fixed;
+  overflow: hidden;
+}
+.tiptap-content td,
+.tiptap-content th {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.5rem;
+  vertical-align: top;
+  position: relative;
+}
+.tiptap-content th {
+  background: color-mix(in oklab, var(--muted) 60%, transparent);
+  font-weight: 600;
+  text-align: left;
+}
+.tiptap-content .selectedCell::after {
+  /* TipTap cell-selection highlight */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  pointer-events: none;
+}
+.tiptap-table-block {
+  margin: 1rem 0;
+}

@@ -9,6 +9,7 @@ import {
 import { BubbleMenu } from "@tiptap/react/menus";
 import { NodeSelection } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
+import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import {
   Bold,
   Code,
@@ -30,6 +31,8 @@ import {
   Sigma,
   Sparkles,
   Strikethrough,
+  Table as TableIcon,
+  TableProperties,
   Undo2,
   Variable,
   Wand2,
@@ -46,6 +49,11 @@ import { Figure, FigureList } from "@/components/editor/figure-extension";
 import { MathBlock, MathInline } from "@/components/editor/math-extension";
 import { OutlinePanel } from "@/components/editor/outline-panel";
 import { RewritePanel } from "@/components/editor/rewrite-panel";
+import {
+  TableBlock,
+  TableCaption,
+  TableList,
+} from "@/components/editor/table-extension";
 import { SlashCommand, type SlashItem } from "@/components/editor/slash-command";
 import { SlashMenu } from "@/components/editor/slash-menu";
 import { Button } from "@/components/ui/button";
@@ -339,6 +347,10 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     { title: t("slash.mathBlock"), icon: Sigma,
       keywords: ["math", "block", "equation", "latex", "數學", "區塊", "公式"],
       command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertMathBlock().run() },
+    { title: t("slash.table"), icon: TableIcon, keywords: ["table", "grid", "表格", "表"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertTableBlock().run() },
+    { title: t("slash.tableList"), icon: TableProperties, keywords: ["tables", "list", "表目錄", "目錄"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertTableList().run() },
     ],
     [t, openImagePicker]
   );
@@ -364,6 +376,20 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       }),
       MathInline.configure({ labels: { placeholder: t("math.inlinePlaceholder") } }),
       MathBlock.configure({ labels: { placeholder: t("math.blockPlaceholder") } }),
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      TableBlock,
+      TableCaption.configure({ labels: { tableWord: t("table.word") } }),
+      TableList.configure({
+        labels: {
+          tableWord: t("table.word"),
+          title: t("tableList.title"),
+          empty: t("tableList.empty"),
+          untitled: t("figure.untitled"),
+        },
+      }),
       // items are only invoked when the user types "/", never during render —
       // the ref-access heuristic misfires on the image item's file picker.
       // eslint-disable-next-line react-hooks/refs

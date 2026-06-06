@@ -136,11 +136,20 @@
     "imageHint": "Upload an image with a caption",
     "figureList": "List of figures",
     "mathInline": "Inline math",
-    "mathBlock": "Math block"
+    "mathBlock": "Math block",
+    "table": "Table",
+    "tableList": "List of tables"
   },
   "math": {
     "inlinePlaceholder": "LaTeX, e.g. E=mc^2",
     "blockPlaceholder": "LaTeX, e.g. \\int_0^1 x\\,dx"
+  },
+  "table": {
+    "word": "Table"
+  },
+  "tableList": {
+    "title": "List of Tables",
+    "empty": "No tables in the document yet."
   },
   "figure": {
     "word": "Figure",

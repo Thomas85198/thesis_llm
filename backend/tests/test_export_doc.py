@@ -127,6 +127,40 @@ def test_math_exports_native_latex():
     assert "\\[\\int_0^1 x\\,dx\\]" in tex  # block math
 
 
+def _table_doc():
+    def cell(text):
+        return {"type": "tableCell", "content": [{"type": "paragraph", "content": [{"type": "text", "text": text}]}]}
+    return {"type": "doc", "content": [
+        {"type": "tableBlock", "content": [
+            {"type": "tableCaption", "content": [{"type": "text", "text": "實驗結果"}]},
+            {"type": "table", "content": [
+                {"type": "tableRow", "content": [cell("A"), cell("B")]},
+                {"type": "tableRow", "content": [cell("1"), cell("2")]},
+            ]},
+        ]},
+        {"type": "tableList"},
+    ]}
+
+
+def test_table_exports_latex_tabular_with_caption():
+    tex = export_doc.to_latex({"title": "t", "content_json": _table_doc()}, "apa", "References")
+    assert "\\begin{tabular}" in tex
+    assert "A & B" in tex and "1 & 2" in tex
+    assert "\\caption{實驗結果}" in tex
+    assert "tableList" not in tex  # the live aid is skipped
+
+
+def test_table_exports_docx_real_table():
+    import io as _io
+    from docx import Document as _Doc
+    data = export_doc.to_docx({"title": "t", "content_json": _table_doc()}, "apa", "References")
+    doc = _Doc(_io.BytesIO(data))
+    assert len(doc.tables) == 1
+    cells = [c.text for c in doc.tables[0].rows[0].cells]
+    assert cells == ["A", "B"]
+    assert "實驗結果" in "\n".join(p.text for p in doc.paragraphs)  # caption
+
+
 def test_to_latex_empty_doc_no_references_section():
     tex = export_doc.to_latex({"title": "t", "content_json": {"type": "doc", "content": []}}, "apa", "References")
     assert "\\section*{References}" not in tex  # no citations → no ref list

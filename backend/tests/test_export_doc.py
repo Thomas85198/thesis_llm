@@ -99,6 +99,20 @@ def test_to_latex_structure_and_escaping():
     assert "100\\% 文字 \\& 符號" in tex
 
 
+def test_figure_caption_kept_figurelist_skipped():
+    doc = {"type": "doc", "content": [
+        {"type": "figure", "attrs": {"src": "x.png", "caption": "流程圖"}},
+        {"type": "figureList"},
+    ]}
+    tex = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "References")
+    assert "流程圖" in tex  # caption preserved, not silently dropped
+    import io as _io
+    from docx import Document as _Doc
+    data = export_doc.to_docx({"title": "t", "content_json": doc}, "apa", "References")
+    text = "\n".join(p.text for p in _Doc(_io.BytesIO(data)).paragraphs)
+    assert "流程圖" in text
+
+
 def test_to_latex_empty_doc_no_references_section():
     tex = export_doc.to_latex({"title": "t", "content_json": {"type": "doc", "content": []}}, "apa", "References")
     assert "\\section*{References}" not in tex  # no citations → no ref list

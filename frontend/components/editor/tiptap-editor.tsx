@@ -15,6 +15,8 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Image as ImageIcon,
+  Images,
   Italic,
   List,
   ListOrdered,
@@ -31,17 +33,24 @@ import {
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Autocomplete } from "@/components/editor/autocomplete-extension";
 import { Citation } from "@/components/editor/citation-extension";
 import { CitationPanel } from "@/components/editor/citation-panel";
 import { ExportPanel } from "@/components/editor/export-panel";
+import { Figure, FigureList } from "@/components/editor/figure-extension";
 import { OutlinePanel } from "@/components/editor/outline-panel";
 import { RewritePanel } from "@/components/editor/rewrite-panel";
 import { SlashCommand, type SlashItem } from "@/components/editor/slash-command";
 import { SlashMenu } from "@/components/editor/slash-menu";
 import { Button } from "@/components/ui/button";
-import { streamAutocomplete, type EditorDoc, type ProseMirrorDoc } from "@/lib/api";
+import {
+  streamAutocomplete,
+  uploadImage,
+  type EditorDoc,
+  type ProseMirrorDoc,
+} from "@/lib/api";
 import {
   CITATION_STYLES,
   CITATION_STYLE_LABEL,
@@ -237,6 +246,26 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     triggerRef.current = triggerAutocomplete;
   }, [triggerAutocomplete]);
 
+  // Image upload: the slash item opens a hidden file picker; on pick we upload
+  // and insert a figure node at the cursor.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<Editor | null>(null);
+  const openImagePicker = useCallback(() => fileInputRef.current?.click(), []);
+  const handleImageSelected = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = ""; // allow re-picking the same file
+      if (!file) return;
+      try {
+        const src = await uploadImage(file);
+        editorRef.current?.chain().focus().insertFigure({ src }).run();
+      } catch (err) {
+        toast.error(String(err));
+      }
+    },
+    []
+  );
+
   // Slash menu items. `command` deletes the "/query" range, then applies the
   // block change. Memoized per locale (useEditor captures it on mount).
   const slashItems = useMemo<SlashItem[]>(
@@ -260,8 +289,13 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleCodeBlock().run() },
     { title: t("slash.divider"), icon: Minus, keywords: ["divider", "hr", "rule", "分隔線", "分隔"],
       command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setHorizontalRule().run() },
+    { title: t("slash.image"), hint: t("slash.imageHint"), icon: ImageIcon,
+      keywords: ["image", "img", "picture", "photo", "圖", "圖片", "照片"],
+      command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).run(); openImagePicker(); } },
+    { title: t("slash.figureList"), icon: Images, keywords: ["figures", "list", "圖目錄", "目錄"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertFigureList().run() },
     ],
-    [t]
+    [t, openImagePicker]
   );
 
   const editor = useEditor({
@@ -269,6 +303,23 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       StarterKit,
       Autocomplete,
       Citation,
+      Figure.configure({
+        labels: {
+          figureWord: t("figure.word"),
+          captionPlaceholder: t("figure.captionPlaceholder"),
+        },
+      }),
+      FigureList.configure({
+        labels: {
+          figureWord: t("figure.word"),
+          title: t("figureList.title"),
+          empty: t("figureList.empty"),
+          untitled: t("figure.untitled"),
+        },
+      }),
+      // items are only invoked when the user types "/", never during render —
+      // the ref-access heuristic misfires on the image item's file picker.
+      // eslint-disable-next-line react-hooks/refs
       SlashCommand.configure({ items: slashItems }),
     ],
     content: doc.content_json,
@@ -284,6 +335,11 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       triggerRef.current(editor);
     },
   });
+
+  // Keep a ref to the editor for callbacks created before useEditor returns.
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
 
   // Bind store to this document on mount; clear timers on unmount.
   useEffect(() => {
@@ -487,6 +543,13 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       <OutlinePanel editor={editor} docId={doc.doc_id} />
       <ExportPanel editor={editor} />
       <SlashMenu />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        className="hidden"
+        onChange={handleImageSelected}
+      />
     </div>
   );
 }

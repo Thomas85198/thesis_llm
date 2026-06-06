@@ -126,7 +126,19 @@
     "ordered": "Numbered list",
     "quote": "Quote",
     "code": "Code block",
-    "divider": "Divider"
+    "divider": "Divider",
+    "image": "Image",
+    "imageHint": "Upload an image with a caption",
+    "figureList": "List of figures"
+  },
+  "figure": {
+    "word": "Figure",
+    "captionPlaceholder": "Add a caption…",
+    "untitled": "(untitled)"
+  },
+  "figureList": {
+    "title": "List of Figures",
+    "empty": "No figures in the document yet."
   },
   "export": {
     "find": "Export",

@@ -147,6 +147,14 @@ def _render_block_docx(docx: Document, block: dict, style: str, order: list[str]
         run.font.name = "Courier New"
     elif t == "horizontalRule":
         docx.add_paragraph("―" * 20)
+    elif t == "figure":
+        # Image embedding is a later export slice; for now keep the caption text
+        # (clearly marked) so nothing is silently lost.
+        cap = (block.get("attrs") or {}).get("caption") or ""
+        p = docx.add_paragraph()
+        p.add_run(f"[{cap or 'image'}]").italic = True
+    elif t == "figureList":
+        pass  # an editor-only live aid; the figures themselves render inline
     else:  # paragraph and any unknown block → a plain paragraph of its inline content
         p = docx.add_paragraph()
         _add_inline_docx(p, _children(block), style, order)
@@ -240,6 +248,11 @@ def _render_block_latex(block: dict, style: str, order: list[str]) -> str:
         return f"\\begin{{verbatim}}\n{_block_text(block)}\n\\end{{verbatim}}\n\n"
     if t == "horizontalRule":
         return "\\hrulefill\n\n"
+    if t == "figure":
+        cap = (block.get("attrs") or {}).get("caption") or ""
+        return f"\\textit{{[{_esc(cap or 'image')}]}}\n\n"
+    if t == "figureList":
+        return ""  # an editor-only live aid; the figures render inline
     return _inline_latex(_children(block), style, order) + "\n\n"
 
 

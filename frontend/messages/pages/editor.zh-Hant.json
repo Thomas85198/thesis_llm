@@ -126,7 +126,19 @@
     "ordered": "編號清單",
     "quote": "引言",
     "code": "程式碼區塊",
-    "divider": "分隔線"
+    "divider": "分隔線",
+    "image": "圖片",
+    "imageHint": "上傳圖片並加標題",
+    "figureList": "圖目錄"
+  },
+  "figure": {
+    "word": "圖",
+    "captionPlaceholder": "輸入圖片標題…",
+    "untitled": "（未命名）"
+  },
+  "figureList": {
+    "title": "圖目錄",
+    "empty": "文件中還沒有任何圖片。"
   },
   "export": {
     "find": "匯出",

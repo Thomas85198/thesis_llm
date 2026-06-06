@@ -653,6 +653,27 @@ export async function streamRewrite(
   }
 }
 
+// ---------- editor mode: image upload ----------
+
+/**
+ * Upload an image for the editor; returns an absolute URL to embed in a figure
+ * node. The backend returns a relative serve path which we resolve against the
+ * API base (images load cross-origin in the browser).
+ */
+export async function uploadImage(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/api/editor/upload`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(`uploadImage failed: ${res.status} ${await res.text()}`);
+  }
+  const { url } = (await res.json()) as { url: string };
+  return `${API_BASE}${url}`;
+}
+
 // ---------- editor mode: export (DOCX / LaTeX) ----------
 
 export type ExportFormat = "docx" | "latex";

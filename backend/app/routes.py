@@ -753,3 +753,38 @@ def export_document(body: ExportIn) -> Response:
         "Content-Disposition": f"attachment; filename=\"document.{ext}\"; filename*=UTF-8''{name}.{ext}"
     }
     return Response(content=data, media_type=media, headers=headers)
+
+
+_EDITOR_IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp"}
+_MAX_EDITOR_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+@router.post("/api/editor/upload")
+async def upload_editor_image(file: UploadFile) -> dict[str, str]:
+    """Store an uploaded image for the editor; return its serve path.
+
+    Reuses UPLOAD_DIR (same volume as paper PDFs). The path is stored verbatim in
+    the figure node, so the frontend prepends its API base when rendering.
+    """
+    if not file.filename:
+        raise HTTPException(400, "missing filename")
+    ext = Path(file.filename).suffix.lower().lstrip(".")
+    if ext not in _EDITOR_IMAGE_EXTS:
+        raise HTTPException(415, f"unsupported image type: .{ext or '?'}")
+    raw = await file.read()
+    if len(raw) > _MAX_EDITOR_IMAGE_BYTES:
+        raise HTTPException(413, "image too large (max 10MB)")
+    name = f"img_{uuid.uuid4().hex[:12]}.{ext}"
+    (UPLOAD_DIR / name).write_bytes(raw)
+    return {"url": f"/api/editor/images/{name}"}
+
+
+@router.get("/api/editor/images/{name}")
+def serve_editor_image(name: str) -> FileResponse:
+    """Serve an uploaded editor image. Basename guard blocks path traversal."""
+    if name != Path(name).name or not name:
+        raise HTTPException(400, "invalid name")
+    path = UPLOAD_DIR / name
+    if not path.is_file():
+        raise HTTPException(404, "not found")
+    return FileResponse(path)

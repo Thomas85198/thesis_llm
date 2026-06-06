@@ -788,6 +788,7 @@ export type CitationCandidate = {
   type: string;
   abstract: string;
   relevance_score: number | null;
+  similarity?: number; // claim↔abstract semantic similarity (0–1), set by rerank
 };
 
 /**
@@ -864,6 +865,39 @@ export async function verifyCitation(
     throw new Error(`verifyCitation failed: ${res.status} ${await res.text()}`);
   }
   return (await res.json()) as CitationVerdict;
+}
+
+// Full-text grounding: the source sentences that best support a claim.
+export type GroundResult = {
+  source: "fulltext" | "abstract" | "none";
+  supporting: { sentence: string; score: number }[];
+};
+
+/**
+ * Ground a citation: fetch the source's full text and return the sentences that
+ * best match the claim. Falls back to the abstract when no OA full text. A 429
+ * throws ChatRateLimitError.
+ */
+export async function groundCitation(
+  docId: string,
+  openalexId: string,
+  oaUrl: string,
+  claim: string
+): Promise<GroundResult> {
+  const res = await fetch(`${API_BASE}/api/editor/citations/ground`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ doc_id: docId, openalex_id: openalexId, oa_url: oaUrl, claim }),
+  });
+  if (res.status === 429) {
+    const t = await res.text();
+    const m = t.match(/~(\d+)s/);
+    throw new ChatRateLimitError(t, m ? Number(m[1]) : 30);
+  }
+  if (!res.ok) {
+    throw new Error(`groundCitation failed: ${res.status} ${await res.text()}`);
+  }
+  return (await res.json()) as GroundResult;
 }
 
 /**

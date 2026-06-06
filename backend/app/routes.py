@@ -20,6 +20,7 @@ from . import citation as citation_mod
 from . import claim_verifier as claim_verifier_mod
 from . import draft_check as draft_check_mod
 from . import export_doc
+from . import grounding as grounding_mod
 from . import outline as outline_mod
 from . import rewrite as rewrite_mod
 from . import db, kg, pipeline, rules
@@ -93,6 +94,13 @@ class CitationVerifyIn(BaseModel):
     abstract: str = Field("", max_length=8000)  # candidate abstract (already on the client)
     openalex_id: str | None = None  # references-tab path: re-fetch abstract by id
     locale: str | None = None
+
+
+class CitationGroundIn(BaseModel):
+    doc_id: str
+    openalex_id: str = Field(..., max_length=40)
+    oa_url: str = Field("", max_length=2000)  # OA full text URL (may be "")
+    claim: str = Field(..., max_length=2000)
 
 
 class DraftCheckIn(BaseModel):
@@ -718,6 +726,22 @@ def verify_citation(body: CitationVerifyIn) -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001 — LLM/quota failure → 502
         raise HTTPException(502, f"verification failed: {exc}") from exc
+
+
+@router.post("/api/editor/citations/ground")
+def ground_citation(body: CitationGroundIn) -> dict[str, Any]:
+    """Full-text grounding: top sentences in the cited source matching the claim.
+
+    Returns {source: fulltext|abstract|none, supporting: [{sentence, score}]}.
+    Heavy on first hit (fetch + embed); cached per paper. Rate-limited per doc.
+    """
+    allowed, wait = grounding_mod.check_rate_limit(body.doc_id)
+    if not allowed:
+        raise HTTPException(429, f"grounding rate limit reached, retry in ~{wait}s")
+    try:
+        return grounding_mod.ground(body.openalex_id, body.oa_url, body.claim, body.doc_id)
+    except grounding_mod.GroundingError as exc:
+        raise HTTPException(502, f"grounding failed: {exc}") from exc
 
 
 @router.post("/api/editor/check")

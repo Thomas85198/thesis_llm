@@ -225,6 +225,39 @@ def test_get_works_by_ids_empty_skips_call(fake_httpx):
     assert fake_httpx.captured == {}
 
 
+# ---------- rerank_by_claim (semantic re-ranking) ----------
+
+def test_rerank_orders_by_claim_similarity(monkeypatch):
+    cands = [
+        {"openalex_id": "A", "abstract": "about soil bacteria"},
+        {"openalex_id": "B", "abstract": "self-attention long-range dependencies"},
+    ]
+    # embed returns [claim, abstractA, abstractB]: claim=[1,0]; A orthogonal,
+    # B aligned → B ranks first.
+    monkeypatch.setattr(
+        citation.llm, "embed", lambda texts: [[1.0, 0.0], [0.0, 1.0], [0.96, 0.28]]
+    )
+    out = citation.rerank_by_claim("self attention", cands)
+    assert [c["openalex_id"] for c in out] == ["B", "A"]  # B (similar) first
+
+
+def test_rerank_graceful_on_embed_failure(monkeypatch):
+    cands = [{"openalex_id": "A", "abstract": "x"}, {"openalex_id": "B", "abstract": "y"}]
+    def boom(_texts):
+        raise RuntimeError("no quota")
+    monkeypatch.setattr(citation.llm, "embed", boom)
+    out = citation.rerank_by_claim("c", cands)
+    assert [c["openalex_id"] for c in out] == ["A", "B"]  # unchanged order
+
+
+def test_rerank_keeps_abstract_less_at_end(monkeypatch):
+    cands = [{"openalex_id": "A", "abstract": ""}, {"openalex_id": "B", "abstract": "y"},
+             {"openalex_id": "C", "abstract": "z"}]
+    monkeypatch.setattr(citation.llm, "embed", lambda texts: [[1.0], [0.5], [1.0]])
+    out = citation.rerank_by_claim("c", cands)
+    assert out[-1]["openalex_id"] == "A"  # the abstract-less one sinks to the end
+
+
 # ---------- to_search_query (CJK → English via LLM) ----------
 
 def test_to_search_query_english_passthrough():

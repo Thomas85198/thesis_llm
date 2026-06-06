@@ -60,6 +60,8 @@
     "viewSource": "View source",
     "linkFulltext": "Full text",
     "linkDoi": "DOI",
+    "semanticMatch": "Semantic {pct}%",
+    "semanticHint": "Semantic similarity between your claim and this abstract (used to re-rank, beating raw keyword order)",
     "verify": "Verify",
     "verifying": "Verifying…",
     "verifyNeedsClaim": "Type the claim to support in the search box first",

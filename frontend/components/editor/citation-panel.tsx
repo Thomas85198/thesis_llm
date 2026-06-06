@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -395,6 +396,17 @@ function CitationPanelBody({
                       </p>
                     )}
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      {typeof c.similarity === "number" && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-xs text-primary"
+                          title={t("citation.semanticHint")}
+                        >
+                          <Sparkles className="h-3 w-3" />
+                          {t("citation.semanticMatch", {
+                            pct: Math.round(c.similarity * 100),
+                          })}
+                        </span>
+                      )}
                       {c.url && (
                         <a
                           href={c.url}

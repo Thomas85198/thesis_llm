@@ -109,10 +109,12 @@ def rerank_by_claim(claim: str, candidates: list[dict]) -> list[dict]:
     except Exception:  # noqa: BLE001 — no quota / API blip: keep keyword order
         return candidates
     claim_vec, abs_vecs = vecs[0], vecs[1:]
-    ranked = sorted(
-        zip(with_abs, abs_vecs), key=lambda p: _cosine(claim_vec, p[1]), reverse=True
-    )
-    return [c for c, _ in ranked] + without_abs
+    # Attach the similarity so the UI can show it ("semantic 87%").
+    scored = [(c, _cosine(claim_vec, v)) for c, v in zip(with_abs, abs_vecs)]
+    for c, s in scored:
+        c["similarity"] = round(s, 4)
+    scored.sort(key=lambda p: p[1], reverse=True)
+    return [c for c, _ in scored] + without_abs
 
 
 def recommend(

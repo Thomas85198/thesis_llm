@@ -788,6 +788,7 @@ export type CitationCandidate = {
   type: string;
   abstract: string;
   relevance_score: number | null;
+  similarity?: number; // claim↔abstract semantic similarity (0–1), set by rerank
 };
 
 /**

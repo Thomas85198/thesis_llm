@@ -100,7 +100,7 @@ class OutlineIn(BaseModel):
 class ExportIn(BaseModel):
     title: str = Field("", max_length=300)
     content_json: dict[str, Any]  # the live TipTap doc (sent directly to avoid DB staleness)
-    style: str = Field("apa", pattern="^(apa|numeric)$")
+    style: str = Field("apa", pattern="^(apa|mla|chicago|harvard|ieee|numeric)$")
     locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
     format: str = Field("docx", pattern="^(docx|latex)$")
 

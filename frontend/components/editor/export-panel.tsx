@@ -10,6 +10,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { exportDocument, type ExportFormat, type ProseMirrorDoc } from "@/lib/api";
+import { CITATION_STYLE_LABEL } from "@/lib/citation-format";
 import { useEditorStore } from "@/lib/editor-store";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,9 +66,7 @@ export function ExportPanel({ editor }: { editor: Editor }) {
         <SheetHeader>
           <SheetTitle>{t("export.panelTitle")}</SheetTitle>
           <SheetDescription>
-            {t("export.panelDesc", {
-              style: citationStyle === "apa" ? t("citation.styleApa") : t("citation.styleNumeric"),
-            })}
+            {t("export.panelDesc", { style: CITATION_STYLE_LABEL[citationStyle] })}
           </SheetDescription>
         </SheetHeader>
         <div className="flex flex-col gap-2 px-4 pb-4">

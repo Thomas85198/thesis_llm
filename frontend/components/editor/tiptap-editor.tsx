@@ -38,6 +38,11 @@ import { OutlinePanel } from "@/components/editor/outline-panel";
 import { RewritePanel } from "@/components/editor/rewrite-panel";
 import { Button } from "@/components/ui/button";
 import { streamAutocomplete, type EditorDoc, type ProseMirrorDoc } from "@/lib/api";
+import {
+  CITATION_STYLES,
+  CITATION_STYLE_LABEL,
+  type CitationStyle,
+} from "@/lib/citation-format";
 import { useEditorStore, type SaveState } from "@/lib/editor-store";
 import { cn } from "@/lib/utils";
 
@@ -364,24 +369,19 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           >
             <Search className="h-4 w-4" />
           </ToolbarButton>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-xs font-medium tabular-nums"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() =>
-              setCitationStyle(citationStyle === "apa" ? "numeric" : "apa")
-            }
-            title={t("citation.styleToggle", {
-              style:
-                citationStyle === "apa"
-                  ? t("citation.styleApa")
-                  : t("citation.styleNumeric"),
-            })}
+          <select
+            value={citationStyle}
+            onChange={(e) => setCitationStyle(e.target.value as CitationStyle)}
+            title={t("citation.styleLabel")}
+            aria-label={t("citation.styleLabel")}
+            className="h-8 rounded-md border bg-background px-1.5 text-xs font-medium text-foreground"
           >
-            {citationStyle === "apa" ? "APA" : "[1]"}
-          </Button>
+            {CITATION_STYLES.map((s) => (
+              <option key={s} value={s}>
+                {CITATION_STYLE_LABEL[s]}
+              </option>
+            ))}
+          </select>
           <ToolbarButton label={t("export.find")} onClick={openExport}>
             <Download className="h-4 w-4" />
           </ToolbarButton>

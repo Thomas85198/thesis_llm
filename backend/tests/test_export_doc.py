@@ -42,11 +42,22 @@ DOC = {
 
 # ---------- citation helpers ----------
 
-def test_apa_in_text_variants():
-    assert export_doc.apa_in_text("Ashish Vaswani", 2017) == "(Vaswani, 2017)"
-    assert export_doc.apa_in_text("A B, C D", 2020) == "(B & D, 2020)"
-    assert export_doc.apa_in_text("A B, C D, E F", 2020) == "(B et al., 2020)"
-    assert export_doc.apa_in_text("", None) == "(Anon., n.d.)"
+def test_in_text_label_per_style():
+    a = {"authors": "Ashish Vaswani, Noam Shazeer", "year": 2017}
+    assert export_doc.in_text_label(a, "apa", 1) == "(Vaswani & Shazeer, 2017)"
+    assert export_doc.in_text_label(a, "harvard", 1) == "(Vaswani & Shazeer, 2017)"
+    assert export_doc.in_text_label(a, "chicago", 1) == "(Vaswani & Shazeer 2017)"
+    assert export_doc.in_text_label(a, "mla", 1) == "(Vaswani & Shazeer)"
+    assert export_doc.in_text_label(a, "ieee", 3) == "[3]"
+    assert export_doc.in_text_label(a, "numeric", 3) == "[3]"
+    assert export_doc.in_text_label({"authors": "", "year": None}, "apa", 1) == "(Anon., n.d.)"
+
+
+def test_full_reference_per_style():
+    a = {"authors": "A B", "year": 2020, "title": "A Study", "venue": "JML"}
+    assert export_doc.full_reference(a, "apa", 1) == "A B (2020). A Study. JML."
+    assert export_doc.full_reference(a, "mla", 1) == "A B. “A Study.” JML, 2020."
+    assert export_doc.full_reference(a, "ieee", 5) == "[5] A B, “A Study,” JML, 2020."
 
 
 def test_collect_citations_dedupes_by_first_appearance():

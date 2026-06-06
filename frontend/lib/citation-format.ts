@@ -1,9 +1,41 @@
-// Formatting helpers for Smart Citation: render an in-text marker (APA or
-// numeric) and a full reference-list entry from a citation's stored metadata.
-// Pure functions, no editor/store deps — so the NodeView chip and the
-// references panel share one source of truth.
+// Formatting helpers for Smart Citation: render an in-text marker and a full
+// reference-list entry from a citation's stored metadata, in any supported
+// style. Pure functions, no editor/store deps — so the NodeView chip and the
+// references panel share one source of truth (and the backend export mirrors
+// this exact logic in app/export_doc.py).
 
-export type CitationStyle = "apa" | "numeric";
+export type CitationStyle =
+  | "apa"
+  | "mla"
+  | "chicago"
+  | "harvard"
+  | "ieee"
+  | "numeric";
+
+/** Selectable styles, in display order. */
+export const CITATION_STYLES: CitationStyle[] = [
+  "apa",
+  "mla",
+  "chicago",
+  "harvard",
+  "ieee",
+  "numeric",
+];
+
+/** Short label for the style picker (acronyms are language-neutral). */
+export const CITATION_STYLE_LABEL: Record<CitationStyle, string> = {
+  apa: "APA",
+  mla: "MLA",
+  chicago: "Chicago",
+  harvard: "Harvard",
+  ieee: "IEEE",
+  numeric: "[1]",
+};
+
+/** Styles that render in-text as a bracketed number rather than author–year. */
+export function isNumberedStyle(style: CitationStyle): boolean {
+  return style === "ieee" || style === "numeric";
+}
 
 // Mirrors the attrs stored on the citation node (authors flattened to a single
 // comma-joined string so it survives ProseMirror JSON without nesting).
@@ -51,15 +83,14 @@ function lastName(full: string): string {
   return parts[parts.length - 1] || full;
 }
 
-/** In-text APA marker, e.g. "(Vaswani et al., 2017)". */
-export function apaInText(authors: string, year: number | null): string {
+/** Shortened author list for an in-text marker: "Vaswani", "Vaswani & Shazeer",
+ * or "Vaswani et al." (3+). */
+function authorsShort(authors: string): string {
   const list = authorList(authors);
-  const y = year ?? "n.d.";
-  if (list.length === 0) return `(Anon., ${y})`;
-  if (list.length === 1) return `(${lastName(list[0])}, ${y})`;
-  if (list.length === 2)
-    return `(${lastName(list[0])} & ${lastName(list[1])}, ${y})`;
-  return `(${lastName(list[0])} et al., ${y})`;
+  if (list.length === 0) return "Anon.";
+  if (list.length === 1) return lastName(list[0]);
+  if (list.length === 2) return `${lastName(list[0])} & ${lastName(list[1])}`;
+  return `${lastName(list[0])} et al.`;
 }
 
 /** The in-text marker shown inside the editor for a given style. */
@@ -68,9 +99,17 @@ export function inTextLabel(
   style: CitationStyle,
   number: number
 ): string {
-  return style === "numeric"
-    ? `[${number}]`
-    : apaInText(attrs.authors, attrs.year);
+  if (isNumberedStyle(style)) return `[${number}]`;
+  const short = authorsShort(attrs.authors);
+  const y = attrs.year ?? "n.d.";
+  switch (style) {
+    case "mla":
+      return `(${short})`; // MLA uses author (+ page, which we don't have)
+    case "chicago":
+      return `(${short} ${y})`; // Chicago author–date, no comma
+    default:
+      return `(${short}, ${y})`; // apa, harvard
+  }
 }
 
 /** One line in the 參考文獻 / References tab. */
@@ -81,9 +120,19 @@ export function fullReference(
 ): string {
   const authors = attrs.authors || "Anon.";
   const year = attrs.year ?? "n.d.";
-  const head = attrs.title || "(untitled)";
-  const venue = attrs.venue ? `. ${attrs.venue}` : "";
-  return style === "numeric"
-    ? `[${number}] ${authors}. ${head}${venue}, ${year}.`
-    : `${authors} (${year}). ${head}${venue}.`;
+  const title = attrs.title || "(untitled)";
+  const venue = attrs.venue;
+  switch (style) {
+    case "mla":
+      return `${authors}. “${title}.”${venue ? ` ${venue},` : ""} ${year}.`;
+    case "chicago":
+      return `${authors}. “${title}.”${venue ? ` ${venue}` : ""} (${year}).`;
+    case "harvard":
+      return `${authors} (${year}) ‘${title}’${venue ? `, ${venue}` : ""}.`;
+    case "ieee":
+    case "numeric":
+      return `[${number}] ${authors}, “${title},”${venue ? ` ${venue},` : ""} ${year}.`;
+    default: // apa
+      return `${authors} (${year}). ${title}${venue ? `. ${venue}` : ""}.`;
+  }
 }

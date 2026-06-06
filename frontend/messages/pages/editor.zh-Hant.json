@@ -65,9 +65,7 @@
     "refreshed": "已更新引用連結",
     "refreshedNoChange": "連結已是最新",
     "rateLimited": "搜尋太頻繁，請 {seconds} 秒後再試。",
-    "styleToggle": "引用格式：{style}（點擊切換）",
-    "styleApa": "APA（作者, 年）",
-    "styleNumeric": "數字 [1]"
+    "styleLabel": "引用格式"
   },
   "rewrite": {
     "find": "AI 改寫",

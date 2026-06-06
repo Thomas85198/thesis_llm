@@ -24,32 +24,48 @@ def _last_name(full: str) -> str:
     return parts[-1] if parts else full
 
 
-def apa_in_text(authors: str, year: Any) -> str:
+def is_numbered(style: str) -> bool:
+    """Styles that render in-text as a bracketed number rather than author–year."""
+    return style in ("ieee", "numeric")
+
+
+def _authors_short(authors: str) -> str:
     lst = _author_list(authors)
-    y = year if year else "n.d."
     if not lst:
-        return f"(Anon., {y})"
+        return "Anon."
     if len(lst) == 1:
-        return f"({_last_name(lst[0])}, {y})"
+        return _last_name(lst[0])
     if len(lst) == 2:
-        return f"({_last_name(lst[0])} & {_last_name(lst[1])}, {y})"
-    return f"({_last_name(lst[0])} et al., {y})"
+        return f"{_last_name(lst[0])} & {_last_name(lst[1])}"
+    return f"{_last_name(lst[0])} et al."
 
 
 def in_text_label(attrs: dict, style: str, number: int) -> str:
-    if style == "numeric":
+    if is_numbered(style):
         return f"[{number}]"
-    return apa_in_text(attrs.get("authors", ""), attrs.get("year"))
+    short = _authors_short(attrs.get("authors", ""))
+    y = attrs.get("year") or "n.d."
+    if style == "mla":
+        return f"({short})"
+    if style == "chicago":
+        return f"({short} {y})"
+    return f"({short}, {y})"  # apa, harvard
 
 
 def full_reference(attrs: dict, style: str, number: int) -> str:
     authors = attrs.get("authors") or "Anon."
     year = attrs.get("year") or "n.d."
-    head = attrs.get("title") or "(untitled)"
-    venue = f". {attrs['venue']}" if attrs.get("venue") else ""
-    if style == "numeric":
-        return f"[{number}] {authors}. {head}{venue}, {year}."
-    return f"{authors} ({year}). {head}{venue}."
+    title = attrs.get("title") or "(untitled)"
+    venue = attrs.get("venue") or ""
+    if style == "mla":
+        return f"{authors}. “{title}.”" + (f" {venue}," if venue else "") + f" {year}."
+    if style == "chicago":
+        return f"{authors}. “{title}.”" + (f" {venue}" if venue else "") + f" ({year})."
+    if style == "harvard":
+        return f"{authors} ({year}) ‘{title}’" + (f", {venue}" if venue else "") + "."
+    if style in ("ieee", "numeric"):
+        return f"[{number}] {authors}, “{title},”" + (f" {venue}," if venue else "") + f" {year}."
+    return f"{authors} ({year}). {title}" + (f". {venue}" if venue else "") + "."  # apa
 
 
 # ---------- tree walking ----------

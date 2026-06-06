@@ -14,6 +14,7 @@ import {
 
 import {
   inTextLabel,
+  isNumberedStyle,
   referenceHref,
   type CitationAttrs,
 } from "@/lib/citation-format";
@@ -48,7 +49,9 @@ function citationNumber(editor: Editor, openalexId: string): number {
 function CitationChip({ node, editor }: NodeViewProps) {
   const attrs = node.attrs as CitationAttrs;
   const style = useEditorStore((s) => s.citationStyle);
-  const number = style === "numeric" ? citationNumber(editor, attrs.openalexId) : 0;
+  const number = isNumberedStyle(style)
+    ? citationNumber(editor, attrs.openalexId)
+    : 0;
   const label = inTextLabel(attrs, style, number);
   const tooltip =
     `${attrs.title}` +

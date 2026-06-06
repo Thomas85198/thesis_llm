@@ -11,13 +11,14 @@
     "phase2": "8. Human Evaluation",
     "guards": "9. Chat Guardrails",
     "literature": "10. Literature",
-    "perf": "11. Performance & Stability"
+    "perf": "11. Performance & Stability",
+    "editor": "12. Writing Editor"
   },
   "hero": {
     "badge": "System Overview / Demo Report",
     "title": "Paper Review System",
     "subtitle": "Automatically finding logical-structural defects in academic papers with a Knowledge Graph + LLM",
-    "lead": "Upload a paper → extract the four-layer structure (EDU / Entity / RST / FRU) and write it into a Neo4j Knowledge Graph → check it with 13 REL rules (Cypher finds candidates + LLM adjudicates) → output logical defects and revision suggestions. Paired with a Human-as-judge annotation interface, a human inspects each defect one by one and quantifies the system's precision.",
+    "lead": "Upload a paper → extract the four-layer structure (EDU / Entity / RST / FRU) and write it into a Neo4j Knowledge Graph → check it with 13 REL rules (Cypher finds candidates + LLM adjudicates) → output logical defects and revision suggestions. Paired with a Human-as-judge annotation interface, a human inspects each defect one by one and quantifies the system's precision. As of v4.0.0 there is also a “Writing Editor” mode (draft a paper from scratch, on par with Jenni AI) — see section 12.",
     "startReading": "Start reading"
   },
   "sections": {
@@ -31,7 +32,8 @@
     "phase2": { "title": "8. Human Evaluation" },
     "guards": { "title": "9. Paper Assistant Chat + Guardrails" },
     "literature": { "title": "10. Literature Support" },
-    "perf": { "title": "11. Performance & Stability: Parallelization, Cost Optimization & Testing" }
+    "perf": { "title": "11. Performance & Stability: Parallelization, Cost Optimization & Testing" },
+    "editor": { "title": "12. Writing Editor: Draft a Paper from Scratch (Jenni-AI parity)" }
   },
   "intro": {
     "p1": "Academic paper drafts commonly have three kinds of \"structural\" problems: (1) claims without evidence, (2) lack of motivation, (3) cross-section disconnects. Traditionally these are caught by manual review — slow and subjective. This system aims to make that process automated, reproducible, and traceable.",
@@ -637,6 +639,43 @@
     "h5p": "Some LaTeX papers use fonts without a ToUnicode CMap, so copying/extracting produces garbled text ({garbled} is actually {chapter}). After native extraction the system runs a lightweight detection (looking at the proportion of noise characters such as backticks/asterisks), and if it judges the text garbled it automatically falls back to tesseract OCR (Traditional Chinese + English), preserving the page number and bbox coordinates of each text segment. Text extraction was moved into a background task, so OCR (~3–5 minutes for 30 pages) does not block the upload request.",
     "h6": "11.6 Unit tests guard these mechanisms",
     "h6p": "These refactors changed a fair amount of orchestration logic, so a set of millisecond-level unit tests that touch no network/LLM/Neo4j ({tests}) were added: garbled detection (real garbled samples, clean Chinese/English, text heavy in statistical symbols to prevent false positives) and the native→OCR routing (mocking out the extractor to test only the decision). The garbled-detection path had had a bug before, and the tests verified via \"red → green\" that they really catch that bug."
+  },
+  "editor": {
+    "p1": "As of v4.0.0 the system not only analyzes existing papers — it also lets you write one from scratch via a standalone /editor mode, positioned as an academic writing editor on par with Jenni AI. It shares the same backend and LLM layer as the analysis side but uses its own tables (documents / version history) and does not go through the PDF→KG→rules pipeline.",
+    "modulesHeading": "Feature modules",
+    "modules": {
+      "writing": {
+        "title": "Writing assistance: ",
+        "desc": "AI sentence autocomplete (ghost text at the cursor, Tab to accept, smart boundary triggering + ⌘/Ctrl+J manual), highlight-to-rewrite (paraphrase / simplify / expand / improve fluency / academic tone / fix grammar / custom), and outline generation (IMRaD or topic→AI heading tree). All stream over SSE and share the backend stream_completion."
+      },
+      "citation": {
+        "title": "Citations & references: ",
+        "desc": "Smart Citation backed by OpenAlex (select a sentence to search; Chinese claims are turned into English keywords first); insert a citation chip; references offer dual “full text + DOI” links with one-click refresh; six styles (APA / MLA / Chicago / Harvard / IEEE / numeric) switchable instantly."
+      },
+      "block": {
+        "title": "Structured block editing (Notion/Heptabase-style): ",
+        "desc": "a “/” slash menu and Markdown shortcuts; image upload + caption + auto List of Figures; KaTeX math (inline + block); tables + caption + auto List of Tables + add/remove row-column toolbar."
+      },
+      "export": {
+        "title": "Export: ",
+        "desc": "DOCX / LaTeX / HTML, with in-text citations and a reference list (LaTeX uses ctex for CJK)."
+      }
+    },
+    "diagramCaption": "Fig. 12: Writing-editor data flow (shares the backend & LLM layer with the analysis side, but uses an independent documents table)",
+    "diagram": {
+      "author": "Author",
+      "ed": "TipTap editor<br/>ghost text / citation chip / blocks",
+      "svc": "Autocomplete · Rewrite · Outline<br/>(stream_completion · SSE)",
+      "cite": "Smart Citation",
+      "export": "Export DOCX / LaTeX / HTML",
+      "db": "SQLite documents<br/>+ version history",
+      "edgeStream": "SSE stream",
+      "edgeSearch": "search",
+      "edgeExport": "export",
+      "edgeSave": "autosave"
+    },
+    "diffHeading": "Differentiation direction (planned)",
+    "diff": "“Write faster / more idiomatically” is already a red ocean (Jenni, Paperpal, Writefull, SciSpace). The real differentiation here is to move the other half — the neuro-symbolic defect checking (13 REL rules + KG + multi-agent) — from after-the-fact grading to the moment of writing: flagging “this claim lacks citation support / method and conclusion are inconsistent” inline, plus a citation-grounding traffic light that verifies whether a cited source actually supports your sentence. Wiring that analysis engine into the writing side is the moat, currently planned as future work (Phase B)."
   },
   "footer": {
     "prefix": "Paper Review System · System documentation · For detailed design see "

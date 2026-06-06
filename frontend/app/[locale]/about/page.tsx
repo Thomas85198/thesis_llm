@@ -20,7 +20,10 @@ const SECTION_IDS = [
   "guards",
   "literature",
   "perf",
+  "editor",
 ] as const;
+
+const EDITOR_MODULES = ["writing", "citation", "block", "export"] as const;
 
 export default function AboutPage() {
   const t = useTranslations("about");
@@ -798,6 +801,43 @@ export default function AboutPage() {
 
           <h3>{t("perf.h6")}</h3>
           <p>{t.rich("perf.h6p", { tests: () => <code>backend/tests/</code> })}</p>
+        </Section>
+
+        {/* 12. 寫作編輯器 */}
+        <Section id="editor" title={t("sections.editor.title")}>
+          <p>{t("editor.p1")}</p>
+
+          <h3>{t("editor.modulesHeading")}</h3>
+          <ul>
+            {EDITOR_MODULES.map((k) => (
+              <li key={k}>
+                <strong>{t(`editor.modules.${k}.title`)}</strong>
+                {t(`editor.modules.${k}.desc`)}
+              </li>
+            ))}
+          </ul>
+
+          <MermaidDiagram
+            caption={t("editor.diagramCaption")}
+            code={`flowchart LR
+    U([${t("editor.diagram.author")}])
+    ED["${t("editor.diagram.ed")}"]
+    SVC["${t("editor.diagram.svc")}"]
+    CT["${t("editor.diagram.cite")}"]
+    OA[(OpenAlex)]
+    EX["${t("editor.diagram.export")}"]
+    DB[("${t("editor.diagram.db")}")]
+
+    U --> ED
+    ED -- ${t("editor.diagram.edgeStream")} --> SVC
+    ED -- ${t("editor.diagram.edgeSearch")} --> CT
+    CT --> OA
+    ED -- ${t("editor.diagram.edgeExport")} --> EX
+    ED -- ${t("editor.diagram.edgeSave")} --> DB`}
+          />
+
+          <h3>{t("editor.diffHeading")}</h3>
+          <p>{t("editor.diff")}</p>
         </Section>
 
         {/* Footer */}

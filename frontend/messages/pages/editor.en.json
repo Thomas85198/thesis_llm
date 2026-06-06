@@ -1,0 +1,209 @@
+{
+  "title": "My Documents",
+  "subtitle": "Write your paper from scratch with the AI writing editor.",
+  "newDocument": "New document",
+  "empty": "No documents yet — create your first one.",
+  "updatedAt": "Last edited",
+  "delete": "Delete",
+  "confirmDelete": "Delete this document? This cannot be undone.",
+  "deleted": "Document deleted",
+  "notFound": "Document not found",
+  "backToList": "Back to documents",
+  "outline": "Outline",
+  "outlineEmpty": "Add headings and they'll show up here.",
+  "titlePlaceholder": "Untitled document",
+  "titleAria": "Document title",
+  "editorAria": "Document content editor",
+  "save": {
+    "idle": "Editing…",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "error": "Save failed"
+  },
+  "ai": {
+    "cycleHint": "AI autocomplete mode (click to cycle: auto / manual / off)",
+    "mode": {
+      "auto": "Auto",
+      "manual": "Manual",
+      "off": "Off"
+    },
+    "hintAuto": "Suggests at word/sentence ends · Tab to accept · ⌘/Ctrl+J for one now",
+    "hintManual": "⌘/Ctrl+J to suggest · Tab to accept"
+  },
+  "tools": {
+    "h1": "Heading 1",
+    "h2": "Heading 2",
+    "h3": "Heading 3",
+    "bold": "Bold",
+    "italic": "Italic",
+    "strike": "Strikethrough",
+    "code": "Inline code",
+    "bullet": "Bullet list",
+    "ordered": "Numbered list",
+    "quote": "Blockquote",
+    "undo": "Undo",
+    "redo": "Redo"
+  },
+  "citation": {
+    "find": "Find citation",
+    "panelTitle": "Smart Citation",
+    "panelDesc": "Search scholarly works (OpenAlex) by keyword, or select a sentence in your text.",
+    "searchPlaceholder": "Search by keyword or a sentence…",
+    "search": "Search",
+    "searchPrompt": "Type a query above to search scholarly works, or select a sentence in your text.",
+    "searching": "Searching…",
+    "noResults": "No matching works — try rephrasing or a more specific keyword.",
+    "yearLabel": "Year",
+    "yearAll": "Any year",
+    "yearFrom": "Since {year}",
+    "citedBy": "{count} citations",
+    "viewSource": "View source",
+    "linkFulltext": "Full text",
+    "linkDoi": "DOI",
+    "verify": "Verify",
+    "verifying": "Verifying…",
+    "verifyNeedsClaim": "Type the claim to support in the search box first",
+    "verifyNoClaim": "Couldn't find the sentence this citation sits in",
+    "verdict": {
+      "supports": "Supports",
+      "partial": "Partial",
+      "unsupported": "Unsupported",
+      "unknown": "Unknown"
+    },
+    "insert": "Insert citation",
+    "inserted": "Citation inserted",
+    "tabRecommend": "Suggestions",
+    "tabReferences": "References",
+    "referencesEmpty": "No citations in this document yet.",
+    "refreshLinks": "Refresh links",
+    "refreshHint": "Re-fetch from OpenAlex to fix dead or outdated links",
+    "refreshed": "Citation links updated",
+    "refreshedNoChange": "Links already up to date",
+    "rateLimited": "Too many searches — retry in {seconds}s.",
+    "styleLabel": "Citation style"
+  },
+  "rewrite": {
+    "find": "AI rewrite",
+    "panelTitle": "AI rewrite",
+    "panelDesc": "Pick a rewrite style or type a custom instruction; AI rewrites your highlighted text.",
+    "originalLabel": "Original",
+    "resultLabel": "Rewrite",
+    "customPlaceholder": "Type a custom instruction, e.g. “make it more concise”",
+    "send": "Send",
+    "working": "Rewriting…",
+    "prompt": "Pick a rewrite style, or type a custom instruction.",
+    "accept": "Accept",
+    "retry": "Retry",
+    "discard": "Discard",
+    "applied": "Rewrite applied",
+    "rateLimited": "Too many rewrites, retry in {seconds}s.",
+    "preset": {
+      "paraphrase": "Paraphrase",
+      "simplify": "Simplify",
+      "expand": "Expand",
+      "shorten": "Shorten",
+      "improve_fluency": "Improve fluency",
+      "academic": "Academic tone",
+      "fix_grammar": "Fix grammar"
+    }
+  },
+  "outline": {
+    "find": "Outline",
+    "panelTitle": "Outline generator",
+    "panelDesc": "Apply the standard IMRaD structure, or type a topic and let AI generate a tailored heading tree.",
+    "imradTitle": "IMRaD standard structure",
+    "imradDesc": "Intro · Literature · Methods · Results · Discussion · Conclusion",
+    "smartTitle": "AI-generated outline",
+    "topicPlaceholder": "Enter a topic, e.g. “the effect of flow on online learning motivation”",
+    "generate": "Generate",
+    "working": "Generating outline…",
+    "prompt": "Enter a topic and generate to preview the heading tree here.",
+    "insert": "Insert",
+    "insertGenerated": "Insert this outline",
+    "inserted": "Outline inserted",
+    "rateLimited": "Too many requests, retry in {seconds}s.",
+    "imrad": {
+      "intro": "Introduction",
+      "litReview": "Literature Review",
+      "methods": "Methodology",
+      "results": "Results",
+      "discussion": "Discussion",
+      "conclusion": "Conclusion"
+    }
+  },
+  "slash": {
+    "text": "Text",
+    "textHint": "Plain paragraph",
+    "h1": "Heading 1",
+    "h2": "Heading 2",
+    "h3": "Heading 3",
+    "bullet": "Bullet list",
+    "ordered": "Numbered list",
+    "quote": "Quote",
+    "code": "Code block",
+    "divider": "Divider",
+    "image": "Image",
+    "imageHint": "Upload an image with a caption",
+    "figureList": "List of figures",
+    "mathInline": "Inline math",
+    "mathBlock": "Math block",
+    "table": "Table",
+    "tableList": "List of tables"
+  },
+  "math": {
+    "inlinePlaceholder": "LaTeX, e.g. E=mc^2",
+    "blockPlaceholder": "LaTeX, e.g. \\int_0^1 x\\,dx"
+  },
+  "table": {
+    "word": "Table"
+  },
+  "tableMenu": {
+    "colBefore": "Insert column left",
+    "colAfter": "Insert column right",
+    "colDelete": "Delete column",
+    "rowBefore": "Insert row above",
+    "rowAfter": "Insert row below",
+    "rowDelete": "Delete row",
+    "toggleHeader": "Toggle header row",
+    "deleteTable": "Delete table"
+  },
+  "tableList": {
+    "title": "List of Tables",
+    "empty": "No tables in the document yet."
+  },
+  "figure": {
+    "word": "Figure",
+    "captionPlaceholder": "Add a caption…",
+    "untitled": "(untitled)"
+  },
+  "figureList": {
+    "title": "List of Figures",
+    "empty": "No figures in the document yet."
+  },
+  "defect": {
+    "find": "Defect check",
+    "panelTitle": "Paper defect check",
+    "panelDesc": "Checks structural defects with the 13 REL rules (claims without evidence, methods without motivation, misaligned conclusions…). Click “Locate” to jump to the sentence.",
+    "checking": "Checking… (runs several LLM calls, please wait)",
+    "empty": "No structural defects found.",
+    "needsText": "The document has no content to check yet",
+    "rateLimited": "Too many checks, retry in {seconds}s.",
+    "suggestionLabel": "Suggestion: ",
+    "locate": "Locate",
+    "severity": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    }
+  },
+  "export": {
+    "find": "Export",
+    "panelTitle": "Export document",
+    "panelDesc": "Pick a format to download. Citations are written in the current “{style}” style with a reference list.",
+    "docx": "Word (.docx)",
+    "docxDesc": "Open and edit in Word / Google Docs",
+    "latex": "LaTeX (.tex)",
+    "latexDesc": "Includes ctex CJK support, ready to compile",
+    "done": "Download started"
+  }
+}

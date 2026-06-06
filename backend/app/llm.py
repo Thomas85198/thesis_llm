@@ -13,7 +13,7 @@ import os
 import random
 import threading
 import time
-from typing import Any
+from typing import Any, Iterator
 
 from openai import (
     APIConnectionError,
@@ -38,6 +38,17 @@ RETRYABLE_ERRORS = (
     RateLimitError,        # 429
 )
 MAX_RETRIES = 4  # total attempts = MAX_RETRIES + 1
+
+
+def _is_permanent_quota_error(exc: Exception) -> bool:
+    """insufficient_quota / billing-limit comes back as a 429 RateLimitError but
+    will NEVER succeed on retry. Detect it so we fail fast instead of burning the
+    whole backoff sequence (~20s) on a dead account — matters most for the high-
+    frequency autocomplete path."""
+    code = getattr(exc, "code", None)
+    if code in ("insufficient_quota", "billing_hard_limit_reached"):
+        return True
+    return "insufficient_quota" in str(getattr(exc, "message", "") or exc)
 
 
 def client() -> OpenAI:
@@ -201,6 +212,9 @@ def call_with_tool(
             break  # success
         except RETRYABLE_ERRORS as exc:
             last_exc = exc
+            if _is_permanent_quota_error(exc):
+                print(f"[llm] insufficient_quota on stage={stage} — not retrying")
+                raise
             if attempt == MAX_RETRIES:
                 print(
                     f"[llm] {type(exc).__name__} on stage={stage} model={model} "
@@ -257,3 +271,99 @@ def call_with_tool(
         f"OpenAI did not return tool_call for {tool_name}. "
         f"finish_reason={choice.finish_reason} content={choice.message.content!r}"
     )
+
+
+def stream_completion(
+    *,
+    model: str,
+    system: str,
+    user_content: str,
+    max_tokens: int = 256,
+    temperature: float | None = None,
+    paper_id: str | None = None,
+    stage: str = "unspecified",
+) -> Iterator[str]:
+    """Stream a free-form text completion, yielding content deltas as they arrive.
+
+    The counterpart to call_with_tool: that one forces a function call and returns
+    a parsed dict synchronously; this one is for open-ended generation (e.g. the
+    editor's autocomplete) where we want tokens to flow to the UI immediately.
+
+    Cost is logged once at the end — OpenAI emits a final usage-only chunk when
+    stream_options.include_usage is set. We retry only opening the stream (same
+    transient-error policy as call_with_tool); once tokens start flowing a mid-
+    stream drop just ends the suggestion rather than restarting it.
+    """
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user_content},
+    ]
+    temp = llm_temperature() if temperature is None else temperature
+
+    last_exc: Exception | None = None
+    stream = None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            stream = client().chat.completions.create(
+                model=model,
+                temperature=temp,
+                max_completion_tokens=max_tokens,
+                messages=messages,
+                stream=True,
+                stream_options={"include_usage": True},
+            )
+            break
+        except RETRYABLE_ERRORS as exc:
+            last_exc = exc
+            if _is_permanent_quota_error(exc):
+                print(f"[llm] insufficient_quota opening stream on stage={stage} — not retrying")
+                raise
+            if attempt == MAX_RETRIES:
+                print(
+                    f"[llm] {type(exc).__name__} opening stream on stage={stage} "
+                    f"model={model} after {MAX_RETRIES + 1} attempts — giving up: {exc!r}"
+                )
+                raise
+            time.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.5))
+        except APIStatusError as exc:
+            print(
+                f"[llm] {type(exc).__name__} (status={exc.status_code}) opening stream "
+                f"on stage={stage} — non-retryable: {exc!r}"
+            )
+            raise
+
+    if stream is None:
+        raise RuntimeError(f"stream open failed without exception: {last_exc!r}")
+
+    usage = None
+    for chunk in stream:
+        # The trailing usage-only chunk carries no choices.
+        if getattr(chunk, "usage", None) is not None:
+            usage = chunk.usage
+        choices = getattr(chunk, "choices", None)
+        if choices:
+            delta = choices[0].delta
+            content = getattr(delta, "content", None) if delta else None
+            if content:
+                yield content
+
+    if usage is not None:
+        prompt_tok = getattr(usage, "prompt_tokens", 0) or 0
+        out_tok = getattr(usage, "completion_tokens", 0) or 0
+        details = getattr(usage, "prompt_tokens_details", None)
+        cr_tok = (getattr(details, "cached_tokens", 0) or 0) if details else 0
+        in_tok = max(prompt_tok - cr_tok, 0)
+        cost = calc_cost_usd(model, in_tok, out_tok, cr_tok, 0)
+        try:
+            db.log_llm_call(
+                paper_id=paper_id,
+                stage=stage,
+                model=model,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                cache_read_tokens=cr_tok,
+                cache_write_tokens=0,
+                cost_usd=cost,
+            )
+        except Exception:
+            pass

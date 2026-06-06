@@ -38,6 +38,23 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.0.0",
+    date: "2026-06-06",
+    changes: [
+      { type: "feat" }, // 寫作編輯器模式
+      { type: "feat" }, // autocomplete
+      { type: "feat" }, // 改寫選單
+      { type: "feat" }, // 大綱生成
+      { type: "feat" }, // Smart Citation
+      { type: "feat" }, // 多引用格式
+      { type: "feat" }, // 匯出 DOCX/LaTeX/HTML
+      { type: "feat" }, // slash + markdown
+      { type: "feat" }, // 圖片+圖目錄 / 數學
+      { type: "feat" }, // 表格+表目錄+工具列
+      { type: "fix" }, // 品質修正合集
+    ],
+  },
+  {
     version: "3.8.0",
     date: "2026-05-31",
     changes: [

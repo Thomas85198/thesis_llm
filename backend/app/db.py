@@ -116,6 +116,41 @@ CREATE TABLE IF NOT EXISTS defect_judgments (
 );
 CREATE INDEX IF NOT EXISTS idx_judgments_rule ON defect_judgments(rule_id);
 CREATE INDEX IF NOT EXISTS idx_judgments_paper ON defect_judgments(paper_id);
+
+-- ============================================================
+-- 表 5: documents — 編輯模式的寫作文件 (WYSIWYG 草稿)
+-- ----------------------------------------------------------------
+-- 全新「編輯模式」的核心：使用者從零寫論文，內容以 TipTap/ProseMirror
+-- 的 JSON 序列化格式存在 content_json。與分析流的 papers 表完全獨立
+-- (那是「上傳既有 PDF 分析」，這是「從頭寫」)。目前無帳號系統，文件
+-- 不歸屬使用者；locale 記錄該文件的寫作語言 (沿用 i18n 的 zh-Hant/en)。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS documents (
+    doc_id        TEXT PRIMARY KEY,    -- 文件唯一識別 (格式 'doc:xxxxxxxx')
+    title         TEXT NOT NULL,       -- 文件標題 (可為使用者輸入或預設「未命名文件」)
+    content_json  TEXT NOT NULL,       -- TipTap/ProseMirror document JSON
+    locale        TEXT NOT NULL,       -- 寫作語言 (zh-Hant / en)
+    created_at    TEXT NOT NULL,       -- 建立時間 (ISO 8601 UTC)
+    updated_at    TEXT NOT NULL        -- 最後 autosave 時間 (ISO 8601 UTC)
+);
+CREATE INDEX IF NOT EXISTS idx_documents_updated ON documents(updated_at);
+
+-- ============================================================
+-- 表 6: document_versions — 文件版本快照 (版本歷史 / 還原)
+-- ----------------------------------------------------------------
+-- 每筆是某文件在某時間點的內容快照。label 區分自動存檔 ('autosave')
+-- 與使用者手動命名版。透過 ON DELETE CASCADE 與 documents 綁定
+-- (刪文件會連帶刪所有快照)。autosave 版會定期裁剪 (見 prune_autosave_versions)，
+-- 手動命名版永久保留。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS document_versions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id        TEXT NOT NULL REFERENCES documents(doc_id) ON DELETE CASCADE,
+    content_json  TEXT NOT NULL,       -- 該版完整快照 (ProseMirror JSON)
+    label         TEXT NOT NULL,       -- 'autosave' 或使用者命名 (e.g. '初稿完成')
+    created_at    TEXT NOT NULL        -- 快照時間 (ISO 8601 UTC)
+);
+CREATE INDEX IF NOT EXISTS idx_doc_versions_doc ON document_versions(doc_id, created_at);
 """
 
 
@@ -698,3 +733,154 @@ def cost_summary(paper_id: str | None = None) -> dict[str, Any]:
             ).fetchall()
         ]
     return {"total": total, "by_stage": by_stage}
+
+
+# ---------- editor documents (寫作模式) ----------
+
+# Keep at most this many autosave snapshots per document; older ones are pruned
+# on each new autosave. Manually-labelled versions are never pruned. Prevents
+# the version table from growing unbounded under frequent debounced autosaves.
+MAX_AUTOSAVE_VERSIONS = 20
+
+
+def create_document(
+    doc_id: str, title: str, content_json: dict[str, Any], locale: str
+) -> dict[str, Any]:
+    """Insert a new blank/seeded writing document. Returns the stored row."""
+    now = _now()
+    with connect() as c:
+        c.execute(
+            """
+            INSERT INTO documents (doc_id, title, content_json, locale, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (doc_id, title, json.dumps(content_json, ensure_ascii=False), locale, now, now),
+        )
+    return {
+        "doc_id": doc_id,
+        "title": title,
+        "content_json": content_json,
+        "locale": locale,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def get_document(doc_id: str) -> dict[str, Any] | None:
+    with connect() as c:
+        row = c.execute(
+            "SELECT * FROM documents WHERE doc_id=?", (doc_id,)
+        ).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["content_json"] = json.loads(d["content_json"])
+    return d
+
+
+def list_documents() -> list[dict[str, Any]]:
+    """List documents (most recently updated first), without the heavy content blob."""
+    with connect() as c:
+        rows = c.execute(
+            """
+            SELECT doc_id, title, locale, created_at, updated_at
+            FROM documents
+            ORDER BY updated_at DESC
+            """
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_document(
+    doc_id: str,
+    title: str | None = None,
+    content_json: dict[str, Any] | None = None,
+) -> bool:
+    """Patch title and/or content; bumps updated_at. Returns False if doc absent.
+
+    Only the provided fields are written, so an autosave (content only) won't
+    clobber a title the user just renamed, and vice versa.
+    """
+    sets: list[str] = []
+    vals: list[Any] = []
+    if title is not None:
+        sets.append("title=?")
+        vals.append(title)
+    if content_json is not None:
+        sets.append("content_json=?")
+        vals.append(json.dumps(content_json, ensure_ascii=False))
+    if not sets:
+        return get_document(doc_id) is not None
+    sets.append("updated_at=?")
+    vals.append(_now())
+    vals.append(doc_id)
+    with connect() as c:
+        cur = c.execute(
+            f"UPDATE documents SET {', '.join(sets)} WHERE doc_id=?", vals
+        )
+        return cur.rowcount > 0
+
+
+def delete_document(doc_id: str) -> None:
+    """Remove a document; document_versions cascade via FK."""
+    with connect() as c:
+        c.execute("DELETE FROM documents WHERE doc_id=?", (doc_id,))
+
+
+def snapshot_document(
+    doc_id: str, content_json: dict[str, Any], label: str = "autosave"
+) -> int:
+    """Save a version snapshot. Autosave snapshots are pruned to the most recent
+    MAX_AUTOSAVE_VERSIONS; labelled versions are kept forever. Returns the new id."""
+    with connect() as c:
+        cur = c.execute(
+            """
+            INSERT INTO document_versions (doc_id, content_json, label, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (doc_id, json.dumps(content_json, ensure_ascii=False), label, _now()),
+        )
+        new_id = cur.lastrowid
+        if label == "autosave":
+            # Delete autosave rows beyond the newest MAX_AUTOSAVE_VERSIONS.
+            c.execute(
+                """
+                DELETE FROM document_versions
+                WHERE doc_id=? AND label='autosave' AND id NOT IN (
+                    SELECT id FROM document_versions
+                    WHERE doc_id=? AND label='autosave'
+                    ORDER BY id DESC LIMIT ?
+                )
+                """,
+                (doc_id, doc_id, MAX_AUTOSAVE_VERSIONS),
+            )
+    return int(new_id)
+
+
+def list_document_versions(doc_id: str) -> list[dict[str, Any]]:
+    """Version metadata (no content blob), newest first."""
+    with connect() as c:
+        rows = c.execute(
+            """
+            SELECT id, label, created_at
+            FROM document_versions
+            WHERE doc_id=?
+            ORDER BY id DESC
+            """,
+            (doc_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_document_version(doc_id: str, version_id: int) -> dict[str, Any] | None:
+    with connect() as c:
+        row = c.execute(
+            "SELECT id, doc_id, content_json, label, created_at "
+            "FROM document_versions WHERE id=? AND doc_id=?",
+            (version_id, doc_id),
+        ).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["content_json"] = json.loads(d["content_json"])
+    return d

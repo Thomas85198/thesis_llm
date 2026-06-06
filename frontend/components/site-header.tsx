@@ -50,6 +50,12 @@ export function SiteHeader() {
           <Link href="/" className={buttonVariants({ variant: "ghost", size: "sm" })}>
             {t("upload")}
           </Link>
+          <Link
+            href="/editor"
+            className={buttonVariants({ variant: "ghost", size: "sm" })}
+          >
+            {t("editor")}
+          </Link>
           <GuardedLink
             href="/papers"
             className={buttonVariants({ variant: "ghost", size: "sm" })}

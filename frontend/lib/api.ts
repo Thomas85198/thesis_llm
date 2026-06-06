@@ -417,3 +417,473 @@ export async function sendChat(
   if (!res.ok) throw new Error(`chat failed: ${res.status} ${await res.text()}`);
   return res.json();
 }
+
+// ---------- editor mode: writing documents ----------
+
+// TipTap/ProseMirror serialized document. Kept structurally opaque here so the
+// API layer doesn't depend on the editor library; the editor casts it to its
+// own JSONContent type.
+export type ProseMirrorDoc = Record<string, unknown>;
+
+export type EditorDoc = {
+  doc_id: string;
+  title: string;
+  content_json: ProseMirrorDoc;
+  locale: string;
+  created_at: string;
+  updated_at: string;
+};
+
+// List view omits the heavy content blob.
+export type EditorDocListItem = Omit<EditorDoc, "content_json">;
+
+export type DocumentVersion = {
+  id: number;
+  label: string;
+  created_at: string;
+};
+
+export async function listDocuments(): Promise<EditorDocListItem[]> {
+  return get<EditorDocListItem[]>("/api/editor/documents");
+}
+
+export async function createDocument(body: {
+  title?: string;
+  locale: string;
+  content_json?: ProseMirrorDoc;
+}): Promise<EditorDoc> {
+  const res = await fetch(`${API_BASE}/api/editor/documents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`createDocument failed: ${await res.text()}`);
+  return res.json();
+}
+
+export async function fetchDocument(docId: string): Promise<EditorDoc> {
+  return get<EditorDoc>(`/api/editor/documents/${encodeURIComponent(docId)}`);
+}
+
+export async function updateDocument(
+  docId: string,
+  body: { title?: string; content_json?: ProseMirrorDoc }
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/editor/documents/${encodeURIComponent(docId)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) throw new Error(`updateDocument failed: ${await res.text()}`);
+}
+
+export async function deleteDocument(docId: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/editor/documents/${encodeURIComponent(docId)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) throw new Error(`deleteDocument failed: ${await res.text()}`);
+}
+
+export async function snapshotDocument(
+  docId: string,
+  content_json: ProseMirrorDoc,
+  label = "autosave"
+): Promise<{ version_id: number }> {
+  const res = await fetch(
+    `${API_BASE}/api/editor/documents/${encodeURIComponent(docId)}/versions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content_json, label }),
+    }
+  );
+  if (!res.ok) throw new Error(`snapshotDocument failed: ${await res.text()}`);
+  return res.json();
+}
+
+export async function listDocumentVersions(
+  docId: string
+): Promise<DocumentVersion[]> {
+  return get<DocumentVersion[]>(
+    `/api/editor/documents/${encodeURIComponent(docId)}/versions`
+  );
+}
+
+// ---------- editor mode: AI autocomplete (SSE) ----------
+
+export type AutocompleteRequest = {
+  doc_id: string;
+  text_before: string;
+  title: string;
+  outline: string;
+  locale: string;
+};
+
+/**
+ * Stream an inline writing suggestion. Calls `onDelta` for each token as it
+ * arrives. Pass an AbortSignal to cancel an in-flight request (the caller does
+ * this on every keystroke). A 429 (rate limit) resolves silently — autocomplete
+ * is best-effort and should never interrupt the writer. AbortError is swallowed.
+ */
+export async function streamAutocomplete(
+  body: AutocompleteRequest,
+  onDelta: (text: string) => void,
+  signal: AbortSignal
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/editor/autocomplete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") return;
+    throw e;
+  }
+  if (res.status === 429) return; // rate-limited: skip this suggestion silently
+  if (!res.ok || !res.body) {
+    throw new Error(`autocomplete failed: ${res.status} ${await res.text()}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE events are separated by a blank line.
+      const events = buffer.split("\n\n");
+      buffer = events.pop() ?? "";
+      for (const evt of events) {
+        const line = evt.trim();
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") return;
+        try {
+          const parsed = JSON.parse(data) as { t?: string; error?: string };
+          if (parsed.t) onDelta(parsed.t);
+        } catch {
+          // ignore malformed chunk
+        }
+      }
+    }
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") return;
+    throw e;
+  }
+}
+
+// ---------- editor mode: AI rewrite (highlight → rewrite menu) ----------
+
+export type RewriteRequest = {
+  doc_id: string;
+  text: string; // the selected passage
+  instruction: string; // a preset key (paraphrase, simplify, …) or custom directive
+  locale: string;
+};
+
+/**
+ * Stream an AI rewrite of a selected passage. Calls `onDelta` for each token.
+ * Pass an AbortSignal to cancel (e.g. when retrying or closing the menu). A 429
+ * throws ChatRateLimitError so the caller can show a retry hint; AbortError is
+ * swallowed.
+ */
+export async function streamRewrite(
+  body: RewriteRequest,
+  onDelta: (text: string) => void,
+  signal: AbortSignal
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/editor/rewrite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") return;
+    throw e;
+  }
+  if (res.status === 429) {
+    const text = await res.text();
+    const m = text.match(/~(\d+)s/);
+    throw new ChatRateLimitError(text, m ? Number(m[1]) : 30);
+  }
+  if (!res.ok || !res.body) {
+    throw new Error(`rewrite failed: ${res.status} ${await res.text()}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop() ?? "";
+      for (const evt of events) {
+        const line = evt.trim();
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") return;
+        let parsed: { t?: string; error?: string };
+        try {
+          parsed = JSON.parse(data);
+        } catch {
+          continue; // ignore malformed chunk
+        }
+        if (parsed.error) throw new Error(parsed.error);
+        if (parsed.t) onDelta(parsed.t);
+      }
+    }
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") return;
+    throw e;
+  }
+}
+
+// ---------- editor mode: defect check (Thesis Critic on the draft) ----------
+
+export type DraftDefect = {
+  rule_id: string;
+  defect_type: string;
+  severity: string; // high | medium | low
+  section: string;
+  description: string;
+  suggestion: string;
+  confidence: number | null;
+  evidence: string[]; // the EDU sentences the defect cites
+};
+
+/**
+ * Run the Thesis Critic's single-section REL rules on the draft text and return
+ * structural defects. Heavy (several LLM calls); a 429 throws ChatRateLimitError.
+ */
+export async function checkDraft(
+  docId: string,
+  text: string,
+  locale: string
+): Promise<DraftDefect[]> {
+  const res = await fetch(`${API_BASE}/api/editor/check`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ doc_id: docId, text, locale }),
+  });
+  if (res.status === 429) {
+    const t = await res.text();
+    const m = t.match(/~(\d+)s/);
+    throw new ChatRateLimitError(t, m ? Number(m[1]) : 30);
+  }
+  if (!res.ok) {
+    throw new Error(`checkDraft failed: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as { defects: DraftDefect[] };
+  return data.defects;
+}
+
+// ---------- editor mode: image upload ----------
+
+/**
+ * Upload an image for the editor; returns an absolute URL to embed in a figure
+ * node. The backend returns a relative serve path which we resolve against the
+ * API base (images load cross-origin in the browser).
+ */
+export async function uploadImage(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/api/editor/upload`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(`uploadImage failed: ${res.status} ${await res.text()}`);
+  }
+  const { url } = (await res.json()) as { url: string };
+  return `${API_BASE}${url}`;
+}
+
+// ---------- editor mode: export (DOCX / LaTeX) ----------
+
+export type ExportFormat = "docx" | "latex";
+
+/**
+ * Render the live document to a .docx or .tex file and return it as a Blob. The
+ * content is sent directly (not read from the DB) so the export reflects the
+ * latest edits even within the autosave debounce.
+ */
+export async function exportDocument(body: {
+  title: string;
+  content_json: ProseMirrorDoc;
+  style: string; // "apa" | "numeric"
+  locale: string;
+  format: ExportFormat;
+}): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/api/editor/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`exportDocument failed: ${res.status} ${await res.text()}`);
+  }
+  return res.blob();
+}
+
+// ---------- editor mode: outline generation ----------
+
+export type OutlineHeading = { level: number; text: string };
+
+/**
+ * Generate a thesis outline (heading tree) from a topic. A 429 throws
+ * ChatRateLimitError so the caller can show a retry hint.
+ */
+export async function generateOutline(
+  docId: string,
+  topic: string,
+  locale: string
+): Promise<OutlineHeading[]> {
+  const res = await fetch(`${API_BASE}/api/editor/outline`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ doc_id: docId, topic, locale }),
+  });
+  if (res.status === 429) {
+    const text = await res.text();
+    const m = text.match(/~(\d+)s/);
+    throw new ChatRateLimitError(text, m ? Number(m[1]) : 30);
+  }
+  if (!res.ok) {
+    throw new Error(`generateOutline failed: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as { headings: OutlineHeading[] };
+  return data.headings;
+}
+
+// ---------- editor mode: Smart Citation (OpenAlex) ----------
+
+// Flat candidate shape returned by /api/editor/citations/recommend, in
+// OpenAlex's own relevance order (no rerank in this slice). snake_case to match
+// the backend payload verbatim.
+export type CitationCandidate = {
+  openalex_id: string;
+  title: string;
+  authors: string[];
+  year: number | null;
+  venue: string;
+  doi: string;
+  oa_url: string; // open-access full text — most useful, but can rot ("" if none)
+  url: string; // always-resolvable source link (OA full text → DOI → … )
+  cited_by_count: number;
+  type: string;
+  abstract: string;
+  relevance_score: number | null;
+};
+
+/**
+ * Recommend citation candidates (OpenAlex) for a selected claim sentence. A 429
+ * surfaces as ChatRateLimitError so the caller can show a retry hint. Pass an
+ * AbortSignal to cancel a superseded search, and `yearFrom` to filter by recency.
+ */
+export async function recommendCitations(
+  docId: string,
+  claim: string,
+  opts: { signal?: AbortSignal; yearFrom?: number } = {}
+): Promise<CitationCandidate[]> {
+  const res = await fetch(`${API_BASE}/api/editor/citations/recommend`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      doc_id: docId,
+      claim,
+      year_from: opts.yearFrom ?? null,
+    }),
+    signal: opts.signal,
+  });
+  if (res.status === 429) {
+    const text = await res.text();
+    const m = text.match(/~(\d+)s/);
+    throw new ChatRateLimitError(text, m ? Number(m[1]) : 30);
+  }
+  if (!res.ok) {
+    throw new Error(`recommendCitations failed: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as { candidates: CitationCandidate[] };
+  return data.candidates;
+}
+
+// Claim–evidence verdict: does a cited source actually support the claim?
+export type CitationVerdict = {
+  verdict: "supports" | "partial" | "unsupported" | "unknown";
+  evidence: string; // supporting sentence from the abstract ("" if none)
+  reason: string;
+  confidence: number;
+};
+
+/**
+ * Verify whether a candidate source supports a claim (the "traffic light"). The
+ * abstract is sent from the candidate already on the client — no extra fetch. A
+ * 429 throws ChatRateLimitError.
+ */
+export async function verifyCitation(
+  docId: string,
+  claim: string,
+  title: string,
+  abstract: string,
+  locale: string,
+  openalexId?: string
+): Promise<CitationVerdict> {
+  const res = await fetch(`${API_BASE}/api/editor/citations/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      doc_id: docId,
+      claim,
+      title,
+      abstract,
+      locale,
+      openalex_id: openalexId ?? null,
+    }),
+  });
+  if (res.status === 429) {
+    const text = await res.text();
+    const m = text.match(/~(\d+)s/);
+    throw new ChatRateLimitError(text, m ? Number(m[1]) : 30);
+  }
+  if (!res.ok) {
+    throw new Error(`verifyCitation failed: ${res.status} ${await res.text()}`);
+  }
+  return (await res.json()) as CitationVerdict;
+}
+
+/**
+ * Re-fetch citations by OpenAlex id to refresh stale metadata (chiefly links
+ * that have rotted). Returns a map keyed by openalex_id; ids OpenAlex no longer
+ * knows are absent, so the caller leaves those citations untouched.
+ */
+export async function refreshCitations(
+  openalexIds: string[]
+): Promise<Record<string, CitationCandidate>> {
+  const res = await fetch(`${API_BASE}/api/editor/citations/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ openalex_ids: openalexIds }),
+  });
+  if (!res.ok) {
+    throw new Error(`refreshCitations failed: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as {
+    citations: Record<string, CitationCandidate>;
+  };
+  return data.citations;
+}

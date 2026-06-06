@@ -1,0 +1,209 @@
+{
+  "title": "我的文件",
+  "subtitle": "用 AI 寫作編輯器從零撰寫你的論文。",
+  "newDocument": "新增文件",
+  "empty": "還沒有任何文件，建立第一份吧。",
+  "updatedAt": "最後編輯",
+  "delete": "刪除",
+  "confirmDelete": "確定要刪除這份文件嗎？此動作無法復原。",
+  "deleted": "已刪除文件",
+  "notFound": "找不到這份文件",
+  "backToList": "回到文件列表",
+  "outline": "大綱",
+  "outlineEmpty": "加入標題後，大綱會出現在這裡。",
+  "titlePlaceholder": "未命名文件",
+  "titleAria": "文件標題",
+  "editorAria": "文件內容編輯區",
+  "save": {
+    "idle": "編輯中…",
+    "saving": "儲存中…",
+    "saved": "已儲存",
+    "error": "儲存失敗"
+  },
+  "ai": {
+    "cycleHint": "AI 補全模式（點擊切換：自動／手動／關）",
+    "mode": {
+      "auto": "自動",
+      "manual": "手動",
+      "off": "關"
+    },
+    "hintAuto": "詞／句尾自動提示 · Tab 接受 · ⌘/Ctrl+J 立即建議",
+    "hintManual": "⌘/Ctrl+J 叫出建議 · Tab 接受"
+  },
+  "tools": {
+    "h1": "標題 1",
+    "h2": "標題 2",
+    "h3": "標題 3",
+    "bold": "粗體",
+    "italic": "斜體",
+    "strike": "刪除線",
+    "code": "行內程式碼",
+    "bullet": "項目符號清單",
+    "ordered": "編號清單",
+    "quote": "引用區塊",
+    "undo": "復原",
+    "redo": "重做"
+  },
+  "citation": {
+    "find": "找引用",
+    "panelTitle": "智慧引用",
+    "panelDesc": "輸入關鍵字搜尋學術文獻（OpenAlex），或在文中反白一句話。",
+    "searchPlaceholder": "輸入關鍵字或一句話搜尋文獻…",
+    "search": "搜尋",
+    "searchPrompt": "在上方輸入關鍵字搜尋學術文獻，或在文中反白一句話。",
+    "searching": "搜尋中…",
+    "noResults": "找不到相關文獻，試試換個說法或更具體的關鍵字。",
+    "yearLabel": "年份",
+    "yearAll": "不限年份",
+    "yearFrom": "{year} 年起",
+    "citedBy": "被引用 {count} 次",
+    "viewSource": "查看來源",
+    "linkFulltext": "全文",
+    "linkDoi": "DOI",
+    "verify": "驗證",
+    "verifying": "驗證中…",
+    "verifyNeedsClaim": "請先在搜尋框輸入要佐證的論點",
+    "verifyNoClaim": "找不到此引用所在的句子",
+    "verdict": {
+      "supports": "支持",
+      "partial": "部分支持",
+      "unsupported": "不支持",
+      "unknown": "無法判定"
+    },
+    "insert": "插入引用",
+    "inserted": "已插入引用",
+    "tabRecommend": "推薦",
+    "tabReferences": "參考文獻",
+    "referencesEmpty": "文中還沒有任何引用。",
+    "refreshLinks": "更新連結",
+    "refreshHint": "重新從 OpenAlex 抓取，修正已失效或過時的連結",
+    "refreshed": "已更新引用連結",
+    "refreshedNoChange": "連結已是最新",
+    "rateLimited": "搜尋太頻繁，請 {seconds} 秒後再試。",
+    "styleLabel": "引用格式"
+  },
+  "rewrite": {
+    "find": "AI 改寫",
+    "panelTitle": "AI 改寫",
+    "panelDesc": "選一種改寫方式，或輸入自訂指令，AI 會改寫你反白的文字。",
+    "originalLabel": "原文",
+    "resultLabel": "改寫結果",
+    "customPlaceholder": "輸入自訂指令，例如「改得更精簡」",
+    "send": "送出",
+    "working": "改寫中…",
+    "prompt": "選一個改寫方式，或輸入自訂指令。",
+    "accept": "採用",
+    "retry": "重試",
+    "discard": "捨棄",
+    "applied": "已套用改寫",
+    "rateLimited": "改寫太頻繁，請 {seconds} 秒後再試。",
+    "preset": {
+      "paraphrase": "換句話說",
+      "simplify": "簡化",
+      "expand": "擴寫",
+      "shorten": "精簡",
+      "improve_fluency": "潤飾流暢",
+      "academic": "學術語氣",
+      "fix_grammar": "修正文法"
+    }
+  },
+  "outline": {
+    "find": "大綱",
+    "panelTitle": "大綱生成",
+    "panelDesc": "套用 IMRaD 標準結構，或輸入主題讓 AI 生成量身的標題樹。",
+    "imradTitle": "IMRaD 標準結構",
+    "imradDesc": "緒論・文獻探討・方法・結果・討論・結論",
+    "smartTitle": "AI 生成大綱",
+    "topicPlaceholder": "輸入論文主題，例如「心流對線上學習動機的影響」",
+    "generate": "生成",
+    "working": "生成大綱中…",
+    "prompt": "輸入主題並生成，會在這裡預覽標題樹。",
+    "insert": "插入",
+    "insertGenerated": "插入此大綱",
+    "inserted": "已插入大綱",
+    "rateLimited": "生成太頻繁，請 {seconds} 秒後再試。",
+    "imrad": {
+      "intro": "緒論",
+      "litReview": "文獻探討",
+      "methods": "研究方法",
+      "results": "研究結果",
+      "discussion": "討論",
+      "conclusion": "結論"
+    }
+  },
+  "slash": {
+    "text": "內文",
+    "textHint": "純文字段落",
+    "h1": "標題 1",
+    "h2": "標題 2",
+    "h3": "標題 3",
+    "bullet": "項目清單",
+    "ordered": "編號清單",
+    "quote": "引言",
+    "code": "程式碼區塊",
+    "divider": "分隔線",
+    "image": "圖片",
+    "imageHint": "上傳圖片並加標題",
+    "figureList": "圖目錄",
+    "mathInline": "行內數學",
+    "mathBlock": "數學區塊",
+    "table": "表格",
+    "tableList": "表目錄"
+  },
+  "math": {
+    "inlinePlaceholder": "LaTeX，例如 E=mc^2",
+    "blockPlaceholder": "LaTeX，例如 \\int_0^1 x\\,dx"
+  },
+  "table": {
+    "word": "表"
+  },
+  "tableMenu": {
+    "colBefore": "左側插入欄",
+    "colAfter": "右側插入欄",
+    "colDelete": "刪除此欄",
+    "rowBefore": "上方插入列",
+    "rowAfter": "下方插入列",
+    "rowDelete": "刪除此列",
+    "toggleHeader": "切換表頭列",
+    "deleteTable": "刪除整個表格"
+  },
+  "tableList": {
+    "title": "表目錄",
+    "empty": "文件中還沒有任何表格。"
+  },
+  "figure": {
+    "word": "圖",
+    "captionPlaceholder": "輸入圖片標題…",
+    "untitled": "（未命名）"
+  },
+  "figureList": {
+    "title": "圖目錄",
+    "empty": "文件中還沒有任何圖片。"
+  },
+  "defect": {
+    "find": "缺陷檢查",
+    "panelTitle": "論文缺陷檢查",
+    "panelDesc": "用 13 條 REL 規則檢查全文結構性缺陷（論點缺證據、方法缺動機、結論不對齊…），點「定位」跳到對應句子。",
+    "checking": "檢查中…（會跑多次 LLM，請稍候）",
+    "empty": "沒有偵測到結構性缺陷。",
+    "needsText": "文件還沒有內容可檢查",
+    "rateLimited": "檢查太頻繁，請 {seconds} 秒後再試。",
+    "suggestionLabel": "建議：",
+    "locate": "定位",
+    "severity": {
+      "high": "高",
+      "medium": "中",
+      "low": "低"
+    }
+  },
+  "export": {
+    "find": "匯出",
+    "panelTitle": "匯出文件",
+    "panelDesc": "選擇格式下載。引用會以目前的「{style}」格式輸出，並附上參考文獻。",
+    "docx": "Word（.docx）",
+    "docxDesc": "可在 Word／Google 文件開啟編輯",
+    "latex": "LaTeX（.tex）",
+    "latexDesc": "含 ctex 中文支援，可直接編譯",
+    "done": "已開始下載"
+  }
+}

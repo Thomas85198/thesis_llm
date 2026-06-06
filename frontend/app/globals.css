@@ -137,3 +137,161 @@
     font-size: 17px;
   }
 }
+/* ============================================================
+   編輯模式 (TipTap) 內容排版
+   ------------------------------------------------------------
+   ProseMirror renders bare semantic HTML with no default styling, so the
+   writing surface needs explicit spacing/sizing. Scoped to .tiptap-content
+   (set via editorProps.attributes.class) so it never leaks to the rest of the
+   app. Colours use the existing theme tokens so dark mode just works.
+   ============================================================ */
+.tiptap-content {
+  min-height: 60vh;
+  line-height: 1.75;
+}
+.tiptap-content > * + * {
+  margin-top: 0.85em;
+}
+.tiptap-content h1 {
+  font-size: 1.7rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 1.4em;
+}
+.tiptap-content h2 {
+  font-size: 1.4rem;
+  font-weight: 650;
+  line-height: 1.3;
+  margin-top: 1.3em;
+}
+.tiptap-content h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-top: 1.2em;
+}
+.tiptap-content ul,
+.tiptap-content ol {
+  padding-left: 1.6em;
+}
+.tiptap-content ul {
+  list-style: disc;
+}
+.tiptap-content ol {
+  list-style: decimal;
+}
+.tiptap-content li > p {
+  margin: 0;
+}
+.tiptap-content blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 1em;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.tiptap-content code {
+  background: var(--muted);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.35em;
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+.tiptap-content pre {
+  background: var(--muted);
+  border-radius: 0.5rem;
+  padding: 0.85em 1em;
+  overflow-x: auto;
+}
+.tiptap-content pre code {
+  background: transparent;
+  padding: 0;
+}
+/* Placeholder for an empty document's first line. */
+.tiptap-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  opacity: 0.5;
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* AI autocomplete ghost text (inline suggestion, not part of the document). */
+.tiptap-ghost {
+  color: var(--muted-foreground);
+  opacity: 0.55;
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+/* In-text citation chip (NodeView). Clickable, opens the DOI in a new tab. */
+.tiptap-citation {
+  color: var(--primary);
+  cursor: pointer;
+  border-radius: 0.2rem;
+  padding: 0 0.12rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tiptap-citation:hover {
+  background: color-mix(in oklab, var(--primary) 15%, transparent);
+}
+
+/* Tables (editable grid). The caption renders above via the tableCaption node. */
+.tiptap-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0;
+  table-layout: fixed;
+  overflow: hidden;
+}
+.tiptap-content td,
+.tiptap-content th {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.5rem;
+  vertical-align: top;
+  position: relative;
+}
+.tiptap-content th {
+  background: color-mix(in oklab, var(--muted) 60%, transparent);
+  font-weight: 600;
+  text-align: left;
+}
+.tiptap-content .selectedCell::after {
+  /* TipTap cell-selection highlight */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  pointer-events: none;
+}
+.tiptap-table-block {
+  margin: 1rem 0;
+  max-width: 100%;
+}
+
+/* Defect underlines: wavy underline under the cited sentence, by severity. */
+.tiptap-defect {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.tiptap-defect-high {
+  text-decoration-color: #ef4444;
+  background: color-mix(in oklab, #ef4444 8%, transparent);
+}
+.tiptap-defect-medium {
+  text-decoration-color: #f59e0b;
+  background: color-mix(in oklab, #f59e0b 8%, transparent);
+}
+.tiptap-defect-low {
+  text-decoration-color: #0ea5e9;
+  background: color-mix(in oklab, #0ea5e9 8%, transparent);
+}
+/* @tiptap/extension-table wraps the grid in .tableWrapper. Let a wide / resized
+   table scroll horizontally inside the editor instead of stretching the page. */
+.tiptap-content .tableWrapper {
+  max-width: 100%;
+  overflow-x: auto;
+}

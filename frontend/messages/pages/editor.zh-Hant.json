@@ -116,6 +116,18 @@
       "conclusion": "結論"
     }
   },
+  "slash": {
+    "text": "內文",
+    "textHint": "純文字段落",
+    "h1": "標題 1",
+    "h2": "標題 2",
+    "h3": "標題 3",
+    "bullet": "項目清單",
+    "ordered": "編號清單",
+    "quote": "引言",
+    "code": "程式碼區塊",
+    "divider": "分隔線"
+  },
   "export": {
     "find": "匯出",
     "panelTitle": "匯出文件",

@@ -19,6 +19,8 @@ import {
   List,
   ListOrdered,
   ListTree,
+  Minus,
+  Pilcrow,
   Quote,
   Redo2,
   Search,
@@ -28,7 +30,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Autocomplete } from "@/components/editor/autocomplete-extension";
 import { Citation } from "@/components/editor/citation-extension";
@@ -36,6 +38,8 @@ import { CitationPanel } from "@/components/editor/citation-panel";
 import { ExportPanel } from "@/components/editor/export-panel";
 import { OutlinePanel } from "@/components/editor/outline-panel";
 import { RewritePanel } from "@/components/editor/rewrite-panel";
+import { SlashCommand, type SlashItem } from "@/components/editor/slash-command";
+import { SlashMenu } from "@/components/editor/slash-menu";
 import { Button } from "@/components/ui/button";
 import { streamAutocomplete, type EditorDoc, type ProseMirrorDoc } from "@/lib/api";
 import {
@@ -233,8 +237,40 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     triggerRef.current = triggerAutocomplete;
   }, [triggerAutocomplete]);
 
+  // Slash menu items. `command` deletes the "/query" range, then applies the
+  // block change. Memoized per locale (useEditor captures it on mount).
+  const slashItems = useMemo<SlashItem[]>(
+    () => [
+    { title: t("slash.text"), hint: t("slash.textHint"), icon: Pilcrow,
+      keywords: ["text", "paragraph", "p", "文字", "段落", "內文"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setParagraph().run() },
+    { title: t("slash.h1"), icon: Heading1, keywords: ["h1", "heading", "title", "標題"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode("heading", { level: 1 }).run() },
+    { title: t("slash.h2"), icon: Heading2, keywords: ["h2", "heading", "標題"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode("heading", { level: 2 }).run() },
+    { title: t("slash.h3"), icon: Heading3, keywords: ["h3", "heading", "標題"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode("heading", { level: 3 }).run() },
+    { title: t("slash.bullet"), icon: List, keywords: ["bullet", "list", "ul", "項目", "清單"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleBulletList().run() },
+    { title: t("slash.ordered"), icon: ListOrdered, keywords: ["number", "ordered", "ol", "編號", "清單"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleOrderedList().run() },
+    { title: t("slash.quote"), icon: Quote, keywords: ["quote", "blockquote", "引言", "引用"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleBlockquote().run() },
+    { title: t("slash.code"), icon: Code, keywords: ["code", "程式", "程式碼"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleCodeBlock().run() },
+    { title: t("slash.divider"), icon: Minus, keywords: ["divider", "hr", "rule", "分隔線", "分隔"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setHorizontalRule().run() },
+    ],
+    [t]
+  );
+
   const editor = useEditor({
-    extensions: [StarterKit, Autocomplete, Citation],
+    extensions: [
+      StarterKit,
+      Autocomplete,
+      Citation,
+      SlashCommand.configure({ items: slashItems }),
+    ],
     content: doc.content_json,
     immediatelyRender: false,
     editorProps: {
@@ -450,6 +486,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       <RewritePanel editor={editor} docId={doc.doc_id} />
       <OutlinePanel editor={editor} docId={doc.doc_id} />
       <ExportPanel editor={editor} />
+      <SlashMenu />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { create } from "zustand";
 
 import { updateDocument, type ProseMirrorDoc } from "@/lib/api";
 import { type CitationStyle } from "@/lib/citation-format";
+import { type SlashItem } from "@/components/editor/slash-command";
 
 const AUTOSAVE_DELAY_MS = 1200;
 
@@ -63,6 +64,21 @@ type EditorStore = {
   exportOpen: boolean;
   openExport: () => void;
   closeExport: () => void;
+
+  // ----- Slash command menu -----
+  /** Driven by the slash-command suggestion plugin; rendered by <SlashMenu>. */
+  slashOpen: boolean;
+  slashItems: SlashItem[];
+  slashIndex: number;
+  slashRect: DOMRect | null;
+  /** Commit the chosen item (the suggestion plugin's `command`). */
+  slashCommand: ((item: SlashItem) => void) | null;
+  openSlash: (a: { items: SlashItem[]; command: (item: SlashItem) => void; rect: DOMRect | null }) => void;
+  updateSlash: (a: { items: SlashItem[]; rect: DOMRect | null }) => void;
+  moveSlash: (delta: number) => void;
+  setSlashIndex: (i: number) => void;
+  pickSlash: (i?: number) => void;
+  closeSlash: () => void;
 };
 
 let contentTimer: ReturnType<typeof setTimeout> | null = null;
@@ -166,5 +182,28 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     exportOpen: false,
     openExport: () => set({ exportOpen: true }),
     closeExport: () => set({ exportOpen: false }),
+
+    // ----- Slash command menu -----
+    slashOpen: false,
+    slashItems: [],
+    slashIndex: 0,
+    slashRect: null,
+    slashCommand: null,
+    openSlash: ({ items, command, rect }) =>
+      set({ slashOpen: true, slashItems: items, slashCommand: command, slashRect: rect, slashIndex: 0 }),
+    updateSlash: ({ items, rect }) =>
+      set((s) => ({ slashItems: items, slashRect: rect, slashIndex: Math.min(s.slashIndex, Math.max(0, items.length - 1)) })),
+    moveSlash: (delta) =>
+      set((s) => {
+        const n = s.slashItems.length;
+        return n === 0 ? {} : { slashIndex: (s.slashIndex + delta + n) % n };
+      }),
+    setSlashIndex: (slashIndex) => set({ slashIndex }),
+    pickSlash: (i) => {
+      const s = get();
+      const item = s.slashItems[i ?? s.slashIndex];
+      if (item && s.slashCommand) s.slashCommand(item);
+    },
+    closeSlash: () => set({ slashOpen: false, slashItems: [], slashCommand: null, slashRect: null }),
   };
 });

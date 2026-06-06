@@ -21,9 +21,14 @@
     "error": "儲存失敗"
   },
   "ai": {
-    "on": "AI 補全（開啟中，點擊關閉）",
-    "off": "AI 補全（已關閉，點擊開啟）",
-    "hint": "Tab 接受 · Esc 略過"
+    "cycleHint": "AI 補全模式（點擊切換：自動／手動／關）",
+    "mode": {
+      "auto": "自動",
+      "manual": "手動",
+      "off": "關"
+    },
+    "hintAuto": "詞／句尾自動提示 · Tab 接受 · ⌘/Ctrl+J 立即建議",
+    "hintManual": "⌘/Ctrl+J 叫出建議 · Tab 接受"
   },
   "tools": {
     "h1": "標題 1",

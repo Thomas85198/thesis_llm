@@ -7,6 +7,7 @@ import {
   type Editor,
 } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
+import { NodeSelection } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import {
   Bold,
@@ -59,7 +60,15 @@ import {
 import { useEditorStore, type SaveState } from "@/lib/editor-store";
 import { cn } from "@/lib/utils";
 
-const AUTOCOMPLETE_DEBOUNCE_MS = 600;
+// Auto ghost text: wait ~1s after typing stops, only fire at a word/sentence
+// boundary, and require a little context first — keeps it from popping up on
+// every mid-word pause. Manual trigger (⌘/Ctrl+J) bypasses all of this.
+const AUTOCOMPLETE_DEBOUNCE_MS = 1000;
+const AUTOCOMPLETE_MIN_CHARS = 6;
+const AUTOCOMPLETE_BOUNDARY = /[\s。．！？!?,，、；;：:）)】」』.]/;
+
+/** AI ghost-text mode: smart auto + hotkey / hotkey-only / off. */
+type AiMode = "auto" | "manual" | "off";
 
 type OutlineItem = { level: number; text: string; pos: number };
 
@@ -174,17 +183,18 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   const citationStyle = useEditorStore((s) => s.citationStyle);
   const setCitationStyle = useEditorStore((s) => s.setCitationStyle);
 
-  const [aiEnabled, setAiEnabled] = useState(true);
+  const [aiMode, setAiMode] = useState<AiMode>("auto");
 
   // Autocomplete plumbing lives in refs so the editor's onUpdate (a stable
   // closure created once) always reads the latest values without having to
   // re-create the editor instance.
-  const aiEnabledRef = useRef(aiEnabled);
+  const aiModeRef = useRef(aiMode);
+  const editorRef = useRef<Editor | null>(null);
   const acTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const acAbort = useRef<AbortController | null>(null);
   useEffect(() => {
-    aiEnabledRef.current = aiEnabled;
-  }, [aiEnabled]);
+    aiModeRef.current = aiMode;
+  }, [aiMode]);
 
   const cancelAutocomplete = useCallback(() => {
     if (acTimer.current) {
@@ -197,47 +207,74 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     }
   }, []);
 
+  // Fire one suggestion request now. Shared by the debounced auto path and the
+  // manual hotkey; streams ghost text into the editor.
+  const requestSuggestion = useCallback(
+    (ed: Editor) => {
+      if (!ed.state.selection.empty) return; // only at a collapsed cursor
+      const head = ed.state.selection.head;
+      const textBefore = ed.state.doc.textBetween(0, head, "\n", " ");
+      if (!textBefore.trim()) return;
+      const headings: string[] = [];
+      ed.state.doc.descendants((node) => {
+        if (node.type.name === "heading") headings.push(node.textContent);
+        return true;
+      });
+      const controller = new AbortController();
+      acAbort.current = controller;
+      let acc = "";
+      void streamAutocomplete(
+        {
+          doc_id: doc.doc_id,
+          text_before: textBefore,
+          title: useEditorStore.getState().title,
+          outline: headings.join(" / ").slice(0, 2000),
+          locale,
+        },
+        (delta) => {
+          // A keystroke during streaming aborts the controller — ignore late
+          // deltas so we never re-show a stale suggestion.
+          if (controller.signal.aborted) return;
+          acc += delta;
+          ed.commands.setSuggestion(acc);
+        },
+        controller.signal
+      ).catch(() => {
+        /* network/abort — best-effort, just no suggestion */
+      });
+    },
+    [doc.doc_id, locale]
+  );
+
+  // Auto path: debounced and gated on a word/sentence boundary (whitespace or
+  // punctuation before the cursor) so suggestions stop popping up mid-word on
+  // every pause. Manual mode skips this entirely (hotkey only).
   const triggerAutocomplete = useCallback(
     (ed: Editor) => {
-      // Each keystroke cancels the pending request + timer, then re-arms.
-      cancelAutocomplete();
-      if (!aiEnabledRef.current) return;
-      if (!ed.state.selection.empty) return; // only at a collapsed cursor
-      acTimer.current = setTimeout(() => {
-        const head = ed.state.selection.head;
-        const textBefore = ed.state.doc.textBetween(0, head, "\n", " ");
-        if (!textBefore.trim()) return;
-        const headings: string[] = [];
-        ed.state.doc.descendants((node) => {
-          if (node.type.name === "heading") headings.push(node.textContent);
-          return true;
-        });
-        const controller = new AbortController();
-        acAbort.current = controller;
-        let acc = "";
-        void streamAutocomplete(
-          {
-            doc_id: doc.doc_id,
-            text_before: textBefore,
-            title: useEditorStore.getState().title,
-            outline: headings.join(" / ").slice(0, 2000),
-            locale,
-          },
-          (delta) => {
-            // A keystroke during streaming aborts the controller — ignore late
-            // deltas so we never re-show a stale suggestion.
-            if (controller.signal.aborted) return;
-            acc += delta;
-            ed.commands.setSuggestion(acc);
-          },
-          controller.signal
-        ).catch(() => {
-          /* network/abort — best-effort, just no suggestion */
-        });
-      }, AUTOCOMPLETE_DEBOUNCE_MS);
+      cancelAutocomplete(); // each keystroke cancels the pending request + timer
+      if (aiModeRef.current !== "auto") return;
+      if (!ed.state.selection.empty) return;
+      const before = ed.state.doc.textBetween(0, ed.state.selection.head, "\n", " ");
+      if (before.trim().length < AUTOCOMPLETE_MIN_CHARS) return;
+      if (!AUTOCOMPLETE_BOUNDARY.test(before.slice(-1))) return;
+      acTimer.current = setTimeout(() => requestSuggestion(ed), AUTOCOMPLETE_DEBOUNCE_MS);
     },
-    [cancelAutocomplete, doc.doc_id, locale]
+    [cancelAutocomplete, requestSuggestion]
   );
+
+  // Manual trigger (⌘/Ctrl+J): suggest right now, regardless of boundary.
+  const manualTrigger = useCallback(() => {
+    if (aiModeRef.current === "off") return;
+    const ed = editorRef.current;
+    if (ed) {
+      cancelAutocomplete();
+      requestSuggestion(ed);
+    }
+  }, [cancelAutocomplete, requestSuggestion]);
+  const manualTriggerRef = useRef(manualTrigger);
+  useEffect(() => {
+    manualTriggerRef.current = manualTrigger;
+  }, [manualTrigger]);
 
   // onUpdate captures this once; route through a ref so callback identity
   // changes don't force the editor to rebuild.
@@ -249,7 +286,6 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   // Image upload: the slash item opens a hidden file picker; on pick we upload
   // and insert a figure node at the cursor.
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const editorRef = useRef<Editor | null>(null);
   const openImagePicker = useCallback(() => fileInputRef.current?.click(), []);
   const handleImageSelected = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -329,6 +365,15 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
         class: "tiptap-content focus:outline-none",
         "aria-label": t("editorAria"),
       },
+      // ⌘/Ctrl+J manually requests a ghost-text suggestion (Jenni-style).
+      handleKeyDown: (_view, event) => {
+        if (event.key.toLowerCase() === "j" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          manualTriggerRef.current();
+          return true;
+        }
+        return false;
+      },
     },
     onUpdate: ({ editor }) => {
       queueContentSave(editor.getJSON() as ProseMirrorDoc);
@@ -352,11 +397,11 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
 
   // Turning AI off kills any in-flight suggestion immediately.
   useEffect(() => {
-    if (!aiEnabled && editor) {
+    if (aiMode === "off" && editor) {
       cancelAutocomplete();
       editor.commands.clearSuggestion();
     }
-  }, [aiEnabled, editor, cancelAutocomplete]);
+  }, [aiMode, editor, cancelAutocomplete]);
 
   const tb = useEditorState({
     editor,
@@ -478,16 +523,23 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
             <Download className="h-4 w-4" />
           </ToolbarButton>
           <div className="mx-1 h-5 w-px bg-border" />
-          <ToolbarButton
-            active={aiEnabled}
-            label={aiEnabled ? t("ai.on") : t("ai.off")}
-            onClick={() => setAiEnabled((v) => !v)}
+          <Button
+            type="button"
+            variant={aiMode === "off" ? "ghost" : "secondary"}
+            size="sm"
+            className="h-8 gap-1.5 px-2 text-xs"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() =>
+              setAiMode(aiMode === "auto" ? "manual" : aiMode === "manual" ? "off" : "auto")
+            }
+            title={t("ai.cycleHint")}
           >
             <Sparkles className="h-4 w-4" />
-          </ToolbarButton>
-          {aiEnabled && (
+            {t(`ai.mode.${aiMode}`)}
+          </Button>
+          {aiMode !== "off" && (
             <span className="ml-1 hidden text-xs text-muted-foreground sm:inline">
-              {t("ai.hint")}
+              {aiMode === "auto" ? t("ai.hintAuto") : t("ai.hintManual")}
             </span>
           )}
         </div>
@@ -501,7 +553,15 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       {/* Select a sentence → find a citation for it */}
       <BubbleMenu
         editor={editor}
-        shouldShow={({ editor }) => !editor.state.selection.empty}
+        // Only for real text selections — not when a node (e.g. an image/figure)
+        // is selected, where "rewrite"/"cite" make no sense.
+        shouldShow={({ editor }) => {
+          const { selection } = editor.state;
+          if (selection.empty || selection instanceof NodeSelection) return false;
+          return (
+            editor.state.doc.textBetween(selection.from, selection.to).trim().length > 0
+          );
+        }}
       >
         <div className="flex items-center gap-1 rounded-lg border bg-popover p-1 shadow-md">
           <Button

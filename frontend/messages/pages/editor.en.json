@@ -21,9 +21,14 @@
     "error": "Save failed"
   },
   "ai": {
-    "on": "AI autocomplete (on — click to disable)",
-    "off": "AI autocomplete (off — click to enable)",
-    "hint": "Tab to accept · Esc to dismiss"
+    "cycleHint": "AI autocomplete mode (click to cycle: auto / manual / off)",
+    "mode": {
+      "auto": "Auto",
+      "manual": "Manual",
+      "off": "Off"
+    },
+    "hintAuto": "Suggests at word/sentence ends · Tab to accept · ⌘/Ctrl+J for one now",
+    "hintManual": "⌘/Ctrl+J to suggest · Tab to accept"
   },
   "tools": {
     "h1": "Heading 1",

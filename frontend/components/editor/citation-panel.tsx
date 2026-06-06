@@ -79,6 +79,25 @@ function collectCitations(editor: Editor): CitationAttrs[] {
   return out;
 }
 
+/** The claim a citation supports: the sentence ending at the chip (citations
+ * usually sit at the end of the claim sentence). Falls back to the paragraph. */
+function claimForCitation(editor: Editor, openalexId: string): string {
+  let claim = "";
+  editor.state.doc.descendants((node, pos) => {
+    if (claim) return false;
+    if (node.type.name === "citation" && node.attrs.openalexId === openalexId) {
+      const $pos = editor.state.doc.resolve(pos);
+      const paraStart = pos - $pos.parentOffset;
+      const before = editor.state.doc.textBetween(paraStart, pos, " ", " ");
+      const parts = before.split(/(?<=[。！？!?.])\s*/).filter(Boolean);
+      claim = (parts[parts.length - 1] || before).trim() || $pos.parent.textContent.trim();
+      return false;
+    }
+    return true;
+  });
+  return claim;
+}
+
 /** Shell: the Sheet + header. Body remounts (keyed on nonce) on every open. */
 export function CitationPanel({ editor, docId }: { editor: Editor; docId: string }) {
   const t = useTranslations("editor");
@@ -126,8 +145,11 @@ function CitationPanelBody({
   const [candidates, setCandidates] = useState<CitationCandidate[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [yearFrom, setYearFrom] = useState<number | undefined>(undefined);
-  // openalex_id → verdict, or "loading" while a verify is in flight.
+  // openalex_id → verdict, or "loading" while a verify is in flight. Separate
+  // maps: recommend cards verify against the search box; references verify
+  // against the claim sentence around the inserted chip.
   const [verdicts, setVerdicts] = useState<Record<string, CitationVerdict | "loading">>({});
+  const [refVerdicts, setRefVerdicts] = useState<Record<string, CitationVerdict | "loading">>({});
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -207,6 +229,30 @@ function CitationPanelBody({
       setVerdicts((v) => {
         const next = { ...v };
         delete next[c.openalex_id];
+        return next;
+      });
+      if (e instanceof ChatRateLimitError)
+        toast.error(t("citation.rateLimited", { seconds: e.retryAfter }));
+      else toast.error(String(e));
+    }
+  }
+
+  // Verify an already-inserted reference: claim = the sentence around the chip;
+  // abstract is re-fetched server-side from the openalex_id.
+  async function handleVerifyRef(r: CitationAttrs) {
+    const claim = claimForCitation(editor, r.openalexId);
+    if (!claim) {
+      toast.error(t("citation.verifyNoClaim"));
+      return;
+    }
+    setRefVerdicts((v) => ({ ...v, [r.openalexId]: "loading" }));
+    try {
+      const verdict = await verifyCitation(docId, claim, r.title, "", locale, r.openalexId);
+      setRefVerdicts((v) => ({ ...v, [r.openalexId]: verdict }));
+    } catch (e) {
+      setRefVerdicts((v) => {
+        const next = { ...v };
+        delete next[r.openalexId];
         return next;
       });
       if (e instanceof ChatRateLimitError)
@@ -445,6 +491,25 @@ function CitationPanelBody({
                           })}
                         </div>
                       )}
+                      <div className="mt-0.5">
+                        {refVerdicts[r.openalexId] === "loading" ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            {t("citation.verifying")}
+                          </span>
+                        ) : refVerdicts[r.openalexId] ? (
+                          <VerdictBadge verdict={refVerdicts[r.openalexId] as CitationVerdict} />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleVerifyRef(r)}
+                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            <ShieldCheck className="h-3 w-3" />
+                            {t("citation.verify")}
+                          </button>
+                        )}
+                      </div>
                     </li>
                   );
                 })}

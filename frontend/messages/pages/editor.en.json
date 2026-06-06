@@ -63,6 +63,7 @@
     "verify": "Verify",
     "verifying": "Verifying…",
     "verifyNeedsClaim": "Type the claim to support in the search box first",
+    "verifyNoClaim": "Couldn't find the sentence this citation sits in",
     "verdict": {
       "supports": "Supports",
       "partial": "Partial",

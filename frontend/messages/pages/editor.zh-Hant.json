@@ -63,6 +63,7 @@
     "verify": "驗證",
     "verifying": "驗證中…",
     "verifyNeedsClaim": "請先在搜尋框輸入要佐證的論點",
+    "verifyNoClaim": "找不到此引用所在的句子",
     "verdict": {
       "supports": "支持",
       "partial": "部分支持",

@@ -90,6 +90,7 @@ class CitationVerifyIn(BaseModel):
     claim: str = Field(..., max_length=2000)  # the sentence to support
     title: str = Field("", max_length=500)  # candidate source title (context)
     abstract: str = Field("", max_length=8000)  # candidate abstract (already on the client)
+    openalex_id: str | None = None  # references-tab path: re-fetch abstract by id
     locale: str | None = None
 
 
@@ -705,7 +706,8 @@ def verify_citation(body: CitationVerifyIn) -> dict[str, Any]:
         raise HTTPException(429, f"verify rate limit reached, retry in ~{wait}s")
     try:
         return claim_verifier_mod.verify(
-            body.claim, body.title, body.abstract, body.doc_id, body.locale
+            body.claim, body.title, body.abstract, body.doc_id, body.locale,
+            openalex_id=body.openalex_id,
         )
     except Exception as exc:  # noqa: BLE001 — LLM/quota failure → 502
         raise HTTPException(502, f"verification failed: {exc}") from exc

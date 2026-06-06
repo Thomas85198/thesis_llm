@@ -801,12 +801,20 @@ export async function verifyCitation(
   claim: string,
   title: string,
   abstract: string,
-  locale: string
+  locale: string,
+  openalexId?: string
 ): Promise<CitationVerdict> {
   const res = await fetch(`${API_BASE}/api/editor/citations/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ doc_id: docId, claim, title, abstract, locale }),
+    body: JSON.stringify({
+      doc_id: docId,
+      claim,
+      title,
+      abstract,
+      locale,
+      openalex_id: openalexId ?? null,
+    }),
   });
   if (res.status === 429) {
     const text = await res.text();

@@ -12,7 +12,7 @@ from __future__ import annotations
 import threading
 import time
 
-from . import i18n, llm
+from . import i18n, llm, openalex
 from .prompts import load_prompt
 
 RATE_LIMIT_PER_MIN = 40  # per doc_id — verify is a per-candidate click
@@ -53,14 +53,31 @@ def check_rate_limit(doc_id: str) -> tuple[bool, int]:
     return True, 0
 
 
-def verify(claim: str, title: str, abstract: str, doc_id: str, locale: str | None) -> dict:
-    """Judge whether `abstract` supports `claim`. Returns a verdict dict.
+def verify(
+    claim: str,
+    title: str,
+    abstract: str,
+    doc_id: str,
+    locale: str | None,
+    openalex_id: str | None = None,
+) -> dict:
+    """Judge whether the source supports `claim`. Returns a verdict dict.
 
-    Degrades gracefully: an empty abstract (the source has none) returns
-    verdict "unknown" without an LLM call — we can't verify what we can't read.
+    When `abstract` is empty but an `openalex_id` is given (the references-tab
+    path, where the inserted citation node doesn't carry the abstract), re-fetch
+    it from OpenAlex. Degrades gracefully: still no abstract → verdict "unknown"
+    without an LLM call — we can't verify what we can't read.
     """
     claim = claim.strip()[:MAX_CLAIM_CHARS]
-    abstract = (abstract or "").strip()[:MAX_ABSTRACT_CHARS]
+    abstract = (abstract or "").strip()
+    if not abstract and openalex_id:
+        try:
+            fetched = openalex.get_works_by_ids([openalex_id]).get(openalex_id, {})
+            abstract = (fetched.get("abstract") or "").strip()
+            title = title or fetched.get("title", "")
+        except Exception:  # noqa: BLE001 — network/quota: fall through to "unknown"
+            abstract = ""
+    abstract = abstract[:MAX_ABSTRACT_CHARS]
     if not claim:
         return {"verdict": "unknown", "evidence": "", "reason": "no claim", "confidence": 0.0}
     if not abstract:

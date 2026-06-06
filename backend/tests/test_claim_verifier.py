@@ -1,7 +1,7 @@
 """Tests for Smart Citation claim–evidence verification."""
 from __future__ import annotations
 
-from app import claim_verifier, llm
+from app import claim_verifier, llm, openalex
 
 
 def test_empty_abstract_returns_unknown_without_llm(monkeypatch):
@@ -34,6 +34,22 @@ def test_verify_passes_through_llm_verdict(monkeypatch):
     out = claim_verifier.verify("X improves Y", "A paper", "We show X improves Y.", "d", "zh-Hant")
     assert out["verdict"] == "supports"
     assert out["evidence"] == "We show X improves Y."
+
+
+def test_empty_abstract_with_id_refetches(monkeypatch):
+    # references-tab path: no abstract on the client, but an openalex_id → fetch.
+    monkeypatch.setattr(
+        openalex, "get_works_by_ids",
+        lambda ids: {"W1": {"abstract": "We show X improves Y.", "title": "Paper"}},
+    )
+
+    def fake(**kwargs):
+        assert "We show X improves Y." in kwargs["user_content"]
+        return {"verdict": "supports", "evidence": "We show X improves Y.", "reason": "r", "confidence": 0.9}
+
+    monkeypatch.setattr(llm, "call_with_tool", fake)
+    out = claim_verifier.verify("X improves Y", "", "", "d", "en", openalex_id="W1")
+    assert out["verdict"] == "supports"
 
 
 def test_rate_limit_blocks_after_ceiling(monkeypatch):

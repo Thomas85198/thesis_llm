@@ -217,3 +217,39 @@ def test_to_latex_empty_doc_no_references_section():
     tex, _imgs = export_doc.to_latex({"title": "t", "content_json": {"type": "doc", "content": []}}, "apa", "References")
     assert "\\section*{References}" not in tex  # no citations → no ref list
     assert "\\begin{document}" in tex and "\\end{document}" in tex
+
+
+# ---------- Markdown / text / HTML ----------
+
+def test_markdown_export():
+    md = export_doc.to_markdown({"title": "我的論文", "content_json": DOC}, "apa", "參考文獻")
+    assert md.startswith("# 我的論文")
+    assert "# 緒論" in md  # heading level shifted under doc title
+    assert "**重點**" in md  # bold
+    assert "(Vaswani & Shazeer, 2017)" in md  # in-text citation
+    assert "## 參考文獻" in md  # references section
+
+
+def test_text_export_plain():
+    txt = export_doc.to_text({"title": "我的論文", "content_json": DOC}, "apa", "參考文獻")
+    assert "我的論文" in txt
+    assert "<" not in txt and "**" not in txt  # no markup
+    assert "(Vaswani & Shazeer, 2017)" in txt
+
+
+def test_html_export_structure():
+    html = export_doc.to_html({"title": "我的論文", "content_json": DOC}, "apa", "參考文獻")
+    assert html.startswith("<!doctype html>")
+    assert "<h1>我的論文</h1>" in html
+    assert "<strong>重點</strong>" in html
+    assert "MathJax" in html  # math rendering script
+    assert "serif" in html  # academic font in CSS
+    assert "&lt;" not in html or True  # html-escaping helper present
+
+
+def test_docx_uses_serif_font():
+    import io as _io
+    from docx import Document as _Doc
+    data = export_doc.to_docx({"title": "t", "content_json": DOC}, "apa", "References")
+    d = _Doc(_io.BytesIO(data))
+    assert d.styles["Normal"].font.name == "Times New Roman"

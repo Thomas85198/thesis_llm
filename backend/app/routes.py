@@ -127,7 +127,7 @@ class ExportIn(BaseModel):
     content_json: dict[str, Any]  # the live TipTap doc (sent directly to avoid DB staleness)
     style: str = Field("apa", pattern="^(apa|mla|chicago|harvard|ieee|numeric)$")
     locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
-    format: str = Field("docx", pattern="^(docx|latex)$")
+    format: str = Field("docx", pattern="^(docx|latex|md|txt|html)$")
     template: str = Field("article", pattern="^(article|twocolumn|ieee)$")  # LaTeX only
 
 
@@ -823,7 +823,7 @@ def export_document(body: ExportIn) -> Response:
         data = export_doc.to_docx(document, body.style, refs_label)
         media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ext = "docx"
-    else:  # latex (pattern-validated)
+    elif body.format == "latex":
         tex, images = export_doc.to_latex(document, body.style, refs_label, body.template)
         if images:
             # Bundle .tex + referenced images so the export compiles as-is.
@@ -842,6 +842,18 @@ def export_document(body: ExportIn) -> Response:
             data = tex.encode("utf-8")
             media = "application/x-tex"
             ext = "tex"
+    elif body.format == "md":
+        data = export_doc.to_markdown(document, body.style, refs_label).encode("utf-8")
+        media = "text/markdown; charset=utf-8"
+        ext = "md"
+    elif body.format == "txt":
+        data = export_doc.to_text(document, body.style, refs_label).encode("utf-8")
+        media = "text/plain; charset=utf-8"
+        ext = "txt"
+    else:  # html (for online preview / browser print-to-PDF)
+        data = export_doc.to_html(document, body.style, refs_label).encode("utf-8")
+        media = "text/html; charset=utf-8"
+        ext = "html"
     # RFC 5987 filename* carries the (possibly CJK) title; ascii filename is a fallback.
     name = quote((body.title or "document").strip() or "document")
     headers = {

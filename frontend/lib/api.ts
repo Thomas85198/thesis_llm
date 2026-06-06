@@ -653,6 +653,33 @@ export async function streamRewrite(
   }
 }
 
+// ---------- editor mode: export (DOCX / LaTeX) ----------
+
+export type ExportFormat = "docx" | "latex";
+
+/**
+ * Render the live document to a .docx or .tex file and return it as a Blob. The
+ * content is sent directly (not read from the DB) so the export reflects the
+ * latest edits even within the autosave debounce.
+ */
+export async function exportDocument(body: {
+  title: string;
+  content_json: ProseMirrorDoc;
+  style: string; // "apa" | "numeric"
+  locale: string;
+  format: ExportFormat;
+}): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/api/editor/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`exportDocument failed: ${res.status} ${await res.text()}`);
+  }
+  return res.blob();
+}
+
 // ---------- editor mode: outline generation ----------
 
 export type OutlineHeading = { level: number; text: string };

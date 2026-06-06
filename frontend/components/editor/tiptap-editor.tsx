@@ -11,6 +11,7 @@ import StarterKit from "@tiptap/starter-kit";
 import {
   Bold,
   Code,
+  Download,
   Heading1,
   Heading2,
   Heading3,
@@ -32,6 +33,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Autocomplete } from "@/components/editor/autocomplete-extension";
 import { Citation } from "@/components/editor/citation-extension";
 import { CitationPanel } from "@/components/editor/citation-panel";
+import { ExportPanel } from "@/components/editor/export-panel";
 import { OutlinePanel } from "@/components/editor/outline-panel";
 import { RewritePanel } from "@/components/editor/rewrite-panel";
 import { Button } from "@/components/ui/button";
@@ -150,6 +152,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   const openCitePanel = useEditorStore((s) => s.openCitePanel);
   const openRewrite = useEditorStore((s) => s.openRewrite);
   const openOutline = useEditorStore((s) => s.openOutline);
+  const openExport = useEditorStore((s) => s.openExport);
   const citationStyle = useEditorStore((s) => s.citationStyle);
   const setCitationStyle = useEditorStore((s) => s.setCitationStyle);
 
@@ -379,6 +382,9 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           >
             {citationStyle === "apa" ? "APA" : "[1]"}
           </Button>
+          <ToolbarButton label={t("export.find")} onClick={openExport}>
+            <Download className="h-4 w-4" />
+          </ToolbarButton>
           <div className="mx-1 h-5 w-px bg-border" />
           <ToolbarButton
             active={aiEnabled}
@@ -443,6 +449,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       <CitationPanel editor={editor} docId={doc.doc_id} />
       <RewritePanel editor={editor} docId={doc.doc_id} />
       <OutlinePanel editor={editor} docId={doc.doc_id} />
+      <ExportPanel editor={editor} />
     </div>
   );
 }

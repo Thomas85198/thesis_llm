@@ -1,0 +1,257 @@
+"""Editor-mode export: TipTap (ProseMirror) JSON → .docx / .tex.
+
+Walks the stored document tree and renders block/inline nodes, including the
+custom inline `citation` atom, into Word and LaTeX. In-text citation markers and
+the trailing reference list mirror frontend/lib/citation-format.ts so an export
+reads exactly like what the author sees on screen.
+"""
+from __future__ import annotations
+
+import io
+from typing import Any
+
+from docx import Document
+
+
+# ---------- citation formatting (mirror frontend lib/citation-format.ts) ----------
+
+def _author_list(authors: str) -> list[str]:
+    return [a.strip() for a in (authors or "").split(",") if a.strip()]
+
+
+def _last_name(full: str) -> str:
+    parts = full.strip().split()
+    return parts[-1] if parts else full
+
+
+def apa_in_text(authors: str, year: Any) -> str:
+    lst = _author_list(authors)
+    y = year if year else "n.d."
+    if not lst:
+        return f"(Anon., {y})"
+    if len(lst) == 1:
+        return f"({_last_name(lst[0])}, {y})"
+    if len(lst) == 2:
+        return f"({_last_name(lst[0])} & {_last_name(lst[1])}, {y})"
+    return f"({_last_name(lst[0])} et al., {y})"
+
+
+def in_text_label(attrs: dict, style: str, number: int) -> str:
+    if style == "numeric":
+        return f"[{number}]"
+    return apa_in_text(attrs.get("authors", ""), attrs.get("year"))
+
+
+def full_reference(attrs: dict, style: str, number: int) -> str:
+    authors = attrs.get("authors") or "Anon."
+    year = attrs.get("year") or "n.d."
+    head = attrs.get("title") or "(untitled)"
+    venue = f". {attrs['venue']}" if attrs.get("venue") else ""
+    if style == "numeric":
+        return f"[{number}] {authors}. {head}{venue}, {year}."
+    return f"{authors} ({year}). {head}{venue}."
+
+
+# ---------- tree walking ----------
+
+def _children(node: dict) -> list[dict]:
+    return node.get("content") or []
+
+
+def collect_citations(doc: dict) -> list[dict]:
+    """Distinct citation attrs by first appearance — the reference-list order."""
+    seen: set[str] = set()
+    out: list[dict] = []
+
+    def walk(node: dict) -> None:
+        if node.get("type") == "citation":
+            a = node.get("attrs") or {}
+            oid = a.get("openalexId")
+            if oid and oid not in seen:
+                seen.add(oid)
+                out.append(a)
+        for ch in _children(node):
+            walk(ch)
+
+    walk(doc)
+    return out
+
+
+def _citation_number(order: list[str], oid: str) -> int:
+    """1-based first-appearance number (mirrors the editor's numeric labels)."""
+    return order.index(oid) + 1 if oid in order else len(order) + 1
+
+
+def _block_text(block: dict) -> str:
+    """Flatten a block's inline text (used for code blocks)."""
+    return "".join(
+        n.get("text", "") for n in _children(block) if n.get("type") == "text"
+    )
+
+
+# ---------- DOCX ----------
+
+def _add_inline_docx(paragraph, nodes: list[dict], style: str, order: list[str]) -> None:
+    for n in nodes or []:
+        t = n.get("type")
+        if t == "text":
+            run = paragraph.add_run(n.get("text", ""))
+            marks = {m.get("type") for m in (n.get("marks") or [])}
+            run.bold = "bold" in marks
+            run.italic = "italic" in marks
+            if "strike" in marks:
+                run.font.strike = True
+            if "code" in marks:
+                run.font.name = "Courier New"
+        elif t == "citation":
+            a = n.get("attrs") or {}
+            num = _citation_number(order, a.get("openalexId"))
+            paragraph.add_run(in_text_label(a, style, num))
+
+
+def _render_block_docx(docx: Document, block: dict, style: str, order: list[str]) -> None:
+    t = block.get("type")
+    if t == "heading":
+        level = (block.get("attrs") or {}).get("level", 1)
+        p = docx.add_heading("", level=min(max(level, 1), 4))
+        _add_inline_docx(p, _children(block), style, order)
+    elif t in ("bulletList", "orderedList"):
+        list_style = "List Bullet" if t == "bulletList" else "List Number"
+        for item in _children(block):
+            for child in _children(item):  # each listItem wraps paragraph(s)
+                p = docx.add_paragraph(style=list_style)
+                _add_inline_docx(p, _children(child), style, order)
+    elif t == "blockquote":
+        for child in _children(block):
+            p = docx.add_paragraph(style="Quote")
+            _add_inline_docx(p, _children(child), style, order)
+    elif t == "codeBlock":
+        p = docx.add_paragraph()
+        run = p.add_run(_block_text(block))
+        run.font.name = "Courier New"
+    elif t == "horizontalRule":
+        docx.add_paragraph("―" * 20)
+    else:  # paragraph and any unknown block → a plain paragraph of its inline content
+        p = docx.add_paragraph()
+        _add_inline_docx(p, _children(block), style, order)
+
+
+def to_docx(document: dict, style: str, refs_label: str) -> bytes:
+    content = document.get("content_json") or {}
+    title = document.get("title") or "(untitled)"
+    citations = collect_citations(content)
+    order = [c.get("openalexId") for c in citations]
+
+    docx = Document()
+    docx.add_heading(title, level=0)
+    for block in _children(content):
+        _render_block_docx(docx, block, style, order)
+    if citations:
+        docx.add_heading(refs_label, level=1)
+        for i, c in enumerate(citations):
+            docx.add_paragraph(full_reference(c, style, i + 1))
+
+    buf = io.BytesIO()
+    docx.save(buf)
+    return buf.getvalue()
+
+
+# ---------- LaTeX ----------
+
+_LATEX_ESCAPE = {
+    "\\": r"\textbackslash{}",
+    "&": r"\&",
+    "%": r"\%",
+    "$": r"\$",
+    "#": r"\#",
+    "_": r"\_",
+    "{": r"\{",
+    "}": r"\}",
+    "~": r"\textasciitilde{}",
+    "^": r"\textasciicircum{}",
+}
+
+
+def _esc(s: str) -> str:
+    return "".join(_LATEX_ESCAPE.get(ch, ch) for ch in (s or ""))
+
+
+def _inline_latex(nodes: list[dict], style: str, order: list[str]) -> str:
+    parts: list[str] = []
+    for n in nodes or []:
+        t = n.get("type")
+        if t == "text":
+            s = _esc(n.get("text", ""))
+            marks = {m.get("type") for m in (n.get("marks") or [])}
+            if "code" in marks:
+                s = r"\texttt{" + s + "}"
+            if "strike" in marks:
+                s = r"\sout{" + s + "}"
+            if "italic" in marks:
+                s = r"\textit{" + s + "}"
+            if "bold" in marks:
+                s = r"\textbf{" + s + "}"
+            parts.append(s)
+        elif t == "citation":
+            a = n.get("attrs") or {}
+            num = _citation_number(order, a.get("openalexId"))
+            parts.append(_esc(in_text_label(a, style, num)))
+    return "".join(parts)
+
+
+def _render_block_latex(block: dict, style: str, order: list[str]) -> str:
+    t = block.get("type")
+    if t == "heading":
+        level = (block.get("attrs") or {}).get("level", 1)
+        cmd = {1: "section", 2: "subsection", 3: "subsubsection"}.get(level, "paragraph")
+        return f"\\{cmd}{{{_inline_latex(_children(block), style, order)}}}\n\n"
+    if t in ("bulletList", "orderedList"):
+        env = "itemize" if t == "bulletList" else "enumerate"
+        lines = [f"\\begin{{{env}}}"]
+        for item in _children(block):
+            inner = "".join(
+                _inline_latex(_children(child), style, order) for child in _children(item)
+            )
+            lines.append(f"  \\item {inner}")
+        lines.append(f"\\end{{{env}}}")
+        return "\n".join(lines) + "\n\n"
+    if t == "blockquote":
+        inner = "".join(
+            _inline_latex(_children(child), style, order) + "\n" for child in _children(block)
+        )
+        return f"\\begin{{quote}}\n{inner}\\end{{quote}}\n\n"
+    if t == "codeBlock":
+        return f"\\begin{{verbatim}}\n{_block_text(block)}\n\\end{{verbatim}}\n\n"
+    if t == "horizontalRule":
+        return "\\hrulefill\n\n"
+    return _inline_latex(_children(block), style, order) + "\n\n"
+
+
+def to_latex(document: dict, style: str, refs_label: str) -> str:
+    content = document.get("content_json") or {}
+    title = document.get("title") or "(untitled)"
+    citations = collect_citations(content)
+    order = [c.get("openalexId") for c in citations]
+
+    body = "".join(_render_block_latex(b, style, order) for b in _children(content))
+    refs = ""
+    if citations:
+        items = "\n".join(
+            f"  \\item {_esc(full_reference(c, style, i + 1))}"
+            for i, c in enumerate(citations)
+        )
+        refs = f"\\section*{{{_esc(refs_label)}}}\n\\begin{{itemize}}\n{items}\n\\end{{itemize}}\n\n"
+
+    # ctex makes CJK compile under XeLaTeX/pdfLaTeX; ulem for \sout, hyperref for links.
+    return (
+        "\\documentclass{article}\n"
+        "\\usepackage{ctex}\n"
+        "\\usepackage[normalem]{ulem}\n"
+        "\\usepackage{hyperref}\n"
+        f"\\title{{{_esc(title)}}}\n"
+        "\\author{}\n\\date{}\n"
+        "\\begin{document}\n\\maketitle\n\n"
+        + body
+        + refs
+        + "\\end{document}\n"
+    )

@@ -13,6 +13,7 @@ dependencies = [
     "neo4j>=5.26",
     "pydantic>=2.10",
     "pymupdf>=1.24",
+    "python-docx>=1.1",  # editor-mode DOCX export
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
     "rapidfuzz>=3.10",

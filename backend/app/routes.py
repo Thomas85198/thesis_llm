@@ -8,14 +8,16 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import autocomplete as autocomplete_mod
 from . import chat as chat_mod
 from . import citation as citation_mod
+from . import export_doc
 from . import outline as outline_mod
 from . import rewrite as rewrite_mod
 from . import db, kg, pipeline, rules
@@ -93,6 +95,14 @@ class OutlineIn(BaseModel):
     doc_id: str
     topic: str = Field(..., min_length=1, max_length=500)  # what the paper is about
     locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
+
+
+class ExportIn(BaseModel):
+    title: str = Field("", max_length=300)
+    content_json: dict[str, Any]  # the live TipTap doc (sent directly to avoid DB staleness)
+    style: str = Field("apa", pattern="^(apa|numeric)$")
+    locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
+    format: str = Field("docx", pattern="^(docx|latex)$")
 
 
 router = APIRouter()
@@ -717,3 +727,29 @@ def generate_outline(body: OutlineIn) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 — LLM/quota failure → 502
         raise HTTPException(502, f"outline generation failed: {exc}") from exc
     return {"headings": headings}
+
+
+@router.post("/api/editor/export")
+def export_document(body: ExportIn) -> Response:
+    """Render the live document to .docx or .tex and return it as a download.
+
+    The content is POSTed directly (not read from the DB) so an export always
+    reflects the latest edits, even within the autosave debounce. In-text
+    citations and the reference list use the requested style.
+    """
+    document = {"title": body.title, "content_json": body.content_json}
+    refs_label = "參考文獻" if body.locale == "zh-Hant" else "References"
+    if body.format == "docx":
+        data = export_doc.to_docx(document, body.style, refs_label)
+        media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ext = "docx"
+    else:  # latex (pattern-validated)
+        data = export_doc.to_latex(document, body.style, refs_label).encode("utf-8")
+        media = "application/x-tex"
+        ext = "tex"
+    # RFC 5987 filename* carries the (possibly CJK) title; ascii filename is a fallback.
+    name = quote((body.title or "document").strip() or "document")
+    headers = {
+        "Content-Disposition": f"attachment; filename=\"document.{ext}\"; filename*=UTF-8''{name}.{ext}"
+    }
+    return Response(content=data, media_type=media, headers=headers)

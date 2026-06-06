@@ -58,6 +58,11 @@ type EditorStore = {
   outlineNonce: number;
   openOutline: () => void;
   closeOutline: () => void;
+
+  // ----- Export -----
+  exportOpen: boolean;
+  openExport: () => void;
+  closeExport: () => void;
 };
 
 let contentTimer: ReturnType<typeof setTimeout> | null = null;
@@ -117,6 +122,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         rewriteText: "",
         rewriteRange: null,
         outlineOpen: false,
+        exportOpen: false,
       });
     },
 
@@ -155,5 +161,10 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     outlineNonce: 0,
     openOutline: () => set((s) => ({ outlineOpen: true, outlineNonce: s.outlineNonce + 1 })),
     closeOutline: () => set({ outlineOpen: false }),
+
+    // ----- Export -----
+    exportOpen: false,
+    openExport: () => set({ exportOpen: true }),
+    closeExport: () => set({ exportOpen: false }),
   };
 });

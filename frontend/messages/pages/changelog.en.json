@@ -29,6 +29,23 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_0_0": {
+      "title": "New “Writing Editor”: draft a paper from scratch — Jenni-AI parity plus Notion/Heptabase-style block editing",
+      "summary": "This release expands the product from “analyze an existing PDF” to “write a paper from scratch” with a standalone /editor mode: a TipTap v3 rich-text editor, document management with version history, AI sentence autocomplete (ghost text), highlight-to-rewrite, outline generation, OpenAlex-backed smart citations (six styles, dual full-text+DOI links, one-click link refresh), and DOCX/LaTeX/HTML export. It adds Notion/Heptabase-style structured block editing: a “/” slash menu to swap blocks, Markdown shortcuts, image upload with an auto List of Figures, KaTeX math, and tables with an auto List of Tables plus an add/remove row-column toolbar.",
+      "changes": {
+        "0": "New Writing Editor mode: a standalone /editor with a document list, autosave, and version history; powered by TipTap v3 (ProseMirror) rich text.",
+        "1": "AI Autocomplete (ghost text): grey inline continuation at the cursor, Tab to accept; now uses smart boundary triggering (only at word/sentence ends, ~1s pause) plus ⌘/Ctrl+J to request one manually, with an auto/manual/off toolbar toggle.",
+        "2": "AI rewrite menu: select text → paraphrase / simplify / expand / shorten / improve fluency / academic tone / fix grammar, or a custom instruction; streamed preview to accept, retry, or discard.",
+        "3": "Outline generation: apply the standard IMRaD structure, or enter a topic and let AI generate a tailored heading tree, inserted in one click.",
+        "4": "Smart Citation: select a sentence or keywords → search real papers via OpenAlex → insert a citation; references offer dual “full text + DOI” links (avoiding dead mirrors, preferring trusted sources) with one-click refresh of all links.",
+        "5": "Multiple citation styles: APA / MLA / Chicago / Harvard / IEEE / numeric, switchable instantly across in-text markers, references, and export.",
+        "6": "Export: DOCX / LaTeX / HTML with in-text citations and a reference list (LaTeX uses ctex for CJK).",
+        "7": "Slash menu and Markdown shortcuts: type “/” for a block menu (heading / list / quote / code / divider / image / math / table…), with live Markdown conversion (##, -, >, …).",
+        "8": "Images and math: image upload + caption + an auto List of Figures; KaTeX math (inline $..$ and block), click to edit the LaTeX.",
+        "9": "Tables: insert an editable table with a numbered caption above and an auto List of Tables; a toolbar appears in-table to add/remove rows & columns, toggle the header, or delete the table; columns are resizable and wide tables scroll inside their frame.",
+        "10": "Quality fixes: autocomplete no longer echoes repeated preceding text; citation “full text” links now scan locations for trusted sources (arXiv/PMC…) instead of dead mirrors; wide tables scroll horizontally inside the editor instead of breaking the layout."
+      }
+    },
     "3_8_0": {
       "title": "Multilingual UI and dark mode: 繁中 / English switching, light/dark theme",
       "summary": "The whole interface gains Traditional Chinese and English, switched via URL prefixes (/zh-Hant, /en) and remembered across visits, with new visitors following the browser language automatically. A dark-mode toggle is added: the choice is remembered via cookie, follows the OS light/dark preference on first visit, and never flashes on reload. LLM-generated defect descriptions and suggestions are now produced bilingually, and the paper assistant replies in the current UI language.",

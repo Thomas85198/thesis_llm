@@ -11,13 +11,14 @@
     "phase2": "8. 人工評估機制",
     "guards": "9. 聊天 Guardrails",
     "literature": "10. 理論文獻",
-    "perf": "11. 效能與穩定性"
+    "perf": "11. 效能與穩定性",
+    "editor": "12. 寫作編輯器"
   },
   "hero": {
     "badge": "系統說明 / Demo Report",
     "title": "論文檢核系統",
     "subtitle": "用 Knowledge Graph + LLM 自動找學術論文的邏輯結構性缺陷",
-    "lead": "上傳論文 → 抽取 EDU / Entity / RST / FRU 四層結構並寫入 Neo4j Knowledge Graph → 用 13 條 REL 規則檢核（Cypher 找候選 + LLM 判讀）→ 輸出邏輯缺陷與修改建議。搭配 Human-as-judge 標註介面，由人工逐一檢查每個缺陷並量化系統 precision。",
+    "lead": "上傳論文 → 抽取 EDU / Entity / RST / FRU 四層結構並寫入 Neo4j Knowledge Graph → 用 13 條 REL 規則檢核（Cypher 找候選 + LLM 判讀）→ 輸出邏輯缺陷與修改建議。搭配 Human-as-judge 標註介面，由人工逐一檢查每個缺陷並量化系統 precision。自 v4.0.0 起另新增「寫作編輯器」模式（從零寫論文，對標 Jenni AI），詳見第 12 節。",
     "startReading": "開始閱讀"
   },
   "sections": {
@@ -31,7 +32,8 @@
     "phase2": { "title": "8. 人工評估機制" },
     "guards": { "title": "9. 論文助手聊天 + Guardrails" },
     "literature": { "title": "10. 理論文獻支撐" },
-    "perf": { "title": "11. 效能與穩定性：平行化、成本優化與測試" }
+    "perf": { "title": "11. 效能與穩定性：平行化、成本優化與測試" },
+    "editor": { "title": "12. 寫作編輯器：從零寫論文（對標 Jenni AI）" }
   },
   "intro": {
     "p1": "學術論文初稿常見三類「結構性」問題：(1) 主張無證據、(2) 缺乏動機、(3) 跨章節失聯。傳統靠人工 review 抓，慢且主觀。本系統的目標是把這個過程自動化、可重現、可追溯。",
@@ -637,6 +639,43 @@
     "h5p": "部分 LaTeX 論文用了沒有 ToUnicode CMap 的字型，複製／抽取出來是亂碼（{garbled} 其實是 {chapter}）。系統會在原生抽取後做一個輕量偵測（看 backtick／星號等噪音字元比例），若判定為亂碼就自動 fallback 到 tesseract OCR（繁中＋英文），並保留每段文字的頁碼與 bbox 座標。文字抽取移到背景任務，OCR（30 頁約 3–5 分鐘）不會卡住上傳請求。",
     "h6": "11.6 單元測試守住這些機制",
     "h6p": "這些重構改了不少 orchestration 邏輯，所以加了一組毫秒級、不碰網路／LLM／Neo4j 的單元測試（{tests}）：亂碼偵測（真實亂碼樣本、乾淨中英文、統計符號多的文字防誤判）與原生→OCR 路由（mock 掉抽取器只測決策）。亂碼偵測這條本來就出過一次 bug，測試也用「紅→綠」驗證過確實抓得到該 bug。"
+  },
+  "editor": {
+    "p1": "從 v4.0.0 起，本系統不只「分析既有論文」，還能「從零寫論文」——新增一個獨立的 /editor 寫作模式，定位為對標 Jenni AI 的學術寫作編輯器。它與前述分析端共用同一個後端與 LLM 層，但走自己的資料表（documents／版本歷史），不經過 PDF→KG→規則 的檢核流程。",
+    "modulesHeading": "功能模組",
+    "modules": {
+      "writing": {
+        "title": "寫作輔助：",
+        "desc": "AI 逐句續寫（ghost text，游標處灰字、Tab 接受、聰明邊界觸發＋⌘/Ctrl+J 手動）、反白改寫（換句話說／簡化／擴寫／潤飾／學術語氣／修正文法／自訂）、大綱生成（IMRaD 或主題→AI 標題樹）。三者皆走 SSE 串流、共用後端 stream_completion。"
+      },
+      "citation": {
+        "title": "引用與文獻：",
+        "desc": "Smart Citation 串接 OpenAlex 真實文獻庫（選句即搜、中文 claim 先抽英文關鍵字）；插入引用 chip，參考文獻提供「全文＋DOI」雙連結並一鍵更新；APA／MLA／Chicago／Harvard／IEEE／數字 六格式即時切換。"
+      },
+      "block": {
+        "title": "結構化 block 編輯（Notion／Heptabase 式）：",
+        "desc": "打「/」叫出換 block 選單、Markdown 快捷鍵；圖片上傳＋圖片標題＋自動圖目錄；KaTeX 數學公式（行內＋區塊）；表格＋表格標題＋自動表目錄＋增刪欄列工具列。"
+      },
+      "export": {
+        "title": "匯出：",
+        "desc": "DOCX／LaTeX／HTML，內文引用與參考文獻一併輸出（LaTeX 以 ctex 支援中文）。"
+      }
+    },
+    "diagramCaption": "圖 12：寫作編輯器資料流（與分析端共用後端與 LLM 層，但走獨立的 documents 資料表）",
+    "diagram": {
+      "author": "作者",
+      "ed": "TipTap 編輯器<br/>ghost text / 引用 chip / block",
+      "svc": "Autocomplete · Rewrite · Outline<br/>(stream_completion · SSE)",
+      "cite": "Smart Citation",
+      "export": "匯出 DOCX / LaTeX / HTML",
+      "db": "SQLite documents<br/>＋ 版本歷史",
+      "edgeStream": "SSE 串流",
+      "edgeSearch": "搜尋",
+      "edgeExport": "匯出",
+      "edgeSave": "自動存檔"
+    },
+    "diffHeading": "差異化方向（規劃中）",
+    "diff": "市場上「寫得快／寫得地道」已是紅海（Jenni、Paperpal、Writefull、SciSpace）。本系統真正的差異化，是把另一半的「神經符號缺陷檢查（13 條 REL 規則＋KG＋多代理）」從『事後批改』前移到『寫作當下』——邊寫邊標記「此主張缺乏引用支持／方法與結論不一致」，再加上「引用接地：這篇來源是否真的支撐你這句」的紅綠燈驗證。這是把上述分析引擎接到寫作端的護城河，目前列為後續開發（Phase B）。"
   },
   "footer": {
     "prefix": "論文檢核系統 · 系統說明文件 · 詳細設計請見 "

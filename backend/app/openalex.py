@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -22,8 +23,28 @@ _TIMEOUT = 10.0
 # Only pull the fields we render — smaller, faster responses.
 _SELECT = (
     "id,title,display_name,publication_year,doi,authorships,"
-    "primary_location,open_access,cited_by_count,type,"
+    "primary_location,locations,open_access,cited_by_count,type,"
     "abstract_inverted_index,relevance_score"
+)
+
+# OA full-text hosts we trust to actually resolve. OpenAlex's own
+# `open_access.oa_url` frequently points at a flaky mirror (e.g. a scraped copy
+# on some preprint clone) even when a rock-solid arXiv/PMC copy exists in
+# `locations`. We only surface a "full text" link when it sits on one of these,
+# so the button never sends the author to a dead page.
+_TRUSTED_FULLTEXT_HOSTS = (
+    "arxiv.org",
+    "ncbi.nlm.nih.gov",  # incl. pmc.ncbi.nlm.nih.gov
+    "europepmc.org",
+    "aclanthology.org",
+    "openreview.net",
+    "proceedings.mlr.press",
+    "proceedings.neurips.cc",
+    "papers.nips.cc",
+    "openaccess.thecvf.com",
+    "dl.acm.org",
+    "biorxiv.org",
+    "medrxiv.org",
 )
 
 
@@ -44,19 +65,51 @@ def restore_abstract(inverted: dict[str, list[int]] | None) -> str:
     return " ".join(word for _, word in positions)
 
 
-def best_url(work: dict[str, Any], location: dict[str, Any]) -> str:
-    """A link that actually resolves to something readable.
+def _host(url: str) -> str:
+    """Bare hostname of a URL, lowercased, without a leading www."""
+    return urlparse(url).netloc.lower().removeprefix("www.")
 
-    Many works lack a DOI, or the DOI landing page is a paywalled stub. Prefer
-    the open-access full text, then DOI, then the publisher landing page, and
-    finally the OpenAlex record itself (which always exists). This kills the
-    "source link goes nowhere" problem.
+
+def _is_trusted(host: str) -> bool:
+    return any(
+        host == h or host.endswith("." + h) for h in _TRUSTED_FULLTEXT_HOSTS
+    )
+
+
+def fulltext_url(work: dict[str, Any]) -> str:
+    """A *trustworthy* open-access full-text link, or "" if none.
+
+    We ignore OpenAlex's `open_access.oa_url` — for popular papers it often picks
+    a scraped mirror that 404s while a stable arXiv/PMC copy sits in `locations`.
+    Instead we scan every OA location, keep only links on a trusted host
+    (prefer the landing/abstract page over a raw PDF), and return the best one.
+    If nothing trustworthy exists we return "" so the caller can simply omit the
+    full-text link rather than promise a dead one.
     """
-    oa = work.get("open_access") or {}
+    for prefer_landing in (True, False):  # pass 1: landing pages; pass 2: PDFs
+        for loc in work.get("locations") or []:
+            if not loc.get("is_oa"):
+                continue
+            url = loc.get("landing_page_url") if prefer_landing else loc.get("pdf_url")
+            if not url:
+                continue
+            host = _host(url)
+            if host.endswith("doi.org"):  # that's the DOI, not a full text
+                continue
+            if _is_trusted(host):
+                return url
+    return ""
+
+
+def source_url(work: dict[str, Any]) -> str:
+    """Always-resolvable link for "view source": trusted full text, else DOI,
+    else the primary landing page, else the OpenAlex record (which always exists).
+    """
+    primary = (work.get("primary_location") or {}).get("landing_page_url")
     return (
-        oa.get("oa_url")
+        fulltext_url(work)
         or work.get("doi")
-        or location.get("landing_page_url")
+        or primary
         or work.get("id")
         or ""
     )
@@ -80,8 +133,8 @@ def normalize(work: dict[str, Any]) -> dict[str, Any]:
         "year": work.get("publication_year"),
         "venue": source.get("display_name") or "",
         "doi": work.get("doi") or "",  # "https://doi.org/10.xxxx/..."
-        "oa_url": (work.get("open_access") or {}).get("oa_url") or "",  # OA full text, may rot
-        "url": best_url(work, location),  # always-resolvable source link
+        "oa_url": fulltext_url(work),  # trusted OA full text, "" if none resolves
+        "url": source_url(work),  # always-resolvable source link
         "cited_by_count": work.get("cited_by_count") or 0,
         "type": work.get("type") or "",
         "abstract": restore_abstract(work.get("abstract_inverted_index")),

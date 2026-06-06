@@ -12,6 +12,7 @@ Guardrails:
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from typing import Iterator
@@ -25,6 +26,48 @@ from .prompts import load_prompt
 RATE_LIMIT_PER_MIN = 60  # per doc_id
 MAX_CONTEXT_CHARS = 2000  # of text-before-cursor sent to the model
 MAX_OUTPUT_TOKENS = 200   # suggestions are at most a sentence or two
+# Mild sampling so the model doesn't greedily latch onto a repeated pattern in
+# the context (the main repetition guard is _collapse_repeats below; this helps
+# at the margin).
+TEMPERATURE = 0.4
+
+# Split into sentences, keeping each terminator attached to its sentence. Covers
+# both CJK (。！？) and Latin (.!?) punctuation plus hard newlines. The trailing
+# alternative captures a final fragment with no terminator (the text right at the
+# cursor, mid-sentence).
+_SENTENCE = re.compile(r".*?[。．.！？!?\n]+|.+\Z", re.S)
+
+
+def _norm(sentence: str) -> str:
+    """Whitespace-insensitive key for comparing two sentences."""
+    return re.sub(r"\s+", "", sentence)
+
+
+def _collapse_repeats(text: str) -> str:
+    """Drop sentences that already appeared earlier in the context tail.
+
+    A degenerate document — most often the autocomplete loop itself, where the
+    author keeps accepting the same suggestion — fills the window with one
+    sentence repeated many times. The model then mirrors that pattern no matter
+    what the prompt says, because in-context repetition is a far stronger signal
+    than a single instruction. Keeping only the first occurrence of each distinct
+    sentence removes the repetition signal while preserving the author's real
+    prose order. The final fragment (the partial sentence at the cursor) is always
+    kept so mid-sentence completion still works.
+    """
+    pieces = _SENTENCE.findall(text)
+    if not pieces:
+        return text
+    seen: set[str] = set()
+    out: list[str] = []
+    for i, piece in enumerate(pieces):
+        is_last = i == len(pieces) - 1
+        key = _norm(piece)
+        if not is_last and key and key in seen:
+            continue
+        seen.add(key)
+        out.append(piece)
+    return "".join(out)
 
 
 _rate_lock = threading.Lock()
@@ -64,22 +107,45 @@ def sse_stream(
 ) -> Iterator[str]:
     """Yield Server-Sent Events: `data: {"t": "<delta>"}` per token, then [DONE].
 
-    A mid-stream LLM failure is surfaced as `data: {"error": "..."}` followed by
-    [DONE], so the client always sees a clean terminator.
+    Repetition guard: the context tail is deduped before sending, and the stream
+    is buffered per sentence so any sentence that merely echoes the context (or
+    one already emitted) is dropped instead of shown — better to suggest nothing
+    than to loop the author's own text back at them. A mid-stream LLM failure is
+    surfaced as `data: {"error": "..."}` followed by [DONE], so the client always
+    sees a clean terminator.
     """
     loc = i18n.normalize_locale(locale)
-    context = text_before[-MAX_CONTEXT_CHARS:]
+    context = _collapse_repeats(text_before[-MAX_CONTEXT_CHARS:])
+    seen = {_norm(s) for s in _SENTENCE.findall(context) if _norm(s)}
     system = _build_system(title, outline, loc)
     try:
+        pending = ""  # buffer holding the in-progress sentence
+        stop = False
         for delta in llm.stream_completion(
             model=llm.model_light(),
             system=system,
             user_content=context,
             max_tokens=MAX_OUTPUT_TOKENS,
+            temperature=TEMPERATURE,
             paper_id=doc_id,  # logged under llm_calls.paper_id for /api/cost
             stage="autocomplete",
         ):
-            yield f"data: {json.dumps({'t': delta}, ensure_ascii=False)}\n\n"
+            pending += delta
+            # Flush each completed sentence; hold the trailing partial in `pending`.
+            while (m := re.search(r"[。．.！？!?\n]+", pending)) is not None:
+                cut = m.end()
+                sentence, pending = pending[:cut], pending[cut:]
+                key = _norm(sentence)
+                if key and key in seen:
+                    stop = True  # echoes the context (or a prior line) → cut here
+                    break
+                seen.add(key)
+                yield f"data: {json.dumps({'t': sentence}, ensure_ascii=False)}\n\n"
+            if stop:
+                break
+        # Flush a trailing partial sentence unless it, too, just repeats context.
+        if not stop and pending and _norm(pending) not in seen:
+            yield f"data: {json.dumps({'t': pending}, ensure_ascii=False)}\n\n"
     except Exception as exc:  # noqa: BLE001 — surface any failure to the client
         yield f"data: {json.dumps({'error': repr(exc)})}\n\n"
     yield "data: [DONE]\n\n"

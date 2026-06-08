@@ -1,8 +1,8 @@
 "use client";
 
-import { FilePlus2, FileText, Loader2, Trash2 } from "lucide-react";
+import { FilePlus2, FileText, Loader2, Trash2, Upload } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,15 @@ import { Link, useRouter } from "@/i18n/navigation";
 import {
   createDocument,
   deleteDocument,
+  importDocument,
   listDocuments,
   type EditorDocListItem,
 } from "@/lib/api";
+
+// Accepted import types (mirrors the backend's _IMPORT_EXTS).
+const IMPORT_ACCEPT =
+  ".txt,.md,.markdown,.mdown,.docx,.tex,.latex,text/plain,text/markdown," +
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 export default function EditorHomePage() {
   const t = useTranslations("editor");
@@ -21,6 +27,8 @@ export default function EditorHomePage() {
   const router = useRouter();
   const [docs, setDocs] = useState<EditorDocListItem[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     listDocuments()
@@ -46,6 +54,22 @@ export default function EditorHomePage() {
     }
   };
 
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-importing the same file
+    if (!file) return;
+    setImporting(true);
+    try {
+      const { title, content_json } = await importDocument(file);
+      const doc = await createDocument({ locale, title, content_json });
+      toast.success(t("imported", { title: doc.title }));
+      router.push(`/editor/${encodeURIComponent(doc.doc_id)}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+      setImporting(false);
+    }
+  };
+
   const handleDelete = async (docId: string) => {
     if (!confirm(t("confirmDelete"))) return;
     try {
@@ -64,14 +88,36 @@ export default function EditorHomePage() {
           <h1 className="text-2xl font-semibold">{t("title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t("subtitle")}</p>
         </div>
-        <Button onClick={handleCreate} disabled={creating}>
-          {creating ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <FilePlus2 className="h-4 w-4" />
-          )}
-          {t("newDocument")}
-        </Button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept={IMPORT_ACCEPT}
+            className="hidden"
+            onChange={handleImportFile}
+          />
+          <Button
+            variant="outline"
+            onClick={() => fileRef.current?.click()}
+            disabled={importing}
+            title={t("importHint")}
+          >
+            {importing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+            {t("import")}
+          </Button>
+          <Button onClick={handleCreate} disabled={creating}>
+            {creating ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FilePlus2 className="h-4 w-4" />
+            )}
+            {t("newDocument")}
+          </Button>
+        </div>
       </div>
 
       {docs === null ? (
@@ -91,7 +137,7 @@ export default function EditorHomePage() {
         <ul className="flex flex-col gap-2">
           {docs.map((d) => (
             <li key={d.doc_id}>
-              <Card className="flex items-center gap-3 p-0 transition-colors hover:bg-accent/50">
+              <Card className="flex flex-row items-center gap-3 p-0 transition-colors hover:bg-accent/50">
                 <Link
                   href={`/editor/${encodeURIComponent(d.doc_id)}`}
                   className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3"

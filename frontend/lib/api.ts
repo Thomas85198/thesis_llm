@@ -465,6 +465,55 @@ export async function fetchDocument(docId: string): Promise<EditorDoc> {
   return get<EditorDoc>(`/api/editor/documents/${encodeURIComponent(docId)}`);
 }
 
+export type RelinkStats = {
+  references: number;
+  academic: number;
+  matched: number;
+  intext_linked: number;
+};
+
+/**
+ * High-confidence citation relinking for an imported paper: parse the reference
+ * list, match each on OpenAlex (kept only on a strong title match), and replace
+ * in-text (Author, year) markers with live citation nodes. Heavy (LLM + OpenAlex
+ * + embeddings) — can take a minute. Returns the rewritten doc + stats.
+ */
+export async function relinkCitations(
+  docId: string,
+  content_json: ProseMirrorDoc
+): Promise<{ content_json: ProseMirrorDoc; stats: RelinkStats }> {
+  const res = await fetch(`${API_BASE}/api/editor/citations/relink`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ doc_id: docId, content_json }),
+  });
+  if (!res.ok) {
+    throw new Error(`relinkCitations failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json();
+}
+
+/**
+ * Parse an uploaded .txt / .md / .docx / .tex file into editor (ProseMirror)
+ * JSON server-side. Returns the detected title and content; the caller creates a
+ * new document from it. Embedded DOCX images are saved server-side and referenced
+ * by figure nodes, so they render and re-export like any uploaded image.
+ */
+export async function importDocument(
+  file: File
+): Promise<{ title: string; content_json: ProseMirrorDoc }> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/api/editor/import`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(`importDocument failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json();
+}
+
 export async function updateDocument(
   docId: string,
   body: { title?: string; content_json?: ProseMirrorDoc }

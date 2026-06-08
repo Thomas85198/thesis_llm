@@ -15,6 +15,15 @@ import {
 } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 
+import { apiBase } from "@/lib/api";
+
+/** Resolve a figure src for display. Uploaded images store a relative path
+ * (/api/editor/images/…) — prepend the API base; absolute/data URLs pass through. */
+function resolveSrc(src: string): string {
+  if (!src) return "";
+  return /^(https?:|data:|blob:)/.test(src) ? src : `${apiBase}${src}`;
+}
+
 type FigureLabels = { figureWord: string; captionPlaceholder: string };
 type FigureListLabels = { figureWord: string; title: string; empty: string; untitled: string };
 
@@ -68,7 +77,7 @@ function FigureView(props: NodeViewProps) {
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={node.attrs.src}
+        src={resolveSrc(node.attrs.src)}
         alt={node.attrs.caption || "figure"}
         className="max-h-[480px] max-w-full rounded border"
       />

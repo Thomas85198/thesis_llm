@@ -7,6 +7,7 @@ reads exactly like what the author sees on screen.
 """
 from __future__ import annotations
 
+import base64
 import io
 import os
 import re
@@ -60,6 +61,18 @@ def _image_bytes(src: str) -> tuple[bytes, str] | None:
         return data, (ext if ext in _IMG_EXTS else "png")
     except Exception:  # noqa: BLE001 — best-effort; fall back to caption text
         return None
+
+
+def _img_data_uri(src: str) -> str:
+    """Inline an image as a base64 data URI so a standalone HTML export (online
+    preview / print-to-PDF / downloaded .html) carries the picture itself — the
+    raw /api/editor/images/ path can't resolve outside the app's own origin."""
+    img = _image_bytes(src)
+    if not img:
+        return src
+    data, ext = img
+    mime = "jpeg" if ext == "jpg" else ext
+    return f"data:image/{mime};base64,{base64.b64encode(data).decode('ascii')}"
 
 
 # ---------- citation formatting (mirror frontend lib/citation-format.ts) ----------
@@ -159,6 +172,50 @@ def _plain_text(node: dict) -> str:
     if node.get("type") == "text":
         return node.get("text", "")
     return "".join(_plain_text(ch) for ch in _children(node))
+
+
+# Directory headings are skipped in a TOC — it shouldn't list itself.
+_DIR_HEADING_TITLES = {
+    "目錄", "目次", "圖目錄", "圖次", "表目錄", "表次",
+    "table of contents", "contents", "list of figures", "list of tables",
+}
+
+
+def _collect_headings(doc: dict) -> list[tuple[int, str]]:
+    """(level, text) for every content heading — source for a static table of contents."""
+    out: list[tuple[int, str]] = []
+
+    def walk(node: dict) -> None:
+        if node.get("type") == "heading":
+            text = _plain_text(node).strip()
+            if text.lower() not in _DIR_HEADING_TITLES:
+                out.append(((node.get("attrs") or {}).get("level", 1), text))
+        for ch in _children(node):
+            walk(ch)
+
+    walk(doc)
+    return out
+
+
+def _prepared_content(document: dict) -> dict:
+    """Expand each live `tableOfContents` node into a static, indented heading list
+    so exports carry a real table of contents (the editor-only node has no body)."""
+    raw = document.get("content_json") or {}
+    if not isinstance(raw, dict):
+        return {"type": "doc", "content": []}
+    headings = _collect_headings(raw)
+    blocks: list[dict] = []
+    for b in raw.get("content") or []:
+        if b.get("type") == "tableOfContents":
+            for level, text in headings:
+                if not text:
+                    continue
+                indent = "　" * (max(level, 1) - 1)  # full-width space per level
+                blocks.append({"type": "paragraph",
+                               "content": [{"type": "text", "text": f"{indent}{text}"}]})
+        else:
+            blocks.append(b)
+    return {"type": "doc", "content": blocks}
 
 
 def _table_parts(block: dict) -> tuple[str, list[list[str]]]:
@@ -271,7 +328,7 @@ def _set_academic_font(docx: Document) -> None:
 
 
 def to_docx(document: dict, style: str, refs_label: str) -> bytes:
-    content = document.get("content_json") or {}
+    content = _prepared_content(document)
     title = document.get("title") or "(untitled)"
     citations = collect_citations(content)
     order = [c.get("openalexId") for c in citations]
@@ -414,7 +471,7 @@ def to_latex(
     """Render to LaTeX. Returns (tex_source, images) where images is
     [(filename, bytes)] referenced by \\includegraphics — the route bundles them
     into a .zip when non-empty. `template` picks the \\documentclass."""
-    content = document.get("content_json") or {}
+    content = _prepared_content(document)
     title = document.get("title") or "(untitled)"
     citations = collect_citations(content)
     order = [c.get("openalexId") for c in citations]
@@ -474,7 +531,7 @@ def _inline_md(nodes: list[dict], style: str, order: list[str]) -> str:
 
 
 def to_markdown(document: dict, style: str, refs_label: str) -> str:
-    content = document.get("content_json") or {}
+    content = _prepared_content(document)
     title = document.get("title") or "(untitled)"
     citations = collect_citations(content)
     order = [c.get("openalexId") for c in citations]
@@ -527,7 +584,7 @@ def to_markdown(document: dict, style: str, refs_label: str) -> str:
 
 def to_text(document: dict, style: str, refs_label: str) -> str:
     """Strip-to-plain-text: citations as in-text markers, references appended."""
-    content = document.get("content_json") or {}
+    content = _prepared_content(document)
     title = document.get("title") or "(untitled)"
     citations = collect_citations(content)
     order = [c.get("openalexId") for c in citations]
@@ -630,7 +687,7 @@ ol.refs li { margin-bottom: .4rem; }
 
 
 def to_html(document: dict, style: str, refs_label: str) -> str:
-    content = document.get("content_json") or {}
+    content = _prepared_content(document)
     title = document.get("title") or "(untitled)"
     citations = collect_citations(content)
     order = [c.get("openalexId") for c in citations]
@@ -658,7 +715,8 @@ def to_html(document: dict, style: str, refs_label: str) -> str:
         elif t == "figure":
             a = b.get("attrs") or {}
             cap = f"<figcaption>{_h(a.get('caption', ''))}</figcaption>" if a.get("caption") else ""
-            parts.append(f'<figure><img src="{_h(a.get("src", ""))}" alt="{_h(a.get("caption", ""))}">{cap}</figure>')
+            uri = _img_data_uri(a.get("src", ""))
+            parts.append(f'<figure><img src="{_h(uri)}" alt="{_h(a.get("caption", ""))}">{cap}</figure>')
         elif t == "mathBlock":
             parts.append("<p>\\[" + (b.get("attrs") or {}).get("latex", "") + "\\]</p>")
         elif t == "tableBlock":

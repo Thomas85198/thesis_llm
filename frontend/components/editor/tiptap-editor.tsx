@@ -20,9 +20,11 @@ import {
   Image as ImageIcon,
   Images,
   Italic,
+  Link2,
   List,
   ListOrdered,
   ListTree,
+  Loader2,
   Minus,
   Pilcrow,
   Quote,
@@ -49,6 +51,7 @@ import { DefectHighlight } from "@/components/editor/defect-highlight";
 import { DefectPanel } from "@/components/editor/defect-panel";
 import { ExportPanel } from "@/components/editor/export-panel";
 import { Figure, FigureList } from "@/components/editor/figure-extension";
+import { TableOfContents } from "@/components/editor/toc-extension";
 import { MathBlock, MathInline } from "@/components/editor/math-extension";
 import { OutlinePanel } from "@/components/editor/outline-panel";
 import { RewritePanel } from "@/components/editor/rewrite-panel";
@@ -64,6 +67,7 @@ import { Button } from "@/components/ui/button";
 import {
   ChatRateLimitError,
   checkDraft,
+  relinkCitations,
   streamAutocomplete,
   uploadImage,
   type EditorDoc,
@@ -322,15 +326,53 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     []
   );
 
+  // Relink: rebuild an imported paper's plain-text references into live citations
+  // (high-confidence OpenAlex matches), so they show up in the citation panel.
+  const [relinking, setRelinking] = useState(false);
+  const handleRelinkCitations = useCallback(async () => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    setRelinking(true);
+    const tid = toast.loading(t("citation.relinking"));
+    try {
+      const { content_json, stats } = await relinkCitations(doc.doc_id, ed.getJSON());
+      ed.commands.setContent(content_json);
+      toast.success(
+        t("citation.relinkDone", { linked: stats.intext_linked, matched: stats.matched }),
+        { id: tid }
+      );
+    } catch (e) {
+      toast.error(String(e), { id: tid });
+    } finally {
+      setRelinking(false);
+    }
+  }, [doc.doc_id, t]);
+
   // Defect check: run the Thesis Critic on the whole draft (heavy, on demand) →
   // list defects in the panel + underline the cited sentences inline.
   const handleCheckDefects = useCallback(async () => {
     const ed = editorRef.current;
     if (!ed) return;
-    const text = ed.getText().trim();
+    // The critic checks a draft section, not a whole thesis. Prefer the selection;
+    // fall back to the full doc, but cap at the backend's limit (DraftCheckIn.text).
+    const MAX_CHECK_CHARS = 20000;
+    const sel = ed.state.selection;
+    const selected = sel.empty
+      ? ""
+      : ed.state.doc.textBetween(sel.from, sel.to, "\n", " ").trim();
+    let text = (selected || ed.getText()).trim();
     if (!text) {
       toast.error(t("defect.needsText"));
       return;
+    }
+    if (text.length > MAX_CHECK_CHARS) {
+      if (selected) {
+        text = text.slice(0, MAX_CHECK_CHARS);
+        toast.warning(t("defect.selectionTrimmed"));
+      } else {
+        toast.error(t("defect.tooLong"));
+        return;
+      }
     }
     openDefects();
     setDefectLoading(true);
@@ -376,6 +418,8 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     { title: t("slash.image"), hint: t("slash.imageHint"), icon: ImageIcon,
       keywords: ["image", "img", "picture", "photo", "圖", "圖片", "照片"],
       command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).run(); openImagePicker(); } },
+    { title: t("slash.toc"), icon: ListTree, keywords: ["toc", "contents", "outline", "目錄", "大綱"],
+      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertTableOfContents().run() },
     { title: t("slash.figureList"), icon: Images, keywords: ["figures", "list", "圖目錄", "目錄"],
       command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertFigureList().run() },
     { title: t("slash.mathInline"), icon: Variable,
@@ -408,6 +452,13 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           figureWord: t("figure.word"),
           title: t("figureList.title"),
           empty: t("figureList.empty"),
+          untitled: t("figure.untitled"),
+        },
+      }),
+      TableOfContents.configure({
+        labels: {
+          title: t("toc.title"),
+          empty: t("toc.empty"),
           untitled: t("figure.untitled"),
         },
       }),
@@ -580,6 +631,17 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
             onClick={() => openCitePanel("", editor.state.selection.to)}
           >
             <Search className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton
+            label={t("citation.relink")}
+            onClick={handleRelinkCitations}
+            disabled={relinking}
+          >
+            {relinking ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Link2 className="h-4 w-4" />
+            )}
           </ToolbarButton>
           <select
             value={citationStyle}

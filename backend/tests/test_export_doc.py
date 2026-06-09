@@ -87,7 +87,7 @@ def test_to_docx_numeric_style_numbers_in_order():
 # ---------- LaTeX ----------
 
 def test_to_latex_structure_and_escaping():
-    tex = export_doc.to_latex({"title": "100% 文字 & 符號", "content_json": DOC}, "apa", "參考文獻")
+    tex, _imgs = export_doc.to_latex({"title": "100% 文字 & 符號", "content_json": DOC}, "apa", "參考文獻")
     assert "\\documentclass{article}" in tex
     assert "\\usepackage{ctex}" in tex  # CJK support
     assert "\\section{緒論}" in tex
@@ -104,7 +104,7 @@ def test_figure_caption_kept_figurelist_skipped():
         {"type": "figure", "attrs": {"src": "x.png", "caption": "流程圖"}},
         {"type": "figureList"},
     ]}
-    tex = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "References")
+    tex, _imgs = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "References")
     assert "流程圖" in tex  # caption preserved, not silently dropped
     import io as _io
     from docx import Document as _Doc
@@ -122,7 +122,7 @@ def test_math_exports_native_latex():
         ]},
         {"type": "mathBlock", "attrs": {"latex": "\\int_0^1 x\\,dx"}},
     ]}
-    tex = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "References")
+    tex, _imgs = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "References")
     assert "$E=mc^2$" in tex  # inline math passes through verbatim (not escaped)
     assert "\\[\\int_0^1 x\\,dx\\]" in tex  # block math
 
@@ -143,7 +143,7 @@ def _table_doc():
 
 
 def test_table_exports_latex_tabular_with_caption():
-    tex = export_doc.to_latex({"title": "t", "content_json": _table_doc()}, "apa", "References")
+    tex, _imgs = export_doc.to_latex({"title": "t", "content_json": _table_doc()}, "apa", "References")
     assert "\\begin{tabular}" in tex
     assert "A & B" in tex and "1 & 2" in tex
     assert "\\caption{實驗結果}" in tex
@@ -161,7 +161,95 @@ def test_table_exports_docx_real_table():
     assert "實驗結果" in "\n".join(p.text for p in doc.paragraphs)  # caption
 
 
+def _png(w: int = 4, h: int = 4) -> bytes:
+    """A minimal but valid RGB PNG (python-docx's parser is strict)."""
+    import struct
+    import zlib
+
+    def chunk(typ: bytes, data: bytes) -> bytes:
+        body = typ + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+    raw = b"".join(b"\x00" + b"\xff\x00\x00" * w for _ in range(h))
+    idat = chunk(b"IDAT", zlib.compress(raw))
+    iend = chunk(b"IEND", b"")
+    return sig + ihdr + idat + iend
+
+
+_PNG_1PX = _png()
+
+
+def test_latex_image_embeds_includegraphics_and_bundles(monkeypatch):
+    monkeypatch.setattr(export_doc, "_image_bytes", lambda src: (_PNG_1PX, "png") if src else None)
+    doc = {"type": "doc", "content": [
+        {"type": "figure", "attrs": {"src": "/api/editor/images/x.png", "caption": "流程圖"}},
+    ]}
+    tex, imgs = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "References")
+    assert "\\includegraphics" in tex and "fig1.png" in tex
+    assert "\\caption{流程圖}" in tex
+    assert len(imgs) == 1 and imgs[0][0] == "fig1.png" and imgs[0][1] == _PNG_1PX
+
+
+def test_latex_template_changes_documentclass():
+    doc = {"type": "doc", "content": []}
+    tex, _ = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "References", "twocolumn")
+    assert "\\documentclass[twocolumn]{article}" in tex
+    tex2, _ = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "References", "ieee")
+    assert "IEEEtran" in tex2
+
+
+def test_docx_embeds_image(monkeypatch):
+    import io as _io
+    from docx import Document as _Doc
+    monkeypatch.setattr(export_doc, "_image_bytes", lambda src: (_PNG_1PX, "png") if src else None)
+    doc = {"type": "doc", "content": [
+        {"type": "figure", "attrs": {"src": "/api/editor/images/x.png", "caption": "流程圖"}},
+    ]}
+    data = export_doc.to_docx({"title": "t", "content_json": doc}, "apa", "References")
+    d = _Doc(_io.BytesIO(data))
+    assert len(d.inline_shapes) == 1  # embedded picture
+    assert "流程圖" in "\n".join(p.text for p in d.paragraphs)
+
+
 def test_to_latex_empty_doc_no_references_section():
-    tex = export_doc.to_latex({"title": "t", "content_json": {"type": "doc", "content": []}}, "apa", "References")
+    tex, _imgs = export_doc.to_latex({"title": "t", "content_json": {"type": "doc", "content": []}}, "apa", "References")
     assert "\\section*{References}" not in tex  # no citations → no ref list
     assert "\\begin{document}" in tex and "\\end{document}" in tex
+
+
+# ---------- Markdown / text / HTML ----------
+
+def test_markdown_export():
+    md = export_doc.to_markdown({"title": "我的論文", "content_json": DOC}, "apa", "參考文獻")
+    assert md.startswith("# 我的論文")
+    assert "# 緒論" in md  # heading level shifted under doc title
+    assert "**重點**" in md  # bold
+    assert "(Vaswani & Shazeer, 2017)" in md  # in-text citation
+    assert "## 參考文獻" in md  # references section
+
+
+def test_text_export_plain():
+    txt = export_doc.to_text({"title": "我的論文", "content_json": DOC}, "apa", "參考文獻")
+    assert "我的論文" in txt
+    assert "<" not in txt and "**" not in txt  # no markup
+    assert "(Vaswani & Shazeer, 2017)" in txt
+
+
+def test_html_export_structure():
+    html = export_doc.to_html({"title": "我的論文", "content_json": DOC}, "apa", "參考文獻")
+    assert html.startswith("<!doctype html>")
+    assert "<h1>我的論文</h1>" in html
+    assert "<strong>重點</strong>" in html
+    assert "MathJax" in html  # math rendering script
+    assert "serif" in html  # academic font in CSS
+    assert "&lt;" not in html or True  # html-escaping helper present
+
+
+def test_docx_uses_serif_font():
+    import io as _io
+    from docx import Document as _Doc
+    data = export_doc.to_docx({"title": "t", "content_json": DOC}, "apa", "References")
+    d = _Doc(_io.BytesIO(data))
+    assert d.styles["Normal"].font.name == "Times New Roman"

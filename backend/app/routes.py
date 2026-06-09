@@ -17,9 +17,11 @@ from pydantic import BaseModel, Field
 from . import autocomplete as autocomplete_mod
 from . import chat as chat_mod
 from . import citation as citation_mod
+from . import citation_relink as citation_relink_mod
 from . import claim_verifier as claim_verifier_mod
 from . import draft_check as draft_check_mod
 from . import export_doc
+from . import import_doc
 from . import grounding as grounding_mod
 from . import outline as outline_mod
 from . import rewrite as rewrite_mod
@@ -87,6 +89,11 @@ class CitationRefreshIn(BaseModel):
     openalex_ids: list[str] = Field(..., max_length=100)  # ids of the doc's citations
 
 
+class CitationRelinkIn(BaseModel):
+    doc_id: str
+    content_json: dict[str, Any]  # the live doc; references parsed + in-text markers linked
+
+
 class CitationVerifyIn(BaseModel):
     doc_id: str
     claim: str = Field(..., max_length=2000)  # the sentence to support
@@ -127,7 +134,8 @@ class ExportIn(BaseModel):
     content_json: dict[str, Any]  # the live TipTap doc (sent directly to avoid DB staleness)
     style: str = Field("apa", pattern="^(apa|mla|chicago|harvard|ieee|numeric)$")
     locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
-    format: str = Field("docx", pattern="^(docx|latex)$")
+    format: str = Field("docx", pattern="^(docx|latex|md|txt|html)$")
+    template: str = Field("article", pattern="^(article|twocolumn|ieee)$")  # LaTeX only
 
 
 router = APIRouter()
@@ -692,6 +700,25 @@ def recommend_citations(body: CitationRecommendIn) -> dict[str, Any]:
     return {"candidates": candidates}
 
 
+@router.post("/api/editor/citations/relink")
+def relink_citations(body: CitationRelinkIn) -> dict[str, Any]:
+    """Rebuild plain-text references in an imported doc into live citations.
+
+    Heavy (LLM parse + OpenAlex + embeddings) → rate-limited per doc (429).
+    High-confidence only: each reference is matched on OpenAlex and accepted just
+    when the title is a strong semantic match, then in-text (Author, year) markers
+    are replaced with citation nodes. Returns {content_json, stats}. The reference
+    panel regenerates from the new nodes, so matches show up there with links.
+    """
+    allowed, wait = citation_relink_mod.check_rate_limit(body.doc_id)
+    if not allowed:
+        raise HTTPException(429, f"relink rate limit reached, retry in ~{wait}s")
+    try:
+        return citation_relink_mod.relink(body.content_json, body.doc_id)
+    except Exception as exc:  # noqa: BLE001 — LLM/OpenAlex failure → 502
+        raise HTTPException(502, f"citation relink failed: {exc}") from exc
+
+
 @router.post("/api/editor/citations/refresh")
 def refresh_citations(body: CitationRefreshIn) -> dict[str, Any]:
     """Re-fetch the document's citations by OpenAlex id to refresh stale metadata
@@ -822,16 +849,72 @@ def export_document(body: ExportIn) -> Response:
         data = export_doc.to_docx(document, body.style, refs_label)
         media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ext = "docx"
-    else:  # latex (pattern-validated)
-        data = export_doc.to_latex(document, body.style, refs_label).encode("utf-8")
-        media = "application/x-tex"
-        ext = "tex"
+    elif body.format == "latex":
+        tex, images = export_doc.to_latex(document, body.style, refs_label, body.template)
+        if images:
+            # Bundle .tex + referenced images so the export compiles as-is.
+            import io
+            import zipfile
+
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("main.tex", tex)
+                for fname, fdata in images:
+                    zf.writestr(fname, fdata)
+            data = buf.getvalue()
+            media = "application/zip"
+            ext = "zip"
+        else:
+            data = tex.encode("utf-8")
+            media = "application/x-tex"
+            ext = "tex"
+    elif body.format == "md":
+        data = export_doc.to_markdown(document, body.style, refs_label).encode("utf-8")
+        media = "text/markdown; charset=utf-8"
+        ext = "md"
+    elif body.format == "txt":
+        data = export_doc.to_text(document, body.style, refs_label).encode("utf-8")
+        media = "text/plain; charset=utf-8"
+        ext = "txt"
+    else:  # html (for online preview / browser print-to-PDF)
+        data = export_doc.to_html(document, body.style, refs_label).encode("utf-8")
+        media = "text/html; charset=utf-8"
+        ext = "html"
     # RFC 5987 filename* carries the (possibly CJK) title; ascii filename is a fallback.
     name = quote((body.title or "document").strip() or "document")
     headers = {
         "Content-Disposition": f"attachment; filename=\"document.{ext}\"; filename*=UTF-8''{name}.{ext}"
     }
     return Response(content=data, media_type=media, headers=headers)
+
+
+_IMPORT_EXTS = {"txt", "text", "md", "markdown", "mdown", "docx", "tex", "latex"}
+_MAX_IMPORT_BYTES = 20 * 1024 * 1024  # 20 MB
+
+
+@router.post("/api/editor/import")
+async def import_document(file: UploadFile) -> dict[str, Any]:
+    """Parse an uploaded .txt / .md / .docx / .tex into editor (ProseMirror) JSON.
+
+    Returns {title, content_json}; the client creates a new document from it and
+    opens the editor. Embedded DOCX images are saved to UPLOAD_DIR and referenced
+    by figure nodes' src, so they render and re-export like any uploaded image.
+    """
+    if not file.filename:
+        raise HTTPException(400, "missing filename")
+    ext = Path(file.filename).suffix.lower().lstrip(".")
+    if ext not in _IMPORT_EXTS:
+        raise HTTPException(415, f"unsupported import type: .{ext or '?'}")
+    raw = await file.read()
+    if len(raw) > _MAX_IMPORT_BYTES:
+        raise HTTPException(413, "file too large (max 20MB)")
+    try:
+        title, content_json = import_doc.to_prosemirror(file.filename, raw)
+    except ValueError as exc:
+        raise HTTPException(415, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — malformed upload → 422
+        raise HTTPException(422, f"could not parse .{ext}: {exc}") from exc
+    return {"title": title, "content_json": content_json}
 
 
 _EDITOR_IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp"}

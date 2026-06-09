@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
@@ -6,6 +6,7 @@ import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { setRequestLocale } from "next-intl/server";
 
 import { JobTrackerProvider } from "@/components/job-tracker";
+import { PWARegister } from "@/components/pwa-register";
 import { SiteHeader } from "@/components/site-header";
 import { Toaster } from "@/components/ui/sonner";
 import { VersionWatcher } from "@/components/version-watcher";
@@ -27,6 +28,18 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Paper Review System",
   description: "EDU → ER → RST/FRU → Neo4j KG → 13 REL rule checks",
+  // PWA: installable on tablets (Add to Home Screen → standalone fullscreen).
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "論文檢核" },
+  icons: { apple: "/apple-icon-180.png" },
+  // Legacy iOS standalone flag (older iPadOS that doesn't yet honor the
+  // manifest's display:standalone for Add to Home Screen).
+  other: { "apple-mobile-web-app-capable": "yes" },
+};
+
+// theme_color / viewport for the standalone app shell (status bar tint on iPad).
+export const viewport: Viewport = {
+  themeColor: "#4F46E5",
 };
 
 export function generateStaticParams() {
@@ -74,6 +87,7 @@ export default async function LocaleLayout({
             <main className="flex-1 flex flex-col">{children}</main>
           </JobTrackerProvider>
           <VersionWatcher />
+          <PWARegister />
           <Toaster richColors position="top-center" />
         </NextIntlClientProvider>
       </body>

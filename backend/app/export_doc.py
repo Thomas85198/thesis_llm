@@ -488,9 +488,18 @@ def to_latex(
 
     docclass = _LATEX_TEMPLATES.get(template, _LATEX_TEMPLATES["article"])
     # ctex → CJK; graphicx → figures; ulem → \sout; hyperref → links.
+    # ctex's CJK fonts (fandol) need XeLaTeX/LuaLaTeX — pdfLaTeX fails with
+    # "fontset fandol unavailable". The magic comment makes TeXShop / VS Code /
+    # local latexmk pick XeLaTeX automatically (Overleaf: set Menu → Compiler).
     tex = (
+        f"% !TEX program = xelatex\n"
         f"{docclass}\n"
         "\\usepackage{ctex}\n"
+        # ctex's default Fandol font is missing many Traditional-Chinese-only
+        # glyphs (為/致/夠/謹…), which render as boxes. Prefer Noto Serif CJK TC
+        # (full coverage, bundled on Overleaf); keep Fandol where Noto is absent
+        # so local compiles don't break with a "font not found" error.
+        "\\IfFontExistsTF{Noto Serif CJK TC}{\\setCJKmainfont{Noto Serif CJK TC}}{}\n"
         "\\usepackage{graphicx}\n"
         "\\usepackage[normalem]{ulem}\n"
         "\\usepackage{hyperref}\n"

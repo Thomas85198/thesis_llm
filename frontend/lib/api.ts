@@ -764,7 +764,9 @@ export async function uploadImage(file: File): Promise<string> {
 
 // ---------- editor mode: export (DOCX / LaTeX) ----------
 
-export type ExportFormat = "docx" | "latex" | "md" | "txt" | "html";
+// "latex" may come back as a .zip when figures exist; "pdf" is compiled
+// server-side with XeLaTeX (thesis-grade typesetting).
+export type ExportFormat = "docx" | "latex" | "pdf" | "md" | "txt" | "html";
 
 /**
  * Render the live document to a .docx or .tex file and return it as a Blob. The

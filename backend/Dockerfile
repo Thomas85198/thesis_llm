@@ -34,12 +34,25 @@ FROM python:3.11-slim AS runtime
 # tesseract + chi_tra/eng traineddata power the OCR fallback in
 # pipeline._extract_pdf_spans_ocr (triggered when a PDF's native text layer
 # is glyph-index garbage, e.g. LaTeX Type-3 fonts without a ToUnicode CMap).
+# texlive-* + fonts-noto-cjk power the one-click thesis-grade PDF export
+# (app/latex_compile.py runs xelatex on the generated .tex). fonts-noto-cjk-extra
+# carries Noto Serif CJK TC — without it fontspec silently falls back to Fandol,
+# which renders many Traditional-Chinese glyphs as boxes.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tini \
     tesseract-ocr \
     tesseract-ocr-eng \
     tesseract-ocr-chi-tra \
     tesseract-ocr-chi-sim \
+    texlive-xetex \
+    texlive-fonts-recommended \
+    texlive-latex-recommended \
+    texlive-latex-extra \
+    texlive-plain-generic \
+    texlive-publishers \
+    texlive-lang-chinese \
+    fonts-noto-cjk \
+    fonts-noto-cjk-extra \
     && rm -rf /var/lib/apt/lists/*
 
 # PyMuPDF's get_textpage_ocr reads this to locate traineddata files. The

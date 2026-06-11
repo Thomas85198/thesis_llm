@@ -29,6 +29,15 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_3_0": {
+      "title": "Upload tracking dashboard: failures no longer vanish",
+      "summary": "Adds an upload audit system that fixes the blind spot where a failed paper upload left no trace of which file or what error. Every upload (success/failure/cache hit) now leaves a persistent record; on failure the maintainer is emailed automatically and the original file is kept for download to reproduce the problem locally; a daily upload summary email is also sent. The /admin page is token-protected.",
+      "changes": {
+        "0": "Upload audit trail + admin page: a new /admin dashboard lists every upload's time, filename, status, failed stage and error. The records are independent of the History list — failed papers don't appear in History but are always queryable here. Gated by an ADMIN_TOKEN (disabled when unset).",
+        "1": "Instant failure email + daily summary: when an upload's analysis fails, the maintainer is emailed immediately (filename, failed stage, error) — no need to be watching; a daily digest of the day's uploads is also sent. Both optional — skipped silently when SMTP isn't configured.",
+        "2": "Failed originals kept for download: previously a failed paper's file became an orphan on disk and its error lived only in memory (lost on restart). Now failed files are retained and downloadable from the admin page to reproduce the issue locally."
+      }
+    },
     "4_2_1": {
       "title": "Fix the un-dismissable \"new version\" update banner",
       "summary": "On browsers that had installed the tablet app or visited before, the service worker also cached the /version check endpoint; after a deploy the new page kept comparing against a stale version number, so the update banner reappeared immediately even after clicking refresh. The service worker now only caches immutable static assets — version checks always hit the network.",

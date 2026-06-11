@@ -10,7 +10,11 @@ Env knobs for deployment:
 """
 from __future__ import annotations
 
+import asyncio
 import os
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -18,9 +22,29 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
+from app import db, notify  # noqa: E402
 from app.routes import router  # noqa: E402
 
-app = FastAPI(title="Thesis Checker")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start the daily-summary scheduler only when email is actually configured,
+    # so dev/test boxes don't spin a pointless task. The task is cancelled on
+    # shutdown by exiting the context.
+    task = None
+    if notify.smtp_configured():
+        task = asyncio.create_task(_daily_summary_loop())
+        print("[main] daily summary scheduler started")
+    else:
+        print("[main] SMTP not configured — daily summary scheduler not started")
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+
+
+app = FastAPI(title="Thesis Checker", lifespan=lifespan)
 
 CORS_ORIGIN_REGEX = os.getenv(
     "CORS_ORIGIN_REGEX",
@@ -42,6 +66,34 @@ app.add_middleware(
 )
 
 app.include_router(router)
+
+# ---------- daily upload summary email ----------
+# uvicorn runs a single worker, so one asyncio task here is the whole schedule
+# (no cron, no extra dependency). Skipped entirely when SMTP isn't configured.
+
+SUMMARY_TZ = ZoneInfo("Asia/Taipei")
+
+
+def _seconds_until_next_run(hour: int) -> float:
+    now = datetime.now(SUMMARY_TZ)
+    target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+
+async def _daily_summary_loop() -> None:
+    hour = int(os.getenv("DAILY_SUMMARY_HOUR", "9"))
+    while True:
+        await asyncio.sleep(_seconds_until_next_run(hour))
+        try:
+            since = (datetime.now(SUMMARY_TZ) - timedelta(days=1)).astimezone(
+                ZoneInfo("UTC")
+            ).isoformat()
+            stats = db.upload_stats_since(since)
+            notify.send_daily_summary(stats, window_label="24 小時")
+        except Exception as exc:  # never let the loop die
+            print(f"[main] daily summary failed: {exc!r}")
 
 
 @app.get("/")

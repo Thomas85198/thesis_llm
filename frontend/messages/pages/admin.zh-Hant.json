@@ -1,0 +1,31 @@
+{
+  "title": "上傳後台",
+  "desc": "每次上傳的稽核軌跡。失敗的論文不會進歷史列表，但這裡永遠查得到檔名與錯誤，並可下載原始檔在本地重現。",
+  "tokenPrompt": "請輸入後台存取權杖",
+  "tokenPlaceholder": "Admin token",
+  "tokenSubmit": "進入",
+  "tokenHint": "權杖由後端 ADMIN_TOKEN 設定；輸入後會記在這台瀏覽器。",
+  "authFailed": "權杖無效，請重新輸入。",
+  "disabled": "後台未啟用：伺服器尚未設定 ADMIN_TOKEN。",
+  "loadError": "載入失敗",
+  "logout": "清除權杖",
+  "refresh": "重新整理",
+  "filterAll": "全部",
+  "filterError": "只看失敗",
+  "empty": "目前沒有上傳記錄。",
+  "colTime": "時間",
+  "colFile": "檔名",
+  "colSize": "大小",
+  "colStatus": "狀態",
+  "colStage": "失敗階段",
+  "colError": "錯誤訊息",
+  "colAction": "操作",
+  "download": "下載原檔",
+  "downloadFailed": "下載失敗（檔案可能已不在伺服器）。",
+  "status": {
+    "pending": "進行中",
+    "done": "成功",
+    "error": "失敗",
+    "cached": "快取命中"
+  }
+}

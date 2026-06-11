@@ -167,6 +167,38 @@ CREATE TABLE IF NOT EXISTS paper_chunks (
     source      TEXT NOT NULL,           -- 'fulltext' | 'abstract'
     PRIMARY KEY (openalex_id, idx)
 );
+
+-- ============================================================
+-- 表 8: upload_events — 每次上傳的持久化稽核軌跡 (失敗追蹤)
+-- ----------------------------------------------------------------
+-- 每筆對應使用者按下「開始分析」的一次上傳。和 papers 表的差別:
+-- papers 在分析「失敗」時會被 delete_paper 清掉 (避免污染歷史列表)，
+-- 但 upload_events **永遠保留**，所以維護者事後仍查得到「老師傳了什麼
+-- 檔、錯在哪個階段、什麼錯誤」。失敗的 PDF 也不刪 (留在 UPLOAD_DIR)，
+-- pdf_path 記 basename 供後台下載重現。狀態流:
+--   pending → done   (分析成功)
+--   pending → error  (分析拋例外；error_* 欄位填入)
+--   cached           (同檔之前已分析過，直接命中快取，不重跑)
+-- 這張表獨立於 papers，delete_paper 不會碰它。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS upload_events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id        TEXT NOT NULL,        -- 對應記憶體 job (format 'job:xxxxxxxx')
+    paper_id      TEXT,                 -- 對應 paper (失敗清除後仍留此 id 字串)
+    filename      TEXT,                 -- 使用者上傳的原始檔名
+    file_size     INTEGER,             -- 上傳位元組大小
+    content_hash  TEXT,                 -- 檔案 SHA-256 (對照去重)
+    status        TEXT NOT NULL CHECK (status IN ('pending','done','error','cached')),
+    error_type    TEXT,                 -- 例外類別名 (e.g. 'RuntimeError')
+    error_stage   TEXT,                 -- 失敗階段 (extracting/title/graph/checking)
+    error_message TEXT,                 -- repr(exc) 全文
+    pdf_path      TEXT,                 -- PDF basename 相對 UPLOAD_DIR (反查/下載)
+    created_at    TEXT NOT NULL,        -- 上傳時間 (ISO 8601 UTC)
+    finished_at   TEXT                  -- 完成/失敗時間 (ISO 8601 UTC)
+);
+CREATE INDEX IF NOT EXISTS idx_upload_events_status ON upload_events(status);
+CREATE INDEX IF NOT EXISTS idx_upload_events_created ON upload_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_upload_events_job ON upload_events(job_id);
 """
 
 
@@ -380,6 +412,128 @@ def log_llm_call(
                 _now(),
             ),
         )
+
+
+# ---------- upload events (persistent upload audit trail) ----------
+
+def log_upload_start(
+    *,
+    job_id: str,
+    paper_id: str | None,
+    filename: str | None,
+    file_size: int | None,
+    content_hash: str | None,
+    pdf_path: str | None,
+    status: str = "pending",
+) -> None:
+    """Record an upload the moment the file lands on disk.
+
+    Written BEFORE analysis runs so that even a crash mid-analysis leaves a
+    persistent trace (papers row may get deleted on failure; this one never is).
+    """
+    with connect() as c:
+        c.execute(
+            """
+            INSERT INTO upload_events
+                (job_id, paper_id, filename, file_size, content_hash,
+                 status, pdf_path, created_at, finished_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                job_id,
+                paper_id,
+                filename,
+                file_size,
+                content_hash,
+                status,
+                pdf_path,
+                _now(),
+                _now() if status in ("done", "cached") else None,
+            ),
+        )
+
+
+def mark_upload_done(job_id: str) -> None:
+    with connect() as c:
+        c.execute(
+            "UPDATE upload_events SET status='done', finished_at=? WHERE job_id=?",
+            (_now(), job_id),
+        )
+
+
+def mark_upload_failed(
+    job_id: str, error_type: str, error_stage: str, error_message: str
+) -> None:
+    with connect() as c:
+        c.execute(
+            """
+            UPDATE upload_events
+            SET status='error', error_type=?, error_stage=?, error_message=?,
+                finished_at=?
+            WHERE job_id=?
+            """,
+            (error_type, error_stage, error_message, _now(), job_id),
+        )
+
+
+def list_upload_events(
+    limit: int = 100, status: str | None = None
+) -> list[dict[str, Any]]:
+    """Most-recent-first upload events for the admin dashboard."""
+    with connect() as c:
+        if status:
+            rows = c.execute(
+                """
+                SELECT * FROM upload_events WHERE status=?
+                ORDER BY created_at DESC LIMIT ?
+                """,
+                (status, limit),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT * FROM upload_events ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_upload_event(event_id: int) -> dict[str, Any] | None:
+    with connect() as c:
+        row = c.execute(
+            "SELECT * FROM upload_events WHERE id=?", (event_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def upload_stats_since(iso_ts: str) -> dict[str, Any]:
+    """Aggregate uploads since iso_ts (for the daily summary email).
+
+    Returns {total, by_status: {...}, failures: [{filename, error_type,
+    error_stage, error_message, created_at}, ...]}.
+    """
+    with connect() as c:
+        counts = c.execute(
+            """
+            SELECT status, COUNT(*) AS n FROM upload_events
+            WHERE created_at >= ? GROUP BY status
+            """,
+            (iso_ts,),
+        ).fetchall()
+        failures = c.execute(
+            """
+            SELECT filename, error_type, error_stage, error_message, created_at
+            FROM upload_events
+            WHERE created_at >= ? AND status='error'
+            ORDER BY created_at DESC
+            """,
+            (iso_ts,),
+        ).fetchall()
+    by_status = {r["status"]: r["n"] for r in counts}
+    return {
+        "total": sum(by_status.values()),
+        "by_status": by_status,
+        "failures": [dict(r) for r in failures],
+    }
 
 
 # ---------- defect judgments (human-as-judge evaluation) ----------

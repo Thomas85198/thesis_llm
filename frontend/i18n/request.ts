@@ -13,14 +13,16 @@ export default getRequestConfig(async ({ requestLocale }) => {
     ? requested
     : routing.defaultLocale;
 
-  const [core, stats, about, changelog, kgflow, editor] = await Promise.all([
-    import(`../messages/${locale}.json`),
-    import(`../messages/pages/stats.${locale}.json`),
-    import(`../messages/pages/about.${locale}.json`),
-    import(`../messages/pages/changelog.${locale}.json`),
-    import(`../messages/pages/kgflow.${locale}.json`),
-    import(`../messages/pages/editor.${locale}.json`),
-  ]);
+  const [core, stats, about, changelog, kgflow, editor, admin] =
+    await Promise.all([
+      import(`../messages/${locale}.json`),
+      import(`../messages/pages/stats.${locale}.json`),
+      import(`../messages/pages/about.${locale}.json`),
+      import(`../messages/pages/changelog.${locale}.json`),
+      import(`../messages/pages/kgflow.${locale}.json`),
+      import(`../messages/pages/editor.${locale}.json`),
+      import(`../messages/pages/admin.${locale}.json`),
+    ]);
 
   return {
     locale,
@@ -31,6 +33,7 @@ export default getRequestConfig(async ({ requestLocale }) => {
       changelog: changelog.default,
       kgFlow: kgflow.default,
       editor: editor.default,
+      admin: admin.default,
     },
   };
 });

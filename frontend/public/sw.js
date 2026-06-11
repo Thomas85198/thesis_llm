@@ -5,10 +5,13 @@
  *  - never caches non-GET,
  *  - navigations are network-first with an offline fallback to the last good
  *    page, so a flaky tablet Wi-Fi still shows something,
- *  - same-origin hashed assets (/_next/static/...) are cache-first (immutable).
+ *  - ONLY same-origin hashed/immutable assets (/_next/static/..., icons, fonts)
+ *    are cache-first; every other GET (e.g. /version, RSC payloads) passes
+ *    through to the network untouched — v1 cached /version and poisoned the
+ *    update banner into showing forever after a deploy.
  * Bump CACHE to invalidate everything on the next activation.
  */
-const CACHE = "paper-review-v1";
+const CACHE = "paper-review-v2";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -47,7 +50,14 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Same-origin static assets: cache-first (hashed → safe), revalidate in bg.
+  // Cache-first is safe ONLY for immutable assets: content-hashed bundles and
+  // static icons/fonts. Anything else (/version, RSC payloads, JSON routes)
+  // must hit the network every time — let the browser handle it.
+  const immutable =
+    url.pathname.startsWith("/_next/static/") ||
+    /\.(png|svg|ico|jpg|jpeg|webp|woff2?)$/.test(url.pathname);
+  if (!immutable) return;
+
   event.respondWith(
     (async () => {
       const cached = await caches.match(req);

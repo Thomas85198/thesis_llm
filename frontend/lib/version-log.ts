@@ -38,6 +38,13 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.2.1",
+    date: "2026-06-11",
+    changes: [
+      { type: "fix" }, // SW 不再快取 /version：更新橫幅關不掉
+    ],
+  },
+  {
     version: "4.2.0",
     date: "2026-06-11",
     changes: [

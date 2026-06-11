@@ -29,6 +29,13 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_2_1": {
+      "title": "Fix the un-dismissable \"new version\" update banner",
+      "summary": "On browsers that had installed the tablet app or visited before, the service worker also cached the /version check endpoint; after a deploy the new page kept comparing against a stale version number, so the update banner reappeared immediately even after clicking refresh. The service worker now only caches immutable static assets — version checks always hit the network.",
+      "changes": {
+        "0": "Service worker no longer caches /version or other dynamic requests (cache-first is limited to hashed static assets and icons), and the cache name was bumped so existing devices purge the stale entry; the update banner now appears once, only when a new version is really live, and goes away after refresh."
+      }
+    },
     "4_2_0": {
       "title": "One-click thesis PDF, Taiwan thesis template, tablet app, and stability fixes",
       "summary": "Export pipeline upgrade: compile editor documents straight to a thesis PDF (server-side XeLaTeX with CJK support out of the box), plus a new template matching Taiwan degree-thesis conventions; the frontend now installs as a standalone tablet app. Also fixes two stability issues: CJK/filename problems in LaTeX export, and analysis failures on very long papers with large appendices.",

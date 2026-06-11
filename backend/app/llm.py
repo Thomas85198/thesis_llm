@@ -40,6 +40,15 @@ RETRYABLE_ERRORS = (
 MAX_RETRIES = 4  # total attempts = MAX_RETRIES + 1
 
 
+class LLMOutputTruncatedError(RuntimeError):
+    """The model hit max_completion_tokens mid-output (finish_reason="length").
+
+    On the forced-tool path this means the arguments JSON is incomplete —
+    retrying the same input deterministically truncates again (temperature 0),
+    so callers must shrink the input (chunk the section) instead of retrying.
+    """
+
+
 def _is_permanent_quota_error(exc: Exception) -> bool:
     """insufficient_quota / billing-limit comes back as a 429 RateLimitError but
     will NEVER succeed on retry. Detect it so we fail fast instead of burning the
@@ -273,6 +282,16 @@ def call_with_tool(
         pass
 
     choice = response.choices[0]
+    # finish_reason="length" → output hit max_completion_tokens and the tool
+    # arguments are cut mid-JSON (or, worse, happen to still parse but are
+    # incomplete). Either way the result is unusable; raise the dedicated
+    # error so callers can shrink the input rather than show a raw JSON blob.
+    if choice.finish_reason == "length":
+        raise LLMOutputTruncatedError(
+            f"LLM output hit the {max_tokens}-token cap on stage={stage} "
+            f"(model={model}, output_tokens={out_tok}) — input too large for "
+            f"one call; the caller should split it into smaller chunks."
+        )
     tool_calls = choice.message.tool_calls or []
     for tc in tool_calls:
         if tc.function.name == tool_name:

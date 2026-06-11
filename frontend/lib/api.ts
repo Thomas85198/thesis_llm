@@ -983,3 +983,71 @@ export async function refreshCitations(
   };
   return data.citations;
 }
+
+// ---------- Admin: upload audit trail ----------
+
+export type UploadEvent = {
+  id: number;
+  job_id: string;
+  paper_id: string | null;
+  filename: string | null;
+  file_size: number | null;
+  content_hash: string | null;
+  status: "pending" | "done" | "error" | "cached";
+  error_type: string | null;
+  error_stage: string | null;
+  error_message: string | null;
+  pdf_path: string | null;
+  created_at: string;
+  finished_at: string | null;
+};
+
+// Thrown so the admin page can distinguish "wrong token" (re-prompt) and
+// "admin disabled" (ADMIN_TOKEN unset on the server) from generic errors.
+export class AdminAuthError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = "AdminAuthError";
+  }
+}
+
+export async function fetchAdminUploads(
+  token: string,
+  status?: string,
+  limit = 200
+): Promise<UploadEvent[]> {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (status) qs.set("status", status);
+  const res = await fetch(`${API_BASE}/api/admin/uploads?${qs.toString()}`, {
+    cache: "no-store",
+    headers: { "X-Admin-Token": token },
+  });
+  if (res.status === 401 || res.status === 503) {
+    throw new AdminAuthError(res.status, await res.text());
+  }
+  if (!res.ok) throw new Error(`admin/uploads → ${res.status} ${await res.text()}`);
+  const data = (await res.json()) as { items: UploadEvent[] };
+  return data.items;
+}
+
+// Download the original uploaded file via fetch+blob so the admin token rides
+// in a header (not the URL). Triggers a browser download client-side.
+export async function downloadAdminUploadFile(
+  token: string,
+  event: UploadEvent
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/admin/uploads/${event.id}/file`,
+    { headers: { "X-Admin-Token": token } }
+  );
+  if (!res.ok) throw new Error(`download → ${res.status} ${await res.text()}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = event.filename || `${event.job_id}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

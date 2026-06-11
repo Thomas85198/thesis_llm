@@ -18,6 +18,7 @@ dependencies = [
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
     "rapidfuzz>=3.10",
+    "tzdata>=2024.1",  # zoneinfo data for the daily-summary scheduler (slim image has no OS tzdata)
 ]
 
 [project.optional-dependencies]

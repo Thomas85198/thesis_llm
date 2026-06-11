@@ -10,10 +10,11 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+from . import notify
 from . import autocomplete as autocomplete_mod
 from . import chat as chat_mod
 from . import citation as citation_mod
@@ -195,6 +196,9 @@ def _run_analysis(
     raw: bytes,
     filename: str,
 ) -> None:
+    # Track which phase we're in so a failure records WHERE it broke
+    # (upload_events.error_stage). Updated as the pipeline advances.
+    stage = "extracting"
     try:
         # Extraction moved here from the upload handler so the OCR fallback
         # (used when the PDF has no ToUnicode CMap) doesn't block the HTTP
@@ -221,6 +225,7 @@ def _run_analysis(
         # falling back to the filename. Saves users from retyping / renaming.
         resolved_title = title.strip()
         if not resolved_title:
+            stage = "title"
             _set_job(job_id, message="Detecting paper title…")
             resolved_title = (
                 pipeline.detect_paper_title(spans, paper_id=paper_id) or filename
@@ -228,12 +233,14 @@ def _run_analysis(
             _set_job(job_id, title=resolved_title)
             db.update_paper_title(paper_id, resolved_title)
 
+        stage = "graph"
         _set_job(job_id, status="extracting", message="Building EDU/ER/RST/FRU…")
         graph = pipeline.build_paper_graph(
             spans, title=resolved_title, paper_id=paper_id
         )
         kg.write_graph(graph)
 
+        stage = "checking"
         _set_job(job_id, status="checking", message="Running 13 REL rules…")
         defects, rule_meta = rules.check_all_rules(paper_id, paper_title=resolved_title)
 
@@ -267,6 +274,7 @@ def _run_analysis(
         )
         result_dump = result.model_dump()
         db.upsert_result(paper_id, result_dump)
+        db.mark_upload_done(job_id)
         _set_job(
             job_id,
             status="done",
@@ -274,6 +282,26 @@ def _run_analysis(
             finished_at=datetime.now(timezone.utc).isoformat(),
         )
     except Exception as exc:
+        # Persist the failure FIRST (before the papers row gets cleaned up) so
+        # the audit trail survives — upload_events is independent of papers and
+        # keeps filename + pdf_path + error for later reproduction.
+        try:
+            db.mark_upload_failed(job_id, type(exc).__name__, stage, repr(exc))
+        except Exception as log_exc:
+            print(f"[routes] failed to log upload failure: {log_exc!r}")
+        # Best-effort email alert — must never mask the original error.
+        try:
+            ev = next(
+                (e for e in db.list_upload_events(limit=20) if e["job_id"] == job_id),
+                None,
+            )
+            if ev is not None:
+                notify.notify_upload_failure(ev)
+        except Exception as notify_exc:
+            print(f"[routes] failed to send failure alert: {notify_exc!r}")
+        # Then clean up papers/KG so the failed paper doesn't pollute history.
+        # The PDF on disk is deliberately NOT deleted — the admin page can offer
+        # it for download to reproduce the failure locally.
         try:
             kg.clear_paper(paper_id)
             db.delete_paper(paper_id)
@@ -315,6 +343,15 @@ async def upload(
                 message="Cached (same file already analyzed).",
                 result=cached_result,
             )
+            db.log_upload_start(
+                job_id=job_id,
+                paper_id=cached_paper_id,
+                filename=file.filename,
+                file_size=len(raw),
+                content_hash=content_hash,
+                pdf_path=cached.get("pdf_path"),
+                status="cached",
+            )
             return {
                 "job_id": job_id,
                 "paper_id": cached_paper_id,
@@ -347,6 +384,16 @@ async def upload(
         created_at=datetime.now(timezone.utc).isoformat(),
         message="Queued.",
     )
+    # Persistent audit row (status='pending'); _run_analysis flips it to
+    # done/error. Survives restarts and the on-failure papers cleanup.
+    db.log_upload_start(
+        job_id=job_id,
+        paper_id=paper_id,
+        filename=file.filename,
+        file_size=len(raw),
+        content_hash=content_hash,
+        pdf_path=pdf_filename,
+    )
     background.add_task(
         _run_analysis,
         job_id,
@@ -364,6 +411,62 @@ def job_status(job_id: str) -> dict[str, Any]:
     if job is None:
         raise HTTPException(404, "unknown job")
     return job
+
+
+# ---------- admin: upload audit trail ----------
+
+def _require_admin(x_admin_token: str | None = Header(default=None)) -> None:
+    """Gate admin endpoints behind ADMIN_TOKEN.
+
+    If ADMIN_TOKEN isn't set, the admin surface is disabled entirely (503) so
+    it never sits open on a public IP. A wrong/missing token is 401.
+    """
+    expected = os.getenv("ADMIN_TOKEN")
+    if not expected:
+        raise HTTPException(503, "admin disabled (ADMIN_TOKEN not set)")
+    if x_admin_token != expected:
+        raise HTTPException(401, "invalid admin token")
+
+
+@router.get("/api/admin/uploads")
+def admin_list_uploads(
+    x_admin_token: str | None = Header(default=None),
+    limit: int = 100,
+    status: str | None = None,
+) -> dict[str, Any]:
+    """Most-recent-first upload events for the admin dashboard."""
+    _require_admin(x_admin_token)
+    limit = max(1, min(limit, 500))
+    return {"items": db.list_upload_events(limit=limit, status=status)}
+
+
+@router.get("/api/admin/uploads/{event_id}/file")
+def admin_upload_file(
+    event_id: int, x_admin_token: str | None = Header(default=None)
+) -> FileResponse:
+    """Download the original uploaded file for an event (to reproduce a failure).
+
+    The PDF is kept on disk even when analysis fails, so failed uploads remain
+    downloadable here long after the papers row was cleaned up.
+    """
+    _require_admin(x_admin_token)
+    ev = db.get_upload_event(event_id)
+    if ev is None:
+        raise HTTPException(404, "upload event not found")
+    path = _resolve_pdf_path(ev.get("pdf_path"))
+    if not path or not path.exists():
+        raise HTTPException(404, "file missing on disk")
+    download_name = ev.get("filename") or path.name
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=download_name,
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename*=UTF-8''{quote(download_name)}"
+            )
+        },
+    )
 
 
 @router.delete("/api/papers/{paper_id}")

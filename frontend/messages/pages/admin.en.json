@@ -1,0 +1,31 @@
+{
+  "title": "Upload Admin",
+  "desc": "Audit trail of every upload. Failed papers don't appear in History, but their filename and error are always queryable here, and the original file can be downloaded to reproduce the failure locally.",
+  "tokenPrompt": "Enter the admin access token",
+  "tokenPlaceholder": "Admin token",
+  "tokenSubmit": "Enter",
+  "tokenHint": "The token is set by the backend ADMIN_TOKEN; once entered it is remembered in this browser.",
+  "authFailed": "Invalid token, please try again.",
+  "disabled": "Admin disabled: the server has not set ADMIN_TOKEN.",
+  "loadError": "Failed to load",
+  "logout": "Clear token",
+  "refresh": "Refresh",
+  "filterAll": "All",
+  "filterError": "Failures only",
+  "empty": "No upload records yet.",
+  "colTime": "Time",
+  "colFile": "File",
+  "colSize": "Size",
+  "colStatus": "Status",
+  "colStage": "Failed stage",
+  "colError": "Error message",
+  "colAction": "Action",
+  "download": "Download original",
+  "downloadFailed": "Download failed (the file may no longer be on the server).",
+  "status": {
+    "pending": "In progress",
+    "done": "Done",
+    "error": "Failed",
+    "cached": "Cache hit"
+  }
+}

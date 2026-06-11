@@ -91,12 +91,50 @@ def test_to_latex_structure_and_escaping():
     assert "\\documentclass{article}" in tex
     assert "\\usepackage{ctex}" in tex  # CJK support
     assert "\\section{緒論}" in tex
+    # CJK content auto-selects the TC font and pins XeLaTeX for local toolchains
+    assert "\\setCJKmainfont{Noto Serif CJK TC}" in tex
+    assert tex.startswith("% !TEX program = xelatex")
     assert "\\textbf{重點}" in tex
     assert "\\begin{itemize}" in tex
     assert "(Vaswani \\& Shazeer, 2017)" in tex  # marker's & is LaTeX-escaped
     assert "\\section*{參考文獻}" in tex
     # special chars in the title are escaped
     assert "100\\% 文字 \\& 符號" in tex
+
+
+def test_to_latex_latin_only_doc_compiles_under_pdflatex():
+    # No CJK anywhere → no ctex / fontspec / magic comment, so the file builds
+    # on Overleaf's default pdfLaTeX without touching the compiler setting.
+    doc = {"type": "doc", "content": [
+        {"type": "paragraph", "content": [{"type": "text", "text": "Plain English only."}]},
+    ]}
+    tex, _imgs = export_doc.to_latex({"title": "An English Title", "content_json": doc}, "apa", "References")
+    assert "ctex" not in tex
+    assert "setCJKmainfont" not in tex
+    assert "!TEX program" not in tex
+    assert tex.startswith("\\documentclass{article}")
+
+
+def test_to_latex_cjk_in_body_triggers_cjk_preamble_even_with_latin_title():
+    doc = {"type": "doc", "content": [
+        {"type": "paragraph", "content": [{"type": "text", "text": "內文有中文。"}]},
+    ]}
+    tex, _imgs = export_doc.to_latex({"title": "English Title", "content_json": doc}, "apa", "References")
+    assert "\\usepackage{ctex}" in tex
+    assert "\\setCJKmainfont{Noto Serif CJK TC}" in tex
+
+
+def test_to_latex_caption_labels_follow_locale():
+    doc = {"type": "doc", "content": [
+        {"type": "paragraph", "content": [{"type": "text", "text": "中文內容"}]},
+    ]}
+    # zh-Hant → Traditional caption labels (ctex defaults to Simplified 图/表)
+    tex, _ = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "參考文獻", "article", "zh-Hant")
+    assert "\\ctexset{figurename={圖},tablename={表}}" in tex
+    # en doc with CJK content → plain scheme keeps Figure/Table labels
+    tex_en, _ = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "References", "article", "en")
+    assert "scheme=plain" in tex_en
+    assert "ctexset" not in tex_en
 
 
 def test_figure_caption_kept_figurelist_skipped():
@@ -142,12 +180,42 @@ def _table_doc():
     ]}
 
 
-def test_table_exports_latex_tabular_with_caption():
+def test_table_exports_latex_xltabular_with_caption():
     tex, _imgs = export_doc.to_latex({"title": "t", "content_json": _table_doc()}, "apa", "References")
-    assert "\\begin{tabular}" in tex
+    # xltabular: X columns wrap within \linewidth AND the table can break
+    # across pages between rows (a [H]+tabularx box taller than one page
+    # silently overflows past the margin).
+    assert "\\begin{xltabular}{\\linewidth}{|X|X|}" in tex
     assert "A & B" in tex and "1 & 2" in tex
     assert "\\caption{實驗結果}" in tex
     assert "tableList" not in tex  # the live aid is skipped
+
+
+def test_table_twocolumn_falls_back_to_fixed_tabularx():
+    # longtable can't be used in twocolumn layouts → anchored tabularx instead
+    tex, _ = export_doc.to_latex({"title": "t", "content_json": _table_doc()}, "apa", "References", "twocolumn")
+    assert "xltabular" not in tex.replace("\\usepackage{xltabular}", "")
+    assert "\\begin{table}[H]" in tex and "\\begin{tabularx}" in tex
+
+
+def test_table_monster_cell_splits_into_continuation_rows():
+    # A transcript-length cell must be split into multiple physical rows —
+    # longtable only breaks BETWEEN rows, so one giant row still overflows.
+    long_text = "這是一句完整的訪談內容。" * 80  # ~960 chars
+    def cell(text):
+        return {"type": "tableCell", "content": [{"type": "paragraph", "content": [{"type": "text", "text": text}]}]}
+    doc = {"type": "doc", "content": [
+        {"type": "tableBlock", "content": [
+            {"type": "table", "content": [
+                {"type": "tableRow", "content": [cell("MD001"), cell(long_text)]},
+            ]},
+        ]},
+    ]}
+    tex, _ = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "References")
+    rows = [l for l in tex.splitlines() if l.endswith("\\\\")]
+    assert len(rows) >= 3  # split into ≥3 continuation rows
+    # continuation rows belong to the same logical row: no \hline between them
+    assert tex.count("\\hline") == 2  # only the table frame (top + bottom)
 
 
 def test_table_exports_docx_real_table():
@@ -188,6 +256,7 @@ def test_latex_image_embeds_includegraphics_and_bundles(monkeypatch):
     ]}
     tex, imgs = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "References")
     assert "\\includegraphics" in tex and "fig1.png" in tex
+    assert "\\begin{figure}[H]" in tex  # anchored in place, never floats to the end
     assert "\\caption{流程圖}" in tex
     assert len(imgs) == 1 and imgs[0][0] == "fig1.png" and imgs[0][1] == _PNG_1PX
 
@@ -198,6 +267,21 @@ def test_latex_template_changes_documentclass():
     assert "\\documentclass[twocolumn]{article}" in tex
     tex2, _ = export_doc.to_latex({"title": "t", "content_json": doc}, "apa", "References", "ieee")
     assert "IEEEtran" in tex2
+
+
+def test_twthesis_layout_chapters_margins_spacing():
+    doc = {"type": "doc", "content": [
+        {"type": "heading", "attrs": {"level": 1}, "content": [{"type": "text", "text": "緒論"}]},
+        {"type": "heading", "attrs": {"level": 2}, "content": [{"type": "text", "text": "研究背景"}]},
+        {"type": "paragraph", "content": [{"type": "text", "text": "內文 ", "marks": []}, CITE_A]},
+    ]}
+    tex, _ = export_doc.to_latex({"title": "我的論文", "content_json": doc}, "apa", "參考文獻", "twthesis")
+    assert "\\documentclass[a4paper,12pt]{report}" in tex
+    assert "\\usepackage[heading=true]{ctex}" in tex  # \chapter → 第一章, not "Chapter 1"
+    assert "\\chapter{緒論}" in tex          # level-1 heading → 第一章 緒論
+    assert "\\section{研究背景}" in tex
+    assert "margin=3cm" in tex and "\\onehalfspacing" in tex
+    assert "\\chapter*{參考文獻}" in tex      # refs at chapter level in report class
 
 
 def test_docx_embeds_image(monkeypatch):

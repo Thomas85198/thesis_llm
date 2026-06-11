@@ -38,6 +38,24 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.2.1",
+    date: "2026-06-11",
+    changes: [
+      { type: "fix" }, // SW 不再快取 /version：更新橫幅關不掉
+    ],
+  },
+  {
+    version: "4.2.0",
+    date: "2026-06-11",
+    changes: [
+      { type: "feat" }, // 一鍵論文 PDF（後端 XeLaTeX）
+      { type: "feat" }, // 台灣學位論文版型＋匯出版型全域化
+      { type: "feat" }, // PWA：可安裝為平板 App
+      { type: "fix" }, // LaTeX 匯出修穩（CJK／下載檔名）
+      { type: "fix" }, // 超長論文分析失敗：EDU 分段＋截斷防禦
+    ],
+  },
+  {
     version: "4.1.0",
     date: "2026-06-07",
     changes: [

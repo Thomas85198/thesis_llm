@@ -22,6 +22,7 @@ from . import claim_verifier as claim_verifier_mod
 from . import draft_check as draft_check_mod
 from . import export_doc
 from . import import_doc
+from . import latex_compile
 from . import grounding as grounding_mod
 from . import outline as outline_mod
 from . import rewrite as rewrite_mod
@@ -134,8 +135,11 @@ class ExportIn(BaseModel):
     content_json: dict[str, Any]  # the live TipTap doc (sent directly to avoid DB staleness)
     style: str = Field("apa", pattern="^(apa|mla|chicago|harvard|ieee|numeric)$")
     locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
-    format: str = Field("docx", pattern="^(docx|latex|md|txt|html)$")
-    template: str = Field("article", pattern="^(article|twocolumn|ieee)$")  # LaTeX only
+    # "latex" bundles a .zip when figures exist; "pdf" compiles the LaTeX
+    # server-side with XeLaTeX (thesis-grade output).
+    format: str = Field("docx", pattern="^(docx|latex|pdf|md|txt|html)$")
+    # Document layout — applies to latex/pdf renders.
+    template: str = Field("article", pattern="^(article|twocolumn|ieee|twthesis)$")
 
 
 router = APIRouter()
@@ -835,6 +839,18 @@ def generate_outline(body: OutlineIn) -> dict[str, Any]:
     return {"headings": headings}
 
 
+def _latex_zip(tex: str, images: list[tuple[str, bytes]]) -> bytes:
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("main.tex", tex)
+        for fname, fdata in images:
+            zf.writestr(fname, fdata)
+    return buf.getvalue()
+
+
 @router.post("/api/editor/export")
 def export_document(body: ExportIn) -> Response:
     """Render the live document to .docx or .tex and return it as a download.
@@ -849,19 +865,21 @@ def export_document(body: ExportIn) -> Response:
         data = export_doc.to_docx(document, body.style, refs_label)
         media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ext = "docx"
+    elif body.format == "pdf":
+        tex, images = export_doc.to_latex(document, body.style, refs_label, body.template, body.locale)
+        try:
+            data = latex_compile.compile_pdf(tex, images)
+        except latex_compile.LatexNotInstalled as e:
+            raise HTTPException(status_code=501, detail=str(e)) from e
+        except latex_compile.LatexCompileError as e:
+            raise HTTPException(status_code=500, detail=f"XeLaTeX failed:\n{e}") from e
+        media = "application/pdf"
+        ext = "pdf"
     elif body.format == "latex":
-        tex, images = export_doc.to_latex(document, body.style, refs_label, body.template)
+        tex, images = export_doc.to_latex(document, body.style, refs_label, body.template, body.locale)
         if images:
             # Bundle .tex + referenced images so the export compiles as-is.
-            import io
-            import zipfile
-
-            buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                zf.writestr("main.tex", tex)
-                for fname, fdata in images:
-                    zf.writestr(fname, fdata)
-            data = buf.getvalue()
+            data = _latex_zip(tex, images)
             media = "application/zip"
             ext = "zip"
         else:

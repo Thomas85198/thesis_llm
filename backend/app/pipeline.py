@@ -4,6 +4,7 @@ PDF/text → spans (with page+bbox) → sections → EDU (mapped back to bbox)
 """
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from collections.abc import Callable
@@ -13,7 +14,13 @@ from dataclasses import dataclass
 import pymupdf
 from rapidfuzz import fuzz
 
-from .llm import call_with_tool, llm_max_workers, model_heavy, model_light
+from .llm import (
+    LLMOutputTruncatedError,
+    call_with_tool,
+    llm_max_workers,
+    model_heavy,
+    model_light,
+)
 from .prompts import load_prompt
 from .schemas import EDU, ERTriple, Entity, FRUNode, PaperGraph, RSTNode, SectionName
 
@@ -325,26 +332,94 @@ EDU_SCHEMA = {
 # Loaded lazily via load_prompt(name) — see app/prompts.py.
 
 
+def _edu_chunk_max_chars() -> int:
+    """Max characters of section text per emit_edus call.
+
+    EDUs preserve the original wording, so output size ≈ input size plus JSON
+    overhead per EDU — and table/appendix text degenerates into many tiny EDUs
+    ("86/652", "=", "and"), inflating that overhead severalfold. A section that
+    swallows a large appendix (the last matched section runs to end-of-document)
+    can blow past call_with_tool's 32k output cap and come back truncated.
+    8000 chars keeps the worst case (token-dense zh + degenerate splitting)
+    comfortably under the cap."""
+    try:
+        return max(1000, int(os.getenv("EDU_CHUNK_MAX_CHARS", "8000")))
+    except ValueError:
+        return 8000
+
+
+def _chunk_spans_by_chars(spans: list[Span], max_chars: int) -> list[list[Span]]:
+    """Greedily pack consecutive spans into chunks of ≤ max_chars of text.
+
+    Spans are the smallest unit we can split at without losing page/bbox
+    mapping; a single span longer than max_chars becomes its own chunk."""
+    chunks: list[list[Span]] = []
+    current: list[Span] = []
+    current_len = 0
+    for s in spans:
+        span_len = len(s.text)
+        if current and current_len + span_len > max_chars:
+            chunks.append(current)
+            current, current_len = [], 0
+        current.append(s)
+        current_len += span_len
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _emit_edus_for_spans(
+    section: SectionName, spans: list[Span], paper_id: str
+) -> list[tuple[str, list[Span]]]:
+    """emit_edus over these spans; returns (edu_text, source_spans) pairs.
+
+    If the output still hits the token cap (pathologically EDU-dense text),
+    split the spans in half and recurse — retrying the same input at
+    temperature 0 would just truncate again."""
+    text = spans_to_text(spans).strip()
+    if not text:
+        return []
+    try:
+        out = call_with_tool(
+            model=model_light(),
+            system=load_prompt("edu"),
+            user_content=f"<section name='{section}'>\n{text}\n</section>",
+            tool_name="emit_edus",
+            tool_description="Emit EDUs for the section.",
+            tool_input_schema=EDU_SCHEMA,
+            paper_id=paper_id,
+            stage=f"edu:{section}",
+        )
+    except LLMOutputTruncatedError:
+        if len(spans) < 2:
+            raise
+        mid = len(spans) // 2
+        print(
+            f"[pipeline] edu:{section} output truncated for a "
+            f"{len(text)}-char chunk — splitting {len(spans)} spans in half"
+        )
+        return _emit_edus_for_spans(
+            section, spans[:mid], paper_id
+        ) + _emit_edus_for_spans(section, spans[mid:], paper_id)
+    return [(item["text"], spans) for item in out.get("edus", [])]
+
+
 def extract_edus(
     section: SectionName, section_spans: list[Span], paper_id: str
 ) -> list[EDU]:
     section_text = spans_to_text(section_spans).strip()
     if not section_text:
         return []
-    out = call_with_tool(
-        model=model_light(),
-        system=load_prompt("edu"),
-        user_content=f"<section name='{section}'>\n{section_text}\n</section>",
-        tool_name="emit_edus",
-        tool_description="Emit EDUs for the section.",
-        tool_input_schema=EDU_SCHEMA,
-        paper_id=paper_id,
-        stage=f"edu:{section}",
-    )
+    # Long sections (the last one swallows references + appendices) are split
+    # into chunks so each emit_edus output stays under the token cap. Each EDU
+    # is localized within its own chunk's spans — same result as section-wide
+    # lookup for exact matches, and less ambiguity for the fuzzy fallback.
+    pairs: list[tuple[str, list[Span]]] = []
+    for chunk in _chunk_spans_by_chars(section_spans, _edu_chunk_max_chars()):
+        pairs.extend(_emit_edus_for_spans(section, chunk, paper_id))
     edus: list[EDU] = []
-    for i, item in enumerate(out.get("edus", [])):
-        text = item["text"]
-        page, bbox = _locate_edu_in_spans(text, section_spans)
+    for i, (text, chunk_spans) in enumerate(pairs):
+        page, bbox = _locate_edu_in_spans(text, chunk_spans)
         edus.append(
             EDU(
                 id=f"{paper_id}:{section}:edu:{i}",

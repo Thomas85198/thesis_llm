@@ -34,6 +34,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Let the browser read the download filename — without this, cross-origin
+    # fetches can't see Content-Disposition, so a LaTeX-with-figures export
+    # (returned as a .zip) gets saved with the fallback .tex extension and
+    # opens as binary garbage in Overleaf.
+    expose_headers=["Content-Disposition"],
 )
 
 app.include_router(router)

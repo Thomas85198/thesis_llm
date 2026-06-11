@@ -398,7 +398,12 @@ def _render_block_latex(block: dict, style: str, order: list[str], ctx: dict) ->
     t = block.get("type")
     if t == "heading":
         level = (block.get("attrs") or {}).get("level", 1)
-        cmd = {1: "section", 2: "subsection", 3: "subsubsection"}.get(level, "paragraph")
+        if ctx.get("chapters"):
+            # Thesis layout (report class): top-level headings are chapters —
+            # ctex renders them as 「第一章 緒論」.
+            cmd = {1: "chapter", 2: "section", 3: "subsection"}.get(level, "paragraph")
+        else:
+            cmd = {1: "section", 2: "subsection", 3: "subsubsection"}.get(level, "paragraph")
         return f"\\{cmd}{{{_inline_latex(_children(block), style, order)}}}\n\n"
     if t in ("bulletList", "orderedList"):
         env = "itemize" if t == "bulletList" else "enumerate"
@@ -429,8 +434,11 @@ def _render_block_latex(block: dict, style: str, order: list[str], ctx: dict) ->
             fname = f"fig{ctx['fig_n']}.{ext}"
             ctx["images"].append((fname, data))
             capline = f"\\caption{{{_esc(cap)}}}\n" if cap else ""
+            # float's [H] = put it HERE. Plain [h] is only a hint — when LaTeX
+            # can't honor it the figure floats away and piles up at the end of
+            # the document, which reads as "my images are all misplaced".
             return (
-                "\\begin{figure}[h]\n\\centering\n"
+                "\\begin{figure}[H]\n\\centering\n"
                 f"\\includegraphics[width=0.8\\linewidth]{{{fname}}}\n{capline}\\end{{figure}}\n\n"
             )
         return f"\\textit{{[{_esc(cap or 'image')}]}}\n\n"
@@ -443,30 +451,99 @@ def _render_block_latex(block: dict, style: str, order: list[str], ctx: dict) ->
         if not rows:
             return ""
         ncols = max(len(r) for r in rows)
-        body = " \\\\\n".join(
-            " & ".join(_esc(r[c] if c < len(r) else "") for c in range(ncols)) for r in rows
-        )
+        colspec = "|" + "X|" * ncols
+        # Page-breakable tables break only BETWEEN rows, so a transcript-length
+        # cell (pages of text in one cell) must first be split into
+        # continuation rows — otherwise the row overflows the page no matter
+        # which environment renders it.
+        chunk_limit = _cell_chunk_chars(ncols)
+        phys_rows: list[tuple[list[str], bool]] = []  # (cells, is_continuation)
+        for r in rows:
+            chunk_lists = [_chunk_cell(r[c] if c < len(r) else "", chunk_limit) for c in range(ncols)]
+            for idx in range(max(len(cl) for cl in chunk_lists)):
+                cells = [cl[idx] if idx < len(cl) else "" for cl in chunk_lists]
+                phys_rows.append((cells, idx > 0))
+        lines = []
+        for cells, is_cont in phys_rows:
+            if not is_cont and lines:
+                lines.append("\\hline")
+            lines.append(" & ".join(_esc(c) for c in cells) + " \\\\")
+        body = "\n".join(lines)
+        if ctx.get("longtable", True):
+            # xltabular = longtable + tabularx: X columns wrap within
+            # \linewidth AND the table breaks across pages between rows.
+            cap = f"\\caption{{{_esc(caption)}}}\\\\\n" if caption else ""
+            return (
+                f"\\begin{{xltabular}}{{\\linewidth}}{{{colspec}}}\n"
+                f"{cap}\\hline\n{body}\n\\hline\n\\end{{xltabular}}\n\n"
+            )
+        # longtable can't live inside twocolumn layouts (IEEE / twocolumn
+        # article) — fall back to a fixed tabularx anchored in place.
         cap = f"\\caption{{{_esc(caption)}}}\n" if caption else ""
         return (
-            "\\begin{table}[h]\n\\centering\n"
-            f"\\begin{{tabular}}{{{'|' + 'l|' * ncols}}}\n\\hline\n"
-            f"{body} \\\\\n\\hline\n\\end{{tabular}}\n{cap}\\end{{table}}\n\n"
+            "\\begin{table}[H]\n\\centering\n"
+            f"\\begin{{tabularx}}{{\\linewidth}}{{{colspec}}}\n\\hline\n"
+            f"{body}\n\\hline\n\\end{{tabularx}}\n{cap}\\end{{table}}\n\n"
         )
     if t == "tableList":
         return ""  # editor-only live aid; the tables render inline
     return _inline_latex(_children(block), style, order) + "\n\n"
 
 
-# LaTeX submission templates → the \documentclass line.
+# Document layouts → the \documentclass line. "twthesis" approximates the
+# common Taiwan graduate-thesis conventions: single-column A4 report with
+# chapter-level headings, 3cm margins and 1.5 line spacing.
 _LATEX_TEMPLATES = {
     "article": "\\documentclass{article}",
     "twocolumn": "\\documentclass[twocolumn]{article}",
     "ieee": "\\documentclass[conference]{IEEEtran}",
+    "twthesis": "\\documentclass[a4paper,12pt]{report}",
 }
+
+# Han (incl. Ext-A) + kana — content containing any of these needs a CJK engine.
+_CJK_RE = re.compile(r"[぀-ヿ㐀-䶿一-鿿]")
+
+_SENTENCE_RE = re.compile(r"[^。！？!?]*(?:[。！？!?]|$)")
+
+
+def _cell_chunk_chars(ncols: int) -> int:
+    """Chunk size for one physical table row, scaled by column width.
+
+    A full \\linewidth fits ~40 CJK chars per line; an X column gets 1/ncols of
+    that. Aim for ~6 lines per chunk: a chunk that doesn't fit at the page
+    bottom leaves its whole height blank, so finer chunks = tighter pages."""
+    return max(60, 240 // max(ncols, 1))
+
+
+def _chunk_cell(text: str, limit: int) -> list[str]:
+    """Split oversized cell text into sentence-aligned chunks (each rendered as
+    a continuation row). Short cells come back as a single chunk."""
+    if len(text) <= limit:
+        return [text]
+    chunks: list[str] = []
+    cur = ""
+    for sent in _SENTENCE_RE.findall(text):
+        if not sent:
+            continue
+        if cur and len(cur) + len(sent) > limit:
+            chunks.append(cur)
+            cur = ""
+        # a single sentence longer than the limit gets hard-split
+        while len(sent) > limit:
+            chunks.append(sent[:limit])
+            sent = sent[limit:]
+        cur += sent
+    if cur:
+        chunks.append(cur)
+    return chunks or [""]
 
 
 def to_latex(
-    document: dict, style: str, refs_label: str, template: str = "article"
+    document: dict,
+    style: str,
+    refs_label: str,
+    template: str = "article",
+    locale: str = "zh-Hant",
 ) -> tuple[str, list[tuple[str, bytes]]]:
     """Render to LaTeX. Returns (tex_source, images) where images is
     [(filename, bytes)] referenced by \\includegraphics — the route bundles them
@@ -476,7 +553,13 @@ def to_latex(
     citations = collect_citations(content)
     order = [c.get("openalexId") for c in citations]
 
-    ctx: dict = {"images": [], "fig_n": 0}
+    # longtable (inside xltabular) can't be used in twocolumn layouts.
+    ctx: dict = {
+        "images": [],
+        "fig_n": 0,
+        "longtable": template not in ("twocolumn", "ieee"),
+        "chapters": template == "twthesis",
+    }
     body = "".join(_render_block_latex(b, style, order, ctx) for b in _children(content))
     refs = ""
     if citations:
@@ -484,14 +567,56 @@ def to_latex(
             f"  \\item {_esc(full_reference(c, style, i + 1))}"
             for i, c in enumerate(citations)
         )
-        refs = f"\\section*{{{_esc(refs_label)}}}\n\\begin{{itemize}}\n{items}\n\\end{{itemize}}\n\n"
+        refs_cmd = "chapter*" if ctx["chapters"] else "section*"
+        refs = f"\\{refs_cmd}{{{_esc(refs_label)}}}\n\\begin{{itemize}}\n{items}\n\\end{{itemize}}\n\n"
 
     docclass = _LATEX_TEMPLATES.get(template, _LATEX_TEMPLATES["article"])
     # ctex → CJK; graphicx → figures; ulem → \sout; hyperref → links.
+    # ctex/fontspec need XeLaTeX/LuaLaTeX — pdfLaTeX fails with "fontset fandol
+    # unavailable" — so only emit them when the content actually contains CJK;
+    # a pure-Latin document then compiles untouched on Overleaf's default
+    # pdfLaTeX. The magic comment makes TeXShop / VS Code / local latexmk pick
+    # XeLaTeX automatically (Overleaf ignores it — switch its compiler menu).
+    needs_cjk = bool(_CJK_RE.search(title + body + refs))
+    magic = "% !TEX program = xelatex\n" if needs_cjk else ""
+    # ctex's default Fandol font is missing many Traditional-Chinese-only
+    # glyphs (為/致/夠/謹…), which render as boxes. Prefer Noto Serif CJK TC
+    # (full coverage, bundled on Overleaf); keep Fandol where Noto is absent
+    # so local compiles don't break with a "font not found" error.
+    if not needs_cjk:
+        cjk_packages = ""
+    elif locale == "zh-Hant":
+        # heading=true localizes the heading machinery (thesis layout:
+        # \chapter → 「第一章」 instead of "Chapter 1"). ctex defaults to
+        # Simplified-Chinese caption labels (图/表) — pin the Traditional forms.
+        ctex_opts = "[heading=true]" if template == "twthesis" else ""
+        cjk_packages = (
+            f"\\usepackage{ctex_opts}{{ctex}}\n"
+            "\\ctexset{figurename={圖},tablename={表}}\n"
+            "\\IfFontExistsTF{Noto Serif CJK TC}{\\setCJKmainfont{Noto Serif CJK TC}}{}\n"
+        )
+    else:
+        # English doc that merely contains CJK: typeset the CJK but keep
+        # English caption labels (Figure/Table) and Western layout.
+        cjk_packages = (
+            "\\usepackage[scheme=plain]{ctex}\n"
+            "\\IfFontExistsTF{Noto Serif CJK TC}{\\setCJKmainfont{Noto Serif CJK TC}}{}\n"
+        )
+    # Taiwan-thesis conventions: 3cm margins on A4 + 1.5 line spacing.
+    layout = (
+        "\\usepackage[a4paper,margin=3cm]{geometry}\n"
+        "\\usepackage{setspace}\n\\onehalfspacing\n"
+        if template == "twthesis"
+        else ""
+    )
     tex = (
-        f"{docclass}\n"
-        "\\usepackage{ctex}\n"
-        "\\usepackage{graphicx}\n"
+        magic
+        + f"{docclass}\n"
+        + cjk_packages
+        + layout
+        + "\\usepackage{graphicx}\n"
+        "\\usepackage{float}\n"      # [H] placement for figures/tables
+        "\\usepackage{xltabular}\n"  # width-bounded wrapping columns + page-breakable tables
         "\\usepackage[normalem]{ulem}\n"
         "\\usepackage{hyperref}\n"
         f"\\title{{{_esc(title)}}}\n"

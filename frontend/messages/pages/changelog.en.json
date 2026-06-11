@@ -29,6 +29,24 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_2_1": {
+      "title": "Fix the un-dismissable \"new version\" update banner",
+      "summary": "On browsers that had installed the tablet app or visited before, the service worker also cached the /version check endpoint; after a deploy the new page kept comparing against a stale version number, so the update banner reappeared immediately even after clicking refresh. The service worker now only caches immutable static assets — version checks always hit the network.",
+      "changes": {
+        "0": "Service worker no longer caches /version or other dynamic requests (cache-first is limited to hashed static assets and icons), and the cache name was bumped so existing devices purge the stale entry; the update banner now appears once, only when a new version is really live, and goes away after refresh."
+      }
+    },
+    "4_2_0": {
+      "title": "One-click thesis PDF, Taiwan thesis template, tablet app, and stability fixes",
+      "summary": "Export pipeline upgrade: compile editor documents straight to a thesis PDF (server-side XeLaTeX with CJK support out of the box), plus a new template matching Taiwan degree-thesis conventions; the frontend now installs as a standalone tablet app. Also fixes two stability issues: CJK/filename problems in LaTeX export, and analysis failures on very long papers with large appendices.",
+      "changes": {
+        "0": "One-click thesis PDF: choosing PDF on export compiles via server-side XeLaTeX — no local TeX install needed; Chinese (CJK) works out of the box.",
+        "1": "Taiwan degree-thesis template: a new LaTeX layout matching local thesis conventions (cover page, watermark position, line spacing, margins), with layout settings made global across all export formats.",
+        "2": "Tablet app (PWA): the frontend can be installed via \"Add to Home Screen\" and opens standalone full-screen on tablets, with no browser chrome.",
+        "3": "LaTeX export hardening: fixes CJK compile failures and cross-origin downloads losing the filename (CORS now exposes it).",
+        "4": "Long-paper analysis fix: papers with large appendices/references could blow past the model's output-token cap during EDU segmentation and fail the whole upload ('OpenAI returned invalid JSON'). Overlong sections are now chunked automatically, halved on truncation, and the error message is human-readable."
+      }
+    },
     "4_1_0": {
       "title": "Differentiation moat: citation traffic-light verification, defect checking, semantic RAG",
       "summary": "On top of Jenni parity, this adds capabilities others don't have — bringing correctness into the act of writing via a neuro-symbolic engine and RAG. Verify whether a cited source actually supports your claim (🟢/🟡/🔴 + the supporting sentence); run the 13 REL rules over the whole draft for structural defects with inline marks; re-rank citation search by semantic similarity (with a shown %); and click a citation to fetch the cited paper's full text and surface the sentences that best support you.",

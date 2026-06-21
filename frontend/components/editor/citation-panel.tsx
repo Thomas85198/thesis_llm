@@ -42,7 +42,6 @@ import {
 import { useEditorStore } from "@/lib/editor-store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
@@ -94,7 +93,9 @@ function claimForCitation(editor: Editor, openalexId: string): string {
       const paraStart = pos - $pos.parentOffset;
       const before = editor.state.doc.textBetween(paraStart, pos, " ", " ");
       const parts = before.split(/(?<=[。！？!?.])\s*/).filter(Boolean);
-      claim = (parts[parts.length - 1] || before).trim() || $pos.parent.textContent.trim();
+      claim =
+        (parts[parts.length - 1] || before).trim() ||
+        $pos.parent.textContent.trim();
       return false;
     }
     return true;
@@ -103,7 +104,13 @@ function claimForCitation(editor: Editor, openalexId: string): string {
 }
 
 /** Shell: the Sheet + header. Body remounts (keyed on nonce) on every open. */
-export function CitationPanel({ editor, docId }: { editor: Editor; docId: string }) {
+export function CitationPanel({
+  editor,
+  docId,
+}: {
+  editor: Editor;
+  docId: string;
+}) {
   const t = useTranslations("editor");
   const open = useEditorStore((s) => s.citePanelOpen);
   const claim = useEditorStore((s) => s.citeClaim);
@@ -112,7 +119,10 @@ export function CitationPanel({ editor, docId }: { editor: Editor; docId: string
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && closeCitePanel()}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-md">
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 sm:max-w-md"
+      >
         <SheetHeader>
           <SheetTitle>{t("citation.panelTitle")}</SheetTitle>
           <SheetDescription>{t("citation.panelDesc")}</SheetDescription>
@@ -152,12 +162,18 @@ function CitationPanelBody({
   // openalex_id → verdict, or "loading" while a verify is in flight. Separate
   // maps: recommend cards verify against the search box; references verify
   // against the claim sentence around the inserted chip.
-  const [verdicts, setVerdicts] = useState<Record<string, CitationVerdict | "loading">>({});
-  const [refVerdicts, setRefVerdicts] = useState<Record<string, CitationVerdict | "loading">>({});
+  const [verdicts, setVerdicts] = useState<
+    Record<string, CitationVerdict | "loading">
+  >({});
+  const [refVerdicts, setRefVerdicts] = useState<
+    Record<string, CitationVerdict | "loading">
+  >({});
   // openalexId → full-text grounding result (top supporting sentences), or "loading".
-  const [grounds, setGrounds] = useState<Record<string, GroundResult | "loading">>({});
+  const [grounds, setGrounds] = useState<
+    Record<string, GroundResult | "loading">
+  >({});
   const abortRef = useRef<AbortController | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // References list — recomputed when the doc's citations change.
   const refs = useEditorState({
@@ -196,7 +212,7 @@ function CitationPanelBody({
       };
       void run();
     },
-    [docId, t]
+    [docId, t],
   );
 
   // On open: auto-search a prefilled claim (from BubbleMenu), else focus the box.
@@ -229,7 +245,13 @@ function CitationPanelBody({
     }
     setVerdicts((v) => ({ ...v, [c.openalex_id]: "loading" }));
     try {
-      const verdict = await verifyCitation(docId, claim, c.title, c.abstract, locale);
+      const verdict = await verifyCitation(
+        docId,
+        claim,
+        c.title,
+        c.abstract,
+        locale,
+      );
       setVerdicts((v) => ({ ...v, [c.openalex_id]: verdict }));
     } catch (e) {
       setVerdicts((v) => {
@@ -253,7 +275,14 @@ function CitationPanelBody({
     }
     setRefVerdicts((v) => ({ ...v, [r.openalexId]: "loading" }));
     try {
-      const verdict = await verifyCitation(docId, claim, r.title, "", locale, r.openalexId);
+      const verdict = await verifyCitation(
+        docId,
+        claim,
+        r.title,
+        "",
+        locale,
+        r.openalexId,
+      );
       setRefVerdicts((v) => ({ ...v, [r.openalexId]: verdict }));
     } catch (e) {
       setRefVerdicts((v) => {
@@ -277,7 +306,12 @@ function CitationPanelBody({
     }
     setGrounds((g) => ({ ...g, [r.openalexId]: "loading" }));
     try {
-      const result = await groundCitation(docId, r.openalexId, r.oaUrl || r.url, claim);
+      const result = await groundCitation(
+        docId,
+        r.openalexId,
+        r.oaUrl || r.url,
+        claim,
+      );
       setGrounds((g) => ({ ...g, [r.openalexId]: result }));
     } catch (e) {
       setGrounds((g) => {
@@ -300,10 +334,11 @@ function CitationPanelBody({
     try {
       const fresh = await refreshCitations(ids);
       const byId: Record<string, CitationAttrs> = {};
-      for (const [id, c] of Object.entries(fresh)) byId[id] = candidateToAttrs(c);
+      for (const [id, c] of Object.entries(fresh))
+        byId[id] = candidateToAttrs(c);
       const changed = editor.commands.refreshCitations(byId);
       toast.success(
-        changed ? t("citation.refreshed") : t("citation.refreshedNoChange")
+        changed ? t("citation.refreshed") : t("citation.refreshedNoChange"),
       );
     } catch (e) {
       toast.error(String(e));
@@ -322,17 +357,28 @@ function CitationPanelBody({
           doSearch(query, yearFrom);
         }}
       >
-        <Input
+        {/* Multi-line, auto-growing search box: long selected claims wrap and
+            scroll (max-h) instead of being truncated to one line. Enter submits,
+            Shift+Enter inserts a newline. */}
+        <textarea
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              doSearch(query, yearFrom);
+            }
+          }}
+          rows={1}
           placeholder={t("citation.searchPlaceholder")}
+          className="max-h-28 min-h-9 w-full resize-none overflow-y-auto rounded-md border bg-transparent px-3 py-1.5 text-sm shadow-xs outline-none [field-sizing:content] placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
         />
         <Button
           type="submit"
           size="icon"
           variant="secondary"
-          className="shrink-0"
+          className="shrink-0 self-start"
           aria-label={t("citation.search")}
           title={t("citation.search")}
         >
@@ -360,7 +406,9 @@ function CitationPanelBody({
 
       <Tabs defaultValue="recommend" className="flex min-h-0 flex-1 flex-col">
         <TabsList className="mb-3">
-          <TabsTrigger value="recommend">{t("citation.tabRecommend")}</TabsTrigger>
+          <TabsTrigger value="recommend">
+            {t("citation.tabRecommend")}
+          </TabsTrigger>
           <TabsTrigger value="references">
             {t("citation.tabReferences")}
             {refs.length > 0 && (
@@ -395,7 +443,9 @@ function CitationPanelBody({
                     className="rounded-lg border bg-card p-3 transition-colors hover:border-primary/40"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-medium leading-snug">{c.title}</p>
+                      <p className="text-sm font-medium leading-snug">
+                        {c.title}
+                      </p>
                       <Button
                         size="icon"
                         variant="ghost"
@@ -453,7 +503,9 @@ function CitationPanelBody({
                           {t("citation.verifying")}
                         </span>
                       ) : verdicts[c.openalex_id] ? (
-                        <VerdictBadge verdict={verdicts[c.openalex_id] as CitationVerdict} />
+                        <VerdictBadge
+                          verdict={verdicts[c.openalex_id] as CitationVerdict}
+                        />
                       ) : (
                         <button
                           type="button"
@@ -500,78 +552,96 @@ function CitationPanelBody({
               <ScrollArea className="h-full pr-3">
                 <ol className="flex flex-col gap-3 text-sm">
                   {refs.map((r, i) => {
-                  const text = fullReference(r, citationStyle, i + 1);
-                  const links = referenceLinks(r);
-                  return (
-                    <li key={r.openalexId} className="flex flex-col gap-1">
-                      <span className="leading-snug text-foreground/90">{text}</span>
-                      {links.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          {links.map((link) => {
-                            const meta = {
-                              // OA full text — most useful, may rot.
-                              fulltext: { icon: FileText, label: t("citation.linkFulltext") },
-                              // DOI — stable anchor that (almost) never 404s.
-                              doi: { icon: Link2, label: t("citation.linkDoi") },
-                              // Fallback when neither OA nor DOI is known.
-                              source: { icon: ExternalLink, label: t("citation.viewSource") },
-                            }[link.kind];
-                            const Icon = meta.icon;
-                            return (
-                              <a
-                                key={link.kind}
-                                href={link.href}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                              >
-                                <Icon className="h-3 w-3" />
-                                {meta.label}
-                              </a>
-                            );
-                          })}
+                    const text = fullReference(r, citationStyle, i + 1);
+                    const links = referenceLinks(r);
+                    return (
+                      <li key={r.openalexId} className="flex flex-col gap-1">
+                        <span className="leading-snug text-foreground/90">
+                          {text}
+                        </span>
+                        {links.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            {links.map((link) => {
+                              const meta = {
+                                // OA full text — most useful, may rot.
+                                fulltext: {
+                                  icon: FileText,
+                                  label: t("citation.linkFulltext"),
+                                },
+                                // DOI — stable anchor that (almost) never 404s.
+                                doi: {
+                                  icon: Link2,
+                                  label: t("citation.linkDoi"),
+                                },
+                                // Fallback when neither OA nor DOI is known.
+                                source: {
+                                  icon: ExternalLink,
+                                  label: t("citation.viewSource"),
+                                },
+                              }[link.kind];
+                              const Icon = meta.icon;
+                              return (
+                                <a
+                                  key={link.kind}
+                                  href={link.href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                >
+                                  <Icon className="h-3 w-3" />
+                                  {meta.label}
+                                </a>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                          {refVerdicts[r.openalexId] === "loading" ? (
+                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              {t("citation.verifying")}
+                            </span>
+                          ) : refVerdicts[r.openalexId] ? (
+                            <VerdictBadge
+                              verdict={
+                                refVerdicts[r.openalexId] as CitationVerdict
+                              }
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleVerifyRef(r)}
+                              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                            >
+                              <ShieldCheck className="h-3 w-3" />
+                              {t("citation.verify")}
+                            </button>
+                          )}
+                          {grounds[r.openalexId] === "loading" ? (
+                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              {t("citation.grounding")}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleGround(r)}
+                              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                            >
+                              <Quote className="h-3 w-3" />
+                              {t("citation.ground")}
+                            </button>
+                          )}
                         </div>
-                      )}
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                        {refVerdicts[r.openalexId] === "loading" ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                            {t("citation.verifying")}
-                          </span>
-                        ) : refVerdicts[r.openalexId] ? (
-                          <VerdictBadge verdict={refVerdicts[r.openalexId] as CitationVerdict} />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleVerifyRef(r)}
-                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                          >
-                            <ShieldCheck className="h-3 w-3" />
-                            {t("citation.verify")}
-                          </button>
-                        )}
-                        {grounds[r.openalexId] === "loading" ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                            {t("citation.grounding")}
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleGround(r)}
-                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                          >
-                            <Quote className="h-3 w-3" />
-                            {t("citation.ground")}
-                          </button>
-                        )}
-                      </div>
-                      {grounds[r.openalexId] && grounds[r.openalexId] !== "loading" && (
-                        <GroundView result={grounds[r.openalexId] as GroundResult} />
-                      )}
-                    </li>
-                  );
-                })}
+                        {grounds[r.openalexId] &&
+                          grounds[r.openalexId] !== "loading" && (
+                            <GroundView
+                              result={grounds[r.openalexId] as GroundResult}
+                            />
+                          )}
+                      </li>
+                    );
+                  })}
                 </ol>
               </ScrollArea>
             </div>
@@ -587,10 +657,22 @@ function CitationPanelBody({
 function VerdictBadge({ verdict }: { verdict: CitationVerdict }) {
   const t = useTranslations("editor");
   const meta = {
-    supports: { dot: "bg-emerald-500", cls: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" },
-    partial: { dot: "bg-amber-500", cls: "border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" },
-    unsupported: { dot: "bg-red-500", cls: "border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300" },
-    unknown: { dot: "bg-slate-400", cls: "border-slate-300 bg-slate-50 text-slate-600 dark:bg-slate-900 dark:text-slate-300" },
+    supports: {
+      dot: "bg-emerald-500",
+      cls: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+    },
+    partial: {
+      dot: "bg-amber-500",
+      cls: "border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+    },
+    unsupported: {
+      dot: "bg-red-500",
+      cls: "border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
+    },
+    unknown: {
+      dot: "bg-slate-400",
+      cls: "border-slate-300 bg-slate-50 text-slate-600 dark:bg-slate-900 dark:text-slate-300",
+    },
   }[verdict.verdict];
   const tip = [verdict.reason, verdict.evidence && `「${verdict.evidence}」`]
     .filter(Boolean)
@@ -612,13 +694,19 @@ function GroundView({ result }: { result: GroundResult }) {
   const t = useTranslations("editor");
   if (result.source === "none" || result.supporting.length === 0) {
     return (
-      <p className="mt-1.5 text-xs text-muted-foreground">{t("citation.groundNone")}</p>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        {t("citation.groundNone")}
+      </p>
     );
   }
   return (
     <div className="mt-1.5 rounded-md border bg-muted/30 p-2">
       <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
-        {t(result.source === "fulltext" ? "citation.groundFulltext" : "citation.groundAbstract")}
+        {t(
+          result.source === "fulltext"
+            ? "citation.groundFulltext"
+            : "citation.groundAbstract",
+        )}
       </p>
       <ul className="flex flex-col gap-1">
         {result.supporting.map((s, i) => (

@@ -166,7 +166,18 @@
   },
   "math": {
     "inlinePlaceholder": "LaTeX, e.g. E=mc^2",
-    "blockPlaceholder": "LaTeX, e.g. \\int_0^1 x\\,dx"
+    "blockPlaceholder": "LaTeX, e.g. \\int_0^1 x\\,dx",
+    "done": "Done"
+  },
+  "blockHandle": {
+    "label": "Drag to move, click for menu",
+    "duplicate": "Duplicate block",
+    "delete": "Delete block"
+  },
+  "code": {
+    "searchPlaceholder": "Search language…",
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "table": {
     "word": "Table"

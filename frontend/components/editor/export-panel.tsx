@@ -18,8 +18,15 @@ import { useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { exportDocument, type ExportFormat, type ProseMirrorDoc } from "@/lib/api";
-import { CITATION_STYLE_LABEL, type CitationStyle } from "@/lib/citation-format";
+import {
+  exportDocument,
+  type ExportFormat,
+  type ProseMirrorDoc,
+} from "@/lib/api";
+import {
+  CITATION_STYLE_LABEL,
+  type CitationStyle,
+} from "@/lib/citation-format";
 import { useEditorStore } from "@/lib/editor-store";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,14 +75,22 @@ function ExportItem({
     <Button
       type="button"
       variant="outline"
-      className="h-auto justify-start gap-3 py-3"
+      // Button defaults to whitespace-nowrap, which made long descriptions
+      // overflow horizontally — allow wrapping and a min-w-0 text column.
+      className="h-auto w-full justify-start gap-3 whitespace-normal py-3 text-left"
       disabled={busy !== null}
       onClick={onClick}
     >
-      {busy === busyKey ? <Loader2 className="h-5 w-5 animate-spin" /> : <I className="h-5 w-5" />}
-      <span className="flex flex-col items-start">
+      {busy === busyKey ? (
+        <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+      ) : (
+        <I className="h-5 w-5 shrink-0" />
+      )}
+      <span className="flex min-w-0 flex-1 flex-col items-start">
         <span className="text-sm font-medium">{label}</span>
-        <span className="text-xs text-muted-foreground">{desc}</span>
+        <span className="break-words text-xs text-muted-foreground">
+          {desc}
+        </span>
       </span>
     </Button>
   );
@@ -97,7 +112,9 @@ export function ExportPanel({ editor }: { editor: Editor }) {
   const [template, setTemplate] = useState<string>(() => {
     if (typeof window === "undefined" || !docId) return "article";
     const saved = window.localStorage.getItem(templateStorageKey(docId));
-    return saved && (TEMPLATES as readonly string[]).includes(saved) ? saved : "article";
+    return saved && (TEMPLATES as readonly string[]).includes(saved)
+      ? saved
+      : "article";
   });
   // CJK docs get ctex + Noto Serif CJK TC and need XeLaTeX — surface that in
   // the panel so 繁中 users know the font is handled and which compiler to use.
@@ -110,7 +127,11 @@ export function ExportPanel({ editor }: { editor: Editor }) {
     }
     // IEEE venues expect bracketed numeric citations — pairing the IEEE layout
     // with APA in-text markers is a classic submission mistake.
-    if (value === "ieee" && citationStyle !== "ieee" && citationStyle !== "numeric") {
+    if (
+      value === "ieee" &&
+      citationStyle !== "ieee" &&
+      citationStyle !== "numeric"
+    ) {
       toast.info(t("export.ieeeStyleHint"), {
         action: {
           label: t("export.ieeeStyleSwitch"),
@@ -168,7 +189,8 @@ export function ExportPanel({ editor }: { editor: Editor }) {
       const { blob, filename } = await exportDocument({ ...docBody(), format });
       triggerDownload(
         blob,
-        filename || `${(title || "document").trim() || "document"}.${EXT[format]}`,
+        filename ||
+          `${(title || "document").trim() || "document"}.${EXT[format]}`,
       );
       toast.success(t("export.done"));
       closeExport();
@@ -202,7 +224,12 @@ export function ExportPanel({ editor }: { editor: Editor }) {
     }
   }
 
-  const item = (icon: Icon, key: string, busyKey: string, onClick: () => void) => (
+  const item = (
+    icon: Icon,
+    key: string,
+    busyKey: string,
+    onClick: () => void,
+  ) => (
     <ExportItem
       icon={icon}
       label={t(`export.${key}`)}
@@ -215,11 +242,16 @@ export function ExportPanel({ editor }: { editor: Editor }) {
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && closeExport()}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-md">
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 sm:max-w-md"
+      >
         <SheetHeader>
           <SheetTitle>{t("export.panelTitle")}</SheetTitle>
           <SheetDescription>
-            {t("export.panelDesc", { style: CITATION_STYLE_LABEL[citationStyle] })}
+            {t("export.panelDesc", {
+              style: CITATION_STYLE_LABEL[citationStyle],
+            })}
           </SheetDescription>
         </SheetHeader>
         <div className="flex flex-col gap-2 overflow-y-auto px-4 pb-4">
@@ -236,7 +268,9 @@ export function ExportPanel({ editor }: { editor: Editor }) {
               <option value="ieee">{t("export.tplIeee")}</option>
             </select>
           </label>
-          <p className="text-xs text-muted-foreground">{t("export.templateDesc")}</p>
+          <p className="text-xs text-muted-foreground">
+            {t("export.templateDesc")}
+          </p>
           {hasCjk && (
             <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
               {t("export.cjkHint")}

@@ -9,7 +9,12 @@ import {
 import { BubbleMenu } from "@tiptap/react/menus";
 import { NodeSelection } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
-import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
+import {
+  Table,
+  TableCell,
+  TableHeader,
+  TableRow,
+} from "@tiptap/extension-table";
 import {
   Bold,
   Code,
@@ -45,6 +50,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Autocomplete } from "@/components/editor/autocomplete-extension";
+import { BlockHandle } from "@/components/editor/block-handle";
+import { CodeBlock } from "@/components/editor/code-block-extension";
 import { Citation } from "@/components/editor/citation-extension";
 import { CitationPanel } from "@/components/editor/citation-panel";
 import { DefectHighlight } from "@/components/editor/defect-highlight";
@@ -60,7 +67,10 @@ import {
   TableCaption,
   TableList,
 } from "@/components/editor/table-extension";
-import { SlashCommand, type SlashItem } from "@/components/editor/slash-command";
+import {
+  SlashCommand,
+  type SlashItem,
+} from "@/components/editor/slash-command";
 import { TableToolbar } from "@/components/editor/table-toolbar";
 import { SlashMenu } from "@/components/editor/slash-menu";
 import { Button } from "@/components/ui/button";
@@ -153,7 +163,11 @@ function SaveBadge({ state }: { state: SaveState }) {
     saved: "text-emerald-600 dark:text-emerald-400",
     error: "text-destructive",
   };
-  return <span className={cn("text-xs tabular-nums", color[state])}>{label[state]}</span>;
+  return (
+    <span className={cn("text-xs tabular-nums", color[state])}>
+      {label[state]}
+    </span>
+  );
 }
 
 function ToolbarButton({
@@ -214,6 +228,11 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   // re-create the editor instance.
   const aiModeRef = useRef(aiMode);
   const editorRef = useRef<Editor | null>(null);
+  // True while a block is being dragged (via the ⠿ handle), plus a short tail
+  // after drop — used to keep the selection bubble menu from flashing on the
+  // transient selection a drag produces.
+  const draggingRef = useRef(false);
+  const dragResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const acTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const acAbort = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -262,12 +281,12 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           acc += delta;
           ed.commands.setSuggestion(acc);
         },
-        controller.signal
+        controller.signal,
       ).catch(() => {
         /* network/abort — best-effort, just no suggestion */
       });
     },
-    [doc.doc_id, locale]
+    [doc.doc_id, locale],
   );
 
   // Auto path: debounced and gated on a word/sentence boundary (whitespace or
@@ -278,12 +297,20 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       cancelAutocomplete(); // each keystroke cancels the pending request + timer
       if (aiModeRef.current !== "auto") return;
       if (!ed.state.selection.empty) return;
-      const before = ed.state.doc.textBetween(0, ed.state.selection.head, "\n", " ");
+      const before = ed.state.doc.textBetween(
+        0,
+        ed.state.selection.head,
+        "\n",
+        " ",
+      );
       if (before.trim().length < AUTOCOMPLETE_MIN_CHARS) return;
       if (!AUTOCOMPLETE_BOUNDARY.test(before.slice(-1))) return;
-      acTimer.current = setTimeout(() => requestSuggestion(ed), AUTOCOMPLETE_DEBOUNCE_MS);
+      acTimer.current = setTimeout(
+        () => requestSuggestion(ed),
+        AUTOCOMPLETE_DEBOUNCE_MS,
+      );
     },
-    [cancelAutocomplete, requestSuggestion]
+    [cancelAutocomplete, requestSuggestion],
   );
 
   // Manual trigger (⌘/Ctrl+J): suggest right now, regardless of boundary.
@@ -323,7 +350,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
         toast.error(String(err));
       }
     },
-    []
+    [],
   );
 
   // Relink: rebuild an imported paper's plain-text references into live citations
@@ -335,11 +362,17 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     setRelinking(true);
     const tid = toast.loading(t("citation.relinking"));
     try {
-      const { content_json, stats } = await relinkCitations(doc.doc_id, ed.getJSON());
+      const { content_json, stats } = await relinkCitations(
+        doc.doc_id,
+        ed.getJSON(),
+      );
       ed.commands.setContent(content_json);
       toast.success(
-        t("citation.relinkDone", { linked: stats.intext_linked, matched: stats.matched }),
-        { id: tid }
+        t("citation.relinkDone", {
+          linked: stats.intext_linked,
+          matched: stats.matched,
+        }),
+        { id: tid },
       );
     } catch (e) {
       toast.error(String(e), { id: tid });
@@ -381,7 +414,9 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       const defects = await checkDraft(doc.doc_id, text, locale);
       setDefects(defects);
       ed.commands.setDefectHighlights(
-        defects.flatMap((d) => d.evidence.map((e) => ({ text: e, severity: d.severity })))
+        defects.flatMap((d) =>
+          d.evidence.map((e) => ({ text: e, severity: d.severity })),
+        ),
       );
     } catch (e) {
       if (e instanceof ChatRateLimitError)
@@ -396,49 +431,151 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   // block change. Memoized per locale (useEditor captures it on mount).
   const slashItems = useMemo<SlashItem[]>(
     () => [
-    { title: t("slash.text"), hint: t("slash.textHint"), icon: Pilcrow,
-      keywords: ["text", "paragraph", "p", "文字", "段落", "內文"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setParagraph().run() },
-    { title: t("slash.h1"), icon: Heading1, keywords: ["h1", "heading", "title", "標題"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode("heading", { level: 1 }).run() },
-    { title: t("slash.h2"), icon: Heading2, keywords: ["h2", "heading", "標題"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode("heading", { level: 2 }).run() },
-    { title: t("slash.h3"), icon: Heading3, keywords: ["h3", "heading", "標題"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode("heading", { level: 3 }).run() },
-    { title: t("slash.bullet"), icon: List, keywords: ["bullet", "list", "ul", "項目", "清單"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleBulletList().run() },
-    { title: t("slash.ordered"), icon: ListOrdered, keywords: ["number", "ordered", "ol", "編號", "清單"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleOrderedList().run() },
-    { title: t("slash.quote"), icon: Quote, keywords: ["quote", "blockquote", "引言", "引用"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleBlockquote().run() },
-    { title: t("slash.code"), icon: Code, keywords: ["code", "程式", "程式碼"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleCodeBlock().run() },
-    { title: t("slash.divider"), icon: Minus, keywords: ["divider", "hr", "rule", "分隔線", "分隔"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setHorizontalRule().run() },
-    { title: t("slash.image"), hint: t("slash.imageHint"), icon: ImageIcon,
-      keywords: ["image", "img", "picture", "photo", "圖", "圖片", "照片"],
-      command: ({ editor, range }) => { editor.chain().focus().deleteRange(range).run(); openImagePicker(); } },
-    { title: t("slash.toc"), icon: ListTree, keywords: ["toc", "contents", "outline", "目錄", "大綱"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertTableOfContents().run() },
-    { title: t("slash.figureList"), icon: Images, keywords: ["figures", "list", "圖目錄", "目錄"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertFigureList().run() },
-    { title: t("slash.mathInline"), icon: Variable,
-      keywords: ["math", "inline", "equation", "latex", "數學", "行內", "公式"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertMathInline().run() },
-    { title: t("slash.mathBlock"), icon: Sigma,
-      keywords: ["math", "block", "equation", "latex", "數學", "區塊", "公式"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertMathBlock().run() },
-    { title: t("slash.table"), icon: TableIcon, keywords: ["table", "grid", "表格", "表"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertTableBlock().run() },
-    { title: t("slash.tableList"), icon: TableProperties, keywords: ["tables", "list", "表目錄", "目錄"],
-      command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertTableList().run() },
+      // NOTE: the "/query" text is already removed centrally (slash-command.tsx)
+      // before these run, so each command only applies its block change.
+      {
+        title: t("slash.text"),
+        hint: t("slash.textHint"),
+        icon: Pilcrow,
+        keywords: ["text", "paragraph", "p", "文字", "段落", "內文"],
+        command: ({ editor }) => editor.chain().focus().setParagraph().run(),
+      },
+      {
+        title: t("slash.h1"),
+        icon: Heading1,
+        keywords: ["h1", "heading", "title", "標題"],
+        command: ({ editor }) =>
+          editor.chain().focus().setNode("heading", { level: 1 }).run(),
+      },
+      {
+        title: t("slash.h2"),
+        icon: Heading2,
+        keywords: ["h2", "heading", "標題"],
+        command: ({ editor }) =>
+          editor.chain().focus().setNode("heading", { level: 2 }).run(),
+      },
+      {
+        title: t("slash.h3"),
+        icon: Heading3,
+        keywords: ["h3", "heading", "標題"],
+        command: ({ editor }) =>
+          editor.chain().focus().setNode("heading", { level: 3 }).run(),
+      },
+      {
+        title: t("slash.bullet"),
+        icon: List,
+        keywords: ["bullet", "list", "ul", "項目", "清單"],
+        command: ({ editor }) =>
+          editor.chain().focus().toggleBulletList().run(),
+      },
+      {
+        title: t("slash.ordered"),
+        icon: ListOrdered,
+        keywords: ["number", "ordered", "ol", "編號", "清單"],
+        command: ({ editor }) =>
+          editor.chain().focus().toggleOrderedList().run(),
+      },
+      {
+        title: t("slash.quote"),
+        icon: Quote,
+        keywords: ["quote", "blockquote", "引言", "引用"],
+        command: ({ editor }) =>
+          editor.chain().focus().toggleBlockquote().run(),
+      },
+      {
+        title: t("slash.code"),
+        icon: Code,
+        keywords: ["code", "程式", "程式碼"],
+        command: ({ editor }) => editor.chain().focus().toggleCodeBlock().run(),
+      },
+      {
+        title: t("slash.divider"),
+        icon: Minus,
+        keywords: ["divider", "hr", "rule", "分隔線", "分隔"],
+        command: ({ editor }) =>
+          editor.chain().focus().setHorizontalRule().run(),
+      },
+      {
+        title: t("slash.image"),
+        hint: t("slash.imageHint"),
+        icon: ImageIcon,
+        keywords: ["image", "img", "picture", "photo", "圖", "圖片", "照片"],
+        command: () => openImagePicker(),
+      },
+      {
+        title: t("slash.toc"),
+        icon: ListTree,
+        keywords: ["toc", "contents", "outline", "目錄", "大綱"],
+        command: ({ editor }) =>
+          editor.chain().focus().insertTableOfContents().run(),
+      },
+      {
+        title: t("slash.figureList"),
+        icon: Images,
+        keywords: ["figures", "list", "圖目錄", "目錄"],
+        command: ({ editor }) =>
+          editor.chain().focus().insertFigureList().run(),
+      },
+      {
+        title: t("slash.mathInline"),
+        icon: Variable,
+        keywords: [
+          "math",
+          "inline",
+          "equation",
+          "latex",
+          "數學",
+          "行內",
+          "公式",
+        ],
+        command: ({ editor }) =>
+          editor.chain().focus().insertMathInline().run(),
+      },
+      {
+        title: t("slash.mathBlock"),
+        icon: Sigma,
+        keywords: [
+          "math",
+          "block",
+          "equation",
+          "latex",
+          "數學",
+          "區塊",
+          "公式",
+        ],
+        command: ({ editor }) => editor.chain().focus().insertMathBlock().run(),
+      },
+      {
+        title: t("slash.table"),
+        icon: TableIcon,
+        keywords: ["table", "grid", "表格", "表"],
+        command: ({ editor }) =>
+          editor.chain().focus().insertTableBlock().run(),
+      },
+      {
+        title: t("slash.tableList"),
+        icon: TableProperties,
+        keywords: ["tables", "list", "表目錄", "目錄"],
+        command: ({ editor }) => editor.chain().focus().insertTableList().run(),
+      },
     ],
-    [t, openImagePicker]
+    [t, openImagePicker],
   );
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      // Disable StarterKit's plain codeBlock in favour of our Notion-style
+      // CodeBlock (syntax highlighting + language picker + copy).
+      StarterKit.configure({ codeBlock: false }),
+      CodeBlock.configure({
+        labels: {
+          searchPlaceholder: t("code.searchPlaceholder"),
+          copy: t("code.copy"),
+          copied: t("code.copied"),
+        },
+      }),
+      // (StarterKit already provides TrailingNode, which keeps a paragraph after
+      // the last block so trailing atom blocks stay escapable/deletable.)
       Autocomplete,
       Citation,
       Figure.configure({
@@ -462,8 +599,18 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           untitled: t("figure.untitled"),
         },
       }),
-      MathInline.configure({ labels: { placeholder: t("math.inlinePlaceholder") } }),
-      MathBlock.configure({ labels: { placeholder: t("math.blockPlaceholder") } }),
+      MathInline.configure({
+        labels: {
+          placeholder: t("math.inlinePlaceholder"),
+          done: t("math.done"),
+        },
+      }),
+      MathBlock.configure({
+        labels: {
+          placeholder: t("math.blockPlaceholder"),
+          done: t("math.done"),
+        },
+      }),
       Table.configure({ resizable: true }),
       TableRow,
       TableHeader,
@@ -493,7 +640,10 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       },
       // ⌘/Ctrl+J manually requests a ghost-text suggestion (Jenni-style).
       handleKeyDown: (_view, event) => {
-        if (event.key.toLowerCase() === "j" && (event.metaKey || event.ctrlKey)) {
+        if (
+          event.key.toLowerCase() === "j" &&
+          (event.metaKey || event.ctrlKey)
+        ) {
           event.preventDefault();
           manualTriggerRef.current();
           return true;
@@ -510,6 +660,38 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   // Keep a ref to the editor for callbacks created before useEditor returns.
   useEffect(() => {
     editorRef.current = editor;
+  }, [editor]);
+
+  // Block-drag plumbing. The ⠿ grip is portaled outside the editor DOM, so the
+  // native dragend never reaches prosemirror-dropcursor (its listeners live on
+  // editor.dom) — the drop line then lingers on the plugin's 5s fallback timer.
+  // Forward a synthetic dragend so it clears in ~20ms. Also suppress the bubble
+  // menu during the drag and for a brief tail afterwards.
+  useEffect(() => {
+    if (!editor) return;
+    const onDragStart = () => {
+      draggingRef.current = true;
+      document.body.classList.remove("is-drag-ended");
+      if (dragResetTimer.current) clearTimeout(dragResetTimer.current);
+    };
+    const onDragEnd = () => {
+      // Hide the drop line now (CSS), and also nudge the plugin to remove the
+      // node — its own fast-removal events never reach the portaled handle.
+      document.body.classList.add("is-drag-ended");
+      editor.view.dom.dispatchEvent(new Event("dragend"));
+      if (dragResetTimer.current) clearTimeout(dragResetTimer.current);
+      dragResetTimer.current = setTimeout(() => {
+        draggingRef.current = false;
+      }, 200);
+    };
+    document.addEventListener("dragstart", onDragStart, true);
+    document.addEventListener("dragend", onDragEnd, true);
+    return () => {
+      document.removeEventListener("dragstart", onDragStart, true);
+      document.removeEventListener("dragend", onDragEnd, true);
+      document.body.classList.remove("is-drag-ended");
+      if (dragResetTimer.current) clearTimeout(dragResetTimer.current);
+    };
   }, [editor]);
 
   // Bind store to this document on mount; clear timers on unmount.
@@ -537,7 +719,12 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   if (!editor) return null;
 
   const goToHeading = (pos: number) => {
-    editor.chain().focus().setTextSelection(pos + 1).scrollIntoView().run();
+    editor
+      .chain()
+      .focus()
+      .setTextSelection(pos + 1)
+      .scrollIntoView()
+      .run();
   };
 
   return (
@@ -562,7 +749,9 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
               ))}
             </nav>
           ) : (
-            <p className="px-2 text-sm text-muted-foreground/60">{t("outlineEmpty")}</p>
+            <p className="px-2 text-sm text-muted-foreground/60">
+              {t("outlineEmpty")}
+            </p>
           )}
         </div>
       </aside>
@@ -583,43 +772,97 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
 
         {/* Toolbar */}
         <div className="sticky top-14 z-10 mb-3 flex flex-wrap items-center gap-0.5 rounded-lg border bg-background/95 p-1 backdrop-blur">
-          <ToolbarButton active={tb?.h1} label={t("tools.h1")} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
+          <ToolbarButton
+            active={tb?.h1}
+            label={t("tools.h1")}
+            onClick={() =>
+              editor.chain().focus().toggleHeading({ level: 1 }).run()
+            }
+          >
             <Heading1 className="h-4 w-4" />
           </ToolbarButton>
-          <ToolbarButton active={tb?.h2} label={t("tools.h2")} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+          <ToolbarButton
+            active={tb?.h2}
+            label={t("tools.h2")}
+            onClick={() =>
+              editor.chain().focus().toggleHeading({ level: 2 }).run()
+            }
+          >
             <Heading2 className="h-4 w-4" />
           </ToolbarButton>
-          <ToolbarButton active={tb?.h3} label={t("tools.h3")} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
+          <ToolbarButton
+            active={tb?.h3}
+            label={t("tools.h3")}
+            onClick={() =>
+              editor.chain().focus().toggleHeading({ level: 3 }).run()
+            }
+          >
             <Heading3 className="h-4 w-4" />
           </ToolbarButton>
           <div className="mx-1 h-5 w-px bg-border" />
-          <ToolbarButton active={tb?.bold} label={t("tools.bold")} onClick={() => editor.chain().focus().toggleBold().run()}>
+          <ToolbarButton
+            active={tb?.bold}
+            label={t("tools.bold")}
+            onClick={() => editor.chain().focus().toggleBold().run()}
+          >
             <Bold className="h-4 w-4" />
           </ToolbarButton>
-          <ToolbarButton active={tb?.italic} label={t("tools.italic")} onClick={() => editor.chain().focus().toggleItalic().run()}>
+          <ToolbarButton
+            active={tb?.italic}
+            label={t("tools.italic")}
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+          >
             <Italic className="h-4 w-4" />
           </ToolbarButton>
-          <ToolbarButton active={tb?.strike} label={t("tools.strike")} onClick={() => editor.chain().focus().toggleStrike().run()}>
+          <ToolbarButton
+            active={tb?.strike}
+            label={t("tools.strike")}
+            onClick={() => editor.chain().focus().toggleStrike().run()}
+          >
             <Strikethrough className="h-4 w-4" />
           </ToolbarButton>
-          <ToolbarButton active={tb?.code} label={t("tools.code")} onClick={() => editor.chain().focus().toggleCode().run()}>
+          <ToolbarButton
+            active={tb?.code}
+            label={t("tools.code")}
+            onClick={() => editor.chain().focus().toggleCode().run()}
+          >
             <Code className="h-4 w-4" />
           </ToolbarButton>
           <div className="mx-1 h-5 w-px bg-border" />
-          <ToolbarButton active={tb?.bullet} label={t("tools.bullet")} onClick={() => editor.chain().focus().toggleBulletList().run()}>
+          <ToolbarButton
+            active={tb?.bullet}
+            label={t("tools.bullet")}
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+          >
             <List className="h-4 w-4" />
           </ToolbarButton>
-          <ToolbarButton active={tb?.ordered} label={t("tools.ordered")} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
+          <ToolbarButton
+            active={tb?.ordered}
+            label={t("tools.ordered")}
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          >
             <ListOrdered className="h-4 w-4" />
           </ToolbarButton>
-          <ToolbarButton active={tb?.quote} label={t("tools.quote")} onClick={() => editor.chain().focus().toggleBlockquote().run()}>
+          <ToolbarButton
+            active={tb?.quote}
+            label={t("tools.quote")}
+            onClick={() => editor.chain().focus().toggleBlockquote().run()}
+          >
             <Quote className="h-4 w-4" />
           </ToolbarButton>
           <div className="mx-1 h-5 w-px bg-border" />
-          <ToolbarButton disabled={!tb?.canUndo} label={t("tools.undo")} onClick={() => editor.chain().focus().undo().run()}>
+          <ToolbarButton
+            disabled={!tb?.canUndo}
+            label={t("tools.undo")}
+            onClick={() => editor.chain().focus().undo().run()}
+          >
             <Undo2 className="h-4 w-4" />
           </ToolbarButton>
-          <ToolbarButton disabled={!tb?.canRedo} label={t("tools.redo")} onClick={() => editor.chain().focus().redo().run()}>
+          <ToolbarButton
+            disabled={!tb?.canRedo}
+            label={t("tools.redo")}
+            onClick={() => editor.chain().focus().redo().run()}
+          >
             <Redo2 className="h-4 w-4" />
           </ToolbarButton>
           <div className="mx-1 h-5 w-px bg-border" />
@@ -670,7 +913,13 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
             className="h-8 gap-1.5 px-2 text-xs"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() =>
-              setAiMode(aiMode === "auto" ? "manual" : aiMode === "manual" ? "off" : "auto")
+              setAiMode(
+                aiMode === "auto"
+                  ? "manual"
+                  : aiMode === "manual"
+                    ? "off"
+                    : "auto",
+              )
             }
             title={t("ai.cycleHint")}
           >
@@ -687,6 +936,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
         {/* Content */}
         <div className="rounded-lg border bg-background p-6 sm:p-8">
           <EditorContent editor={editor} />
+          <BlockHandle editor={editor} />
         </div>
       </div>
 
@@ -704,14 +954,20 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       <BubbleMenu
         editor={editor}
         pluginKey="textMenu"
+        // Small debounce so it settles instead of flashing during selection drags.
+        updateDelay={300}
         // Only for real text selections — not when a node (e.g. an image/figure)
-        // is selected, where "rewrite"/"cite" make no sense.
+        // is selected, nor during/just-after a block drag, where "rewrite"/"cite"
+        // make no sense.
         shouldShow={({ editor }) => {
+          if (draggingRef.current) return false;
           const { selection } = editor.state;
-          if (selection.empty || selection instanceof NodeSelection) return false;
+          if (selection.empty || selection instanceof NodeSelection)
+            return false;
           if (editor.isActive("table")) return false;
           return (
-            editor.state.doc.textBetween(selection.from, selection.to).trim().length > 0
+            editor.state.doc.textBetween(selection.from, selection.to).trim()
+              .length > 0
           );
         }}
       >

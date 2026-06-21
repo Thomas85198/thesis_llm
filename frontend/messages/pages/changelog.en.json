@@ -29,6 +29,18 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_4_0": {
+      "title": "Editor experience overhaul: Notion-style code blocks, block dragging, equation editing",
+      "summary": "A round of polish across the writing editor — code blocks, math equations, block manipulation, the slash menu, and the side panels are all brought in line with Notion / mainstream note apps, plus a batch of fixes for everyday editing annoyances.",
+      "changes": {
+        "0": "Notion-style code blocks: automatic syntax highlighting (37 common languages, with light/dark token palettes), a searchable language picker, and one-click copy; inside a block Tab indents and Shift+Tab outdents (multi-line aware) instead of escaping the block.",
+        "1": "Block drag handle (⠿): hovering a block reveals a handle on the left to reorder by dragging, or open a menu to duplicate / delete the whole block — also fixing the long-standing trouble of deleting code, math, and table blocks.",
+        "2": "Revamped equation editing: a larger rendered preview with the input box docked right beneath it (Notion-style); pressing Enter renders and the caret continues naturally; LaTeX pasted with outer delimiters (\\[ \\], $$, $) such as matrices now renders instead of erroring.",
+        "3": "Slash command fixes: the menu now appears the instant you type / (no need to nudge the caret); choosing any command no longer leaves the keyword you typed behind (e.g. /heading → H3 yields an empty heading, not stray text).",
+        "4": "Cleaner figure/table lists: figures or tables without a caption (e.g. a scanned approval page) are no longer numbered or added to the list of figures/tables — no more skipped numbers or blank entries; this matches the final PDF / LaTeX export.",
+        "5": "Side panels & interaction details: long text in the AI rewrite original, the smart-citation search box, and export format descriptions now wraps/scrolls instead of overflowing; the drop indicator line clears immediately after a drag; moving a sentence or block no longer pops the rewrite/cite toolbar by mistake."
+      }
+    },
     "4_3_0": {
       "title": "Upload tracking dashboard: failures no longer vanish",
       "summary": "Adds an upload audit system that fixes the blind spot where a failed paper upload left no trace of which file or what error. Every upload (success/failure/cache hit) now leaves a persistent record; on failure the maintainer is emailed automatically and the original file is kept for download to reproduce the problem locally; a daily upload summary email is also sent. The /admin page is token-protected.",

@@ -8,7 +8,11 @@
 // partial PUT).
 import { create } from "zustand";
 
-import { updateDocument, type DraftDefect, type ProseMirrorDoc } from "@/lib/api";
+import {
+  updateDocument,
+  type DraftDefect,
+  type ProseMirrorDoc,
+} from "@/lib/api";
 import { type CitationStyle } from "@/lib/citation-format";
 import { type SlashItem } from "@/components/editor/slash-command";
 
@@ -82,8 +86,16 @@ type EditorStore = {
   slashRect: DOMRect | null;
   /** Commit the chosen item (the suggestion plugin's `command`). */
   slashCommand: ((item: SlashItem) => void) | null;
-  openSlash: (a: { items: SlashItem[]; command: (item: SlashItem) => void; rect: DOMRect | null }) => void;
-  updateSlash: (a: { items: SlashItem[]; rect: DOMRect | null }) => void;
+  openSlash: (a: {
+    items: SlashItem[];
+    command: (item: SlashItem) => void;
+    rect: DOMRect | null;
+  }) => void;
+  updateSlash: (a: {
+    items: SlashItem[];
+    command: (item: SlashItem) => void;
+    rect: DOMRect | null;
+  }) => void;
   moveSlash: (delta: number) => void;
   setSlashIndex: (i: number) => void;
   pickSlash: (i?: number) => void;
@@ -94,7 +106,10 @@ let contentTimer: ReturnType<typeof setTimeout> | null = null;
 let titleTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useEditorStore = create<EditorStore>((set, get) => {
-  async function persist(body: { title?: string; content_json?: ProseMirrorDoc }) {
+  async function persist(body: {
+    title?: string;
+    content_json?: ProseMirrorDoc;
+  }) {
     const docId = get().docId;
     if (!docId) return;
     set({ saveState: "saving" });
@@ -126,7 +141,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       if (contentTimer) clearTimeout(contentTimer);
       contentTimer = setTimeout(
         () => void persist({ content_json: content }),
-        AUTOSAVE_DELAY_MS
+        AUTOSAVE_DELAY_MS,
       );
     },
     reset: () => {
@@ -187,7 +202,8 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     // ----- Outline -----
     outlineOpen: false,
     outlineNonce: 0,
-    openOutline: () => set((s) => ({ outlineOpen: true, outlineNonce: s.outlineNonce + 1 })),
+    openOutline: () =>
+      set((s) => ({ outlineOpen: true, outlineNonce: s.outlineNonce + 1 })),
     closeOutline: () => set({ outlineOpen: false }),
 
     // ----- Export -----
@@ -211,9 +227,23 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     slashRect: null,
     slashCommand: null,
     openSlash: ({ items, command, rect }) =>
-      set({ slashOpen: true, slashItems: items, slashCommand: command, slashRect: rect, slashIndex: 0 }),
-    updateSlash: ({ items, rect }) =>
-      set((s) => ({ slashItems: items, slashRect: rect, slashIndex: Math.min(s.slashIndex, Math.max(0, items.length - 1)) })),
+      set({
+        slashOpen: true,
+        slashItems: items,
+        slashCommand: command,
+        slashRect: rect,
+        slashIndex: 0,
+      }),
+    updateSlash: ({ items, command, rect }) =>
+      set((s) => ({
+        slashItems: items,
+        // Refresh the command each update: it closes over the suggestion's
+        // current range, which grows as the user types "/query". Keeping the
+        // onStart command meant deleteRange only removed "/", leaving the query.
+        slashCommand: command,
+        slashRect: rect,
+        slashIndex: Math.min(s.slashIndex, Math.max(0, items.length - 1)),
+      })),
     moveSlash: (delta) =>
       set((s) => {
         const n = s.slashItems.length;
@@ -225,6 +255,12 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       const item = s.slashItems[i ?? s.slashIndex];
       if (item && s.slashCommand) s.slashCommand(item);
     },
-    closeSlash: () => set({ slashOpen: false, slashItems: [], slashCommand: null, slashRect: null }),
+    closeSlash: () =>
+      set({
+        slashOpen: false,
+        slashItems: [],
+        slashCommand: null,
+        slashRect: null,
+      }),
   };
 });

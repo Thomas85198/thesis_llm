@@ -166,7 +166,18 @@
   },
   "math": {
     "inlinePlaceholder": "LaTeX，例如 E=mc^2",
-    "blockPlaceholder": "LaTeX，例如 \\int_0^1 x\\,dx"
+    "blockPlaceholder": "LaTeX，例如 \\int_0^1 x\\,dx",
+    "done": "完成"
+  },
+  "blockHandle": {
+    "label": "拖曳移動，點擊開啟選單",
+    "duplicate": "複製區塊",
+    "delete": "刪除區塊"
+  },
+  "code": {
+    "searchPlaceholder": "搜尋語言…",
+    "copy": "複製",
+    "copied": "已複製"
   },
   "table": {
     "word": "表"

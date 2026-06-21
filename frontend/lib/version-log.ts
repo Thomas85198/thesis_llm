@@ -38,6 +38,18 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.4.0",
+    date: "2026-06-21",
+    changes: [
+      { type: "feat" }, // Notion 風程式碼區塊（高亮/語言選單/複製/Tab 縮排）
+      { type: "feat" }, // 區塊拖曳把手 ⠿（排序＋複製/刪除選單）
+      { type: "feat" }, // 數學公式編輯改版（預覽放大＋內嵌輸入＋分隔符相容）
+      { type: "fix" }, // Slash 指令：立即出現＋不殘留關鍵字
+      { type: "fix" }, // 無標題圖/表不編號、不進目錄
+      { type: "fix" }, // 側欄/互動細節（長文換行、drop 線殘留、bubble 誤觸）
+    ],
+  },
+  {
     version: "4.3.0",
     date: "2026-06-11",
     changes: [

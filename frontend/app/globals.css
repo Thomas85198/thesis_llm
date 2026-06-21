@@ -7,11 +7,13 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang TC",
-    "Microsoft JhengHei", "Noto Sans TC", sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
-    Consolas, monospace;
+  --font-sans:
+    var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, "PingFang TC", "Microsoft JhengHei",
+    "Noto Sans TC", sans-serif;
+  --font-mono:
+    var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
   --font-heading: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -205,6 +207,98 @@
   background: transparent;
   padding: 0;
 }
+
+/* Notion-style code block (CodeBlockLowlight NodeView): the header bar connects
+   to the <pre>, so the pre drops its top radius. */
+.tiptap-content .tiptap-codeblock-pre {
+  margin: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-bottom-left-radius: 0.5rem;
+  border-bottom-right-radius: 0.5rem;
+}
+
+/* highlight.js token colours — GitHub-style, light by default. */
+.tiptap-content .hljs-comment,
+.tiptap-content .hljs-quote {
+  color: #6a737d;
+  font-style: italic;
+}
+.tiptap-content .hljs-keyword,
+.tiptap-content .hljs-selector-tag,
+.tiptap-content .hljs-literal,
+.tiptap-content .hljs-type,
+.tiptap-content .hljs-name,
+.tiptap-content .hljs-built_in {
+  color: #d73a49;
+}
+.tiptap-content .hljs-string,
+.tiptap-content .hljs-attr,
+.tiptap-content .hljs-regexp,
+.tiptap-content .hljs-addition {
+  color: #22863a;
+}
+.tiptap-content .hljs-number,
+.tiptap-content .hljs-meta,
+.tiptap-content .hljs-symbol,
+.tiptap-content .hljs-bullet {
+  color: #005cc5;
+}
+.tiptap-content .hljs-title,
+.tiptap-content .hljs-section,
+.tiptap-content .hljs-title.function_ {
+  color: #6f42c1;
+}
+.tiptap-content .hljs-variable,
+.tiptap-content .hljs-template-variable,
+.tiptap-content .hljs-attribute {
+  color: #e36209;
+}
+.tiptap-content .hljs-deletion {
+  color: #b31d28;
+}
+.tiptap-content .hljs-emphasis {
+  font-style: italic;
+}
+.tiptap-content .hljs-strong {
+  font-weight: 700;
+}
+
+/* Dark theme token colours. */
+.dark .tiptap-content .hljs-comment,
+.dark .tiptap-content .hljs-quote {
+  color: #8b949e;
+}
+.dark .tiptap-content .hljs-keyword,
+.dark .tiptap-content .hljs-selector-tag,
+.dark .tiptap-content .hljs-literal,
+.dark .tiptap-content .hljs-type,
+.dark .tiptap-content .hljs-name {
+  color: #ff7b72;
+}
+.dark .tiptap-content .hljs-string,
+.dark .tiptap-content .hljs-attr,
+.dark .tiptap-content .hljs-regexp,
+.dark .tiptap-content .hljs-addition {
+  color: #a5d6ff;
+}
+.dark .tiptap-content .hljs-number,
+.dark .tiptap-content .hljs-meta,
+.dark .tiptap-content .hljs-symbol,
+.dark .tiptap-content .hljs-bullet {
+  color: #79c0ff;
+}
+.dark .tiptap-content .hljs-title,
+.dark .tiptap-content .hljs-section,
+.dark .tiptap-content .hljs-title.function_ {
+  color: #d2a8ff;
+}
+.dark .tiptap-content .hljs-variable,
+.dark .tiptap-content .hljs-template-variable,
+.dark .tiptap-content .hljs-attribute,
+.dark .tiptap-content .hljs-built_in {
+  color: #ffa657;
+}
 /* Placeholder for an empty document's first line. */
 .tiptap-content p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
@@ -294,4 +388,14 @@
 .tiptap-content .tableWrapper {
   max-width: 100%;
   overflow-x: auto;
+}
+
+/* Drop indicator (prosemirror-dropcursor). The ⠿ drag handle is portaled
+   outside the editor DOM, so the plugin's fast-removal events never reach it and
+   the line lingers on its 5s fallback timer. We add `is-drag-ended` to <body> the
+   instant a drag ends to hide it immediately; the plugin still removes the node
+   underneath. The class is cleared on the next dragstart. */
+body.is-drag-ended .prosemirror-dropcursor-block,
+body.is-drag-ended .prosemirror-dropcursor-inline {
+  display: none !important;
 }

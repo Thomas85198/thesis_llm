@@ -34,7 +34,13 @@ const PRESETS = [
 ] as const;
 
 /** Shell: the Sheet + header. Body remounts (keyed on nonce) on every open. */
-export function RewritePanel({ editor, docId }: { editor: Editor; docId: string }) {
+export function RewritePanel({
+  editor,
+  docId,
+}: {
+  editor: Editor;
+  docId: string;
+}) {
   const t = useTranslations("editor");
   const open = useEditorStore((s) => s.rewriteOpen);
   const nonce = useEditorStore((s) => s.rewriteNonce);
@@ -42,7 +48,10 @@ export function RewritePanel({ editor, docId }: { editor: Editor; docId: string 
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && closeRewrite()}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-md">
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 sm:max-w-md"
+      >
         <SheetHeader>
           <SheetTitle>{t("rewrite.panelTitle")}</SheetTitle>
           <SheetDescription>{t("rewrite.panelDesc")}</SheetDescription>
@@ -53,7 +62,13 @@ export function RewritePanel({ editor, docId }: { editor: Editor; docId: string 
   );
 }
 
-function RewritePanelBody({ editor, docId }: { editor: Editor; docId: string }) {
+function RewritePanelBody({
+  editor,
+  docId,
+}: {
+  editor: Editor;
+  docId: string;
+}) {
   const t = useTranslations("editor");
   const locale = useLocale();
   const original = useEditorStore((s) => s.rewriteText);
@@ -80,7 +95,7 @@ function RewritePanelBody({ editor, docId }: { editor: Editor; docId: string }) 
         (delta) => {
           if (!controller.signal.aborted) setResult((r) => r + delta);
         },
-        controller.signal
+        controller.signal,
       )
         .catch((e) => {
           if (controller.signal.aborted) return;
@@ -92,7 +107,7 @@ function RewritePanelBody({ editor, docId }: { editor: Editor; docId: string }) 
           if (!controller.signal.aborted) setLoading(false);
         });
     },
-    [docId, original, locale, t]
+    [docId, original, locale, t],
   );
 
   function handleAccept() {
@@ -111,9 +126,14 @@ function RewritePanelBody({ editor, docId }: { editor: Editor; docId: string }) 
         <p className="mb-1 text-xs font-medium text-muted-foreground">
           {t("rewrite.originalLabel")}
         </p>
-        <ScrollArea className="max-h-24 rounded-md border bg-muted/40 p-2">
-          <p className="whitespace-pre-wrap text-xs text-muted-foreground">{original}</p>
-        </ScrollArea>
+        {/* Plain scroll container: a ScrollArea with only max-height (no definite
+            height) doesn't constrain its Radix viewport, so long passages spilled
+            over the controls below. */}
+        <div className="max-h-24 overflow-y-auto rounded-md border bg-muted/40 p-2">
+          <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
+            {original}
+          </p>
+        </div>
       </div>
 
       {/* Preset instructions */}
@@ -172,21 +192,20 @@ function RewritePanelBody({ editor, docId }: { editor: Editor; docId: string }) 
               {t("rewrite.working")}
             </div>
           ) : result ? (
-            <p className="whitespace-pre-wrap text-sm leading-relaxed">{result}</p>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">
+              {result}
+            </p>
           ) : (
-            <p className="text-sm text-muted-foreground">{t("rewrite.prompt")}</p>
+            <p className="text-sm text-muted-foreground">
+              {t("rewrite.prompt")}
+            </p>
           )}
         </ScrollArea>
       </div>
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={closeRewrite}
-        >
+        <Button type="button" variant="ghost" size="sm" onClick={closeRewrite}>
           <X className="mr-1 h-4 w-4" />
           {t("rewrite.discard")}
         </Button>

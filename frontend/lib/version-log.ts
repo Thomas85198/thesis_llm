@@ -38,6 +38,18 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.5.0",
+    date: "2026-06-22",
+    changes: [
+      { type: "feat" }, // 純文字引用自動偵測（括號/多筆/敘述式/et al./中文分隔/網頁）＋未串接「待補來源」chip
+      { type: "feat" }, // 補來源管道擴充：貼 DOI/連結（Crossref 免費）或手動填寫；參考文獻可編輯/刪除
+      { type: "feat" }, // 自動書目節點 /參考文獻清單（即時更新、依格式、含網址）＋一鍵轉成文字
+      { type: "fix" }, // OpenAlex 限流（429）友善提示＋自動重試；無對象時隱藏「更新連結」
+      { type: "fix" }, // 編輯器找漏修復（程式碼複製、區塊把手、表格拖曳、面板捲軸/長網址換行、無障礙）
+      { type: "perf" }, // 引用編號改快取（O(n²)→O(n)）、大綱/工具列重算降頻
+    ],
+  },
+  {
     version: "4.4.0",
     date: "2026-06-21",
     changes: [

@@ -25,7 +25,10 @@ declare module "@tiptap/core" {
   }
 }
 
-function buildDecorations(doc: import("@tiptap/pm/model").Node, marks: DefectMark[]): DecorationSet {
+function buildDecorations(
+  doc: import("@tiptap/pm/model").Node,
+  marks: DefectMark[],
+): DecorationSet {
   if (marks.length === 0) return DecorationSet.empty;
   const decos: Decoration[] = [];
   doc.descendants((node, pos) => {
@@ -34,13 +37,15 @@ function buildDecorations(doc: import("@tiptap/pm/model").Node, marks: DefectMar
     for (const m of marks) {
       const needle = m.text.trim();
       if (needle.length < 4) continue;
-      const idx = text.indexOf(needle);
-      if (idx >= 0) {
+      // Underline every occurrence in this text node, not just the first.
+      let idx = text.indexOf(needle);
+      while (idx >= 0) {
         decos.push(
           Decoration.inline(pos + idx, pos + idx + needle.length, {
             class: `tiptap-defect tiptap-defect-${m.severity}`,
-          })
+          }),
         );
+        idx = text.indexOf(needle, idx + needle.length);
       }
     }
     return true;
@@ -101,7 +106,8 @@ export const DefectHighlight = Extension.create({
           editor.state.doc.descendants((node, pos) => {
             if (found || !node.isText || !node.text) return;
             const idx = node.text.indexOf(needle);
-            if (idx >= 0) found = { from: pos + idx, to: pos + idx + needle.length };
+            if (idx >= 0)
+              found = { from: pos + idx, to: pos + idx + needle.length };
             return true;
           });
           if (!found) return false;

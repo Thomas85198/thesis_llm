@@ -329,6 +329,29 @@
 .tiptap-citation:hover {
   background: color-mix(in oklab, var(--primary) 15%, transparent);
 }
+/* Auto-generated bibliography: APA-style hanging indent per entry. */
+.tiptap-reference-list-ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.tiptap-reference-list-ol li {
+  padding-left: 1.6em;
+  text-indent: -1.6em;
+}
+/* Recognized but not yet linked to a source — amber dashed underline to invite
+   "find source" and clearly distinguish it from a resolved (solid) citation. */
+.tiptap-citation-unlinked {
+  color: #b45309;
+  text-decoration: underline dashed;
+  text-decoration-color: #f59e0b;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+.dark .tiptap-citation-unlinked {
+  color: #fbbf24;
+  text-decoration-color: #f59e0b;
+}
 
 /* Tables (editable grid). The caption renders above via the tableCaption node. */
 .tiptap-content table {

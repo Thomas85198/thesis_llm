@@ -49,6 +49,21 @@
   },
   "citation": {
     "find": "Find citation",
+    "pendingSource": "Pending source",
+    "findSource": "Find source",
+    "manualTitle": "Attach a source (paste a DOI or fill in)",
+    "doiPlaceholder": "Paste a DOI or paper link",
+    "apply": "Apply",
+    "manualToggle": "Fill in the reference manually",
+    "manualAuthors": "Authors (comma-separated, e.g. Lin, C., Wang, A.)",
+    "manualPaperTitle": "Paper title",
+    "manualVenue": "Journal / conference / publisher",
+    "manualYear": "Year",
+    "manualUrl": "Link (optional)",
+    "doiNotFound": "No DOI found — switched to manual entry",
+    "manualNeedsFields": "Enter at least a title or an author",
+    "editRef": "Edit",
+    "deleteRef": "Delete this citation from the text",
     "relink": "Auto-link references (for imported papers)",
     "relinking": "Parsing references, matching on OpenAlex… (~a minute)",
     "relinkDone": "Linked {linked} in-text citations ({matched} works matched with high confidence) — see the citation panel",
@@ -159,6 +174,7 @@
     "imageHint": "Upload an image with a caption",
     "toc": "Table of contents",
     "figureList": "List of figures",
+    "referenceList": "Reference list",
     "mathInline": "Inline math",
     "mathBlock": "Math block",
     "table": "Table",
@@ -204,6 +220,11 @@
   "figureList": {
     "title": "List of Figures",
     "empty": "No figures in the document yet."
+  },
+  "refList": {
+    "title": "References",
+    "empty": "No citations with a linked source yet.",
+    "toText": "Convert to text (edit manually)"
   },
   "toc": {
     "title": "Contents",

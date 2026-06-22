@@ -49,6 +49,21 @@
   },
   "citation": {
     "find": "找引用",
+    "pendingSource": "待補來源",
+    "findSource": "找來源",
+    "manualTitle": "補來源（貼 DOI 或手動填寫）",
+    "doiPlaceholder": "貼上 DOI 或論文連結",
+    "apply": "套用",
+    "manualToggle": "改用手動填寫參考文獻",
+    "manualAuthors": "作者（逗號分隔，例：Lin, C., Wang, A.）",
+    "manualPaperTitle": "論文標題",
+    "manualVenue": "期刊／會議／出版單位",
+    "manualYear": "年份",
+    "manualUrl": "連結（選填）",
+    "doiNotFound": "找不到 DOI，已切換為手動填寫",
+    "manualNeedsFields": "至少要填標題或作者",
+    "editRef": "編輯",
+    "deleteRef": "從文中刪除這筆引用",
     "relink": "自動串接參考文獻（匯入論文用）",
     "relinking": "解析參考文獻、比對 OpenAlex 中…（約一分鐘）",
     "relinkDone": "已串接 {linked} 處內文引用（高信心比中 {matched} 篇文獻），可在引用面板查看",
@@ -159,6 +174,7 @@
     "imageHint": "上傳圖片並加標題",
     "toc": "目錄",
     "figureList": "圖目錄",
+    "referenceList": "參考文獻清單",
     "mathInline": "行內數學",
     "mathBlock": "數學區塊",
     "table": "表格",
@@ -204,6 +220,11 @@
   "figureList": {
     "title": "圖目錄",
     "empty": "文件中還沒有任何圖片。"
+  },
+  "refList": {
+    "title": "參考文獻",
+    "empty": "文件中還沒有已串接來源的引用。",
+    "toText": "轉成文字（手動編輯）"
   },
   "toc": {
     "title": "目錄",

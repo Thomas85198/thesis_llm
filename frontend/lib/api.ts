@@ -3,10 +3,10 @@
 // frontend itself — use API_INTERNAL_BASE (compose network hostname) instead.
 const API_BASE =
   typeof window === "undefined"
-    ? process.env.API_INTERNAL_BASE ??
+    ? (process.env.API_INTERNAL_BASE ??
       process.env.NEXT_PUBLIC_API_BASE ??
-      "http://localhost:8000"
-    : process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+      "http://localhost:8000")
+    : (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000");
 
 export const apiBase = API_BASE;
 
@@ -84,7 +84,7 @@ export type LocalizedText = Record<string, string>;
 /** Read a localized value for `locale`, falling back to zh-Hant then any value. */
 export function pickLocalized(
   value: LocalizedText | string | null | undefined,
-  locale: string
+  locale: string,
 ): string {
   if (value == null) return "";
   if (typeof value === "string") return value;
@@ -116,12 +116,7 @@ export type AnalysisResult = {
   rule_meta?: RuleRunMeta[];
 };
 
-export type JobStatus =
-  | "queued"
-  | "extracting"
-  | "checking"
-  | "done"
-  | "error";
+export type JobStatus = "queued" | "extracting" | "checking" | "done" | "error";
 
 export type Job = {
   status: JobStatus;
@@ -136,8 +131,8 @@ export type Job = {
 
 export type PaperListItem = {
   paper_id: string;
-  title: string;        // 顯示用：使用者填的 title，沒填 fallback 到 filename
-  filename: string;     // 原始檔名（永遠記錄）
+  title: string; // 顯示用：使用者填的 title，沒填 fallback 到 filename
+  filename: string; // 原始檔名（永遠記錄）
   defect_count: number;
   edu_count: number;
   finished_at?: string | null;
@@ -180,9 +175,11 @@ export async function listPapers(): Promise<PaperListItem[]> {
   return get<PaperListItem[]>("/api/papers");
 }
 
-export async function fetchPaperResult(paperId: string): Promise<AnalysisResult> {
+export async function fetchPaperResult(
+  paperId: string,
+): Promise<AnalysisResult> {
   return get<AnalysisResult>(
-    `/api/papers/${encodeURIComponent(paperId)}/result`
+    `/api/papers/${encodeURIComponent(paperId)}/result`,
   );
 }
 
@@ -192,7 +189,7 @@ export async function fetchJob(jobId: string): Promise<Job> {
 
 export async function uploadPaper(
   file: File,
-  title?: string
+  title?: string,
 ): Promise<{ job_id: string; paper_id: string; cached?: boolean }> {
   const fd = new FormData();
   fd.append("file", file);
@@ -212,7 +209,7 @@ export function pdfUrl(paperId: string): string {
 export async function deletePaper(paperId: string): Promise<void> {
   const res = await fetch(
     `${API_BASE}/api/papers/${encodeURIComponent(paperId)}`,
-    { method: "DELETE" }
+    { method: "DELETE" },
   );
   if (!res.ok) throw new Error(`deletePaper failed: ${await res.text()}`);
 }
@@ -239,13 +236,13 @@ export type Judgment = {
 
 export async function fetchJudgments(paperId: string): Promise<Judgment[]> {
   return get<Judgment[]>(
-    `/api/papers/${encodeURIComponent(paperId)}/judgments`
+    `/api/papers/${encodeURIComponent(paperId)}/judgments`,
   );
 }
 
 export async function submitJudgment(
   paperId: string,
-  body: { defect_id: string; rule_id: string; verdict: Verdict; note?: string }
+  body: { defect_id: string; rule_id: string; verdict: Verdict; note?: string },
 ): Promise<void> {
   const res = await fetch(
     `${API_BASE}/api/papers/${encodeURIComponent(paperId)}/judgments`,
@@ -253,18 +250,18 @@ export async function submitJudgment(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }
+    },
   );
   if (!res.ok) throw new Error(`submitJudgment failed: ${await res.text()}`);
 }
 
 export async function deleteJudgment(
   paperId: string,
-  defectId: string
+  defectId: string,
 ): Promise<void> {
   const res = await fetch(
     `${API_BASE}/api/papers/${encodeURIComponent(paperId)}/judgments/${encodeURIComponent(defectId)}`,
-    { method: "DELETE" }
+    { method: "DELETE" },
   );
   if (!res.ok) throw new Error(`deleteJudgment failed: ${await res.text()}`);
 }
@@ -398,7 +395,7 @@ export class ChatRateLimitError extends Error {
 export async function sendChat(
   paperId: string,
   messages: ChatMessage[],
-  lang?: string
+  lang?: string,
 ): Promise<ChatResponse> {
   const res = await fetch(
     `${API_BASE}/api/papers/${encodeURIComponent(paperId)}/chat`,
@@ -406,7 +403,7 @@ export async function sendChat(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages, lang }),
-    }
+    },
   );
   if (res.status === 429) {
     const text = await res.text();
@@ -414,7 +411,8 @@ export async function sendChat(
     const wait = m ? Number(m[1]) : 30;
     throw new ChatRateLimitError(text, wait);
   }
-  if (!res.ok) throw new Error(`chat failed: ${res.status} ${await res.text()}`);
+  if (!res.ok)
+    throw new Error(`chat failed: ${res.status} ${await res.text()}`);
   return res.json();
 }
 
@@ -480,7 +478,7 @@ export type RelinkStats = {
  */
 export async function relinkCitations(
   docId: string,
-  content_json: ProseMirrorDoc
+  content_json: ProseMirrorDoc,
 ): Promise<{ content_json: ProseMirrorDoc; stats: RelinkStats }> {
   const res = await fetch(`${API_BASE}/api/editor/citations/relink`, {
     method: "POST",
@@ -488,7 +486,9 @@ export async function relinkCitations(
     body: JSON.stringify({ doc_id: docId, content_json }),
   });
   if (!res.ok) {
-    throw new Error(`relinkCitations failed: ${res.status} ${await res.text()}`);
+    throw new Error(
+      `relinkCitations failed: ${res.status} ${await res.text()}`,
+    );
   }
   return res.json();
 }
@@ -500,7 +500,7 @@ export async function relinkCitations(
  * by figure nodes, so they render and re-export like any uploaded image.
  */
 export async function importDocument(
-  file: File
+  file: File,
 ): Promise<{ title: string; content_json: ProseMirrorDoc }> {
   const form = new FormData();
   form.append("file", file);
@@ -516,7 +516,7 @@ export async function importDocument(
 
 export async function updateDocument(
   docId: string,
-  body: { title?: string; content_json?: ProseMirrorDoc }
+  body: { title?: string; content_json?: ProseMirrorDoc },
 ): Promise<void> {
   const res = await fetch(
     `${API_BASE}/api/editor/documents/${encodeURIComponent(docId)}`,
@@ -524,7 +524,7 @@ export async function updateDocument(
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }
+    },
   );
   if (!res.ok) throw new Error(`updateDocument failed: ${await res.text()}`);
 }
@@ -532,7 +532,7 @@ export async function updateDocument(
 export async function deleteDocument(docId: string): Promise<void> {
   const res = await fetch(
     `${API_BASE}/api/editor/documents/${encodeURIComponent(docId)}`,
-    { method: "DELETE" }
+    { method: "DELETE" },
   );
   if (!res.ok) throw new Error(`deleteDocument failed: ${await res.text()}`);
 }
@@ -540,7 +540,7 @@ export async function deleteDocument(docId: string): Promise<void> {
 export async function snapshotDocument(
   docId: string,
   content_json: ProseMirrorDoc,
-  label = "autosave"
+  label = "autosave",
 ): Promise<{ version_id: number }> {
   const res = await fetch(
     `${API_BASE}/api/editor/documents/${encodeURIComponent(docId)}/versions`,
@@ -548,17 +548,17 @@ export async function snapshotDocument(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content_json, label }),
-    }
+    },
   );
   if (!res.ok) throw new Error(`snapshotDocument failed: ${await res.text()}`);
   return res.json();
 }
 
 export async function listDocumentVersions(
-  docId: string
+  docId: string,
 ): Promise<DocumentVersion[]> {
   return get<DocumentVersion[]>(
-    `/api/editor/documents/${encodeURIComponent(docId)}/versions`
+    `/api/editor/documents/${encodeURIComponent(docId)}/versions`,
   );
 }
 
@@ -581,7 +581,7 @@ export type AutocompleteRequest = {
 export async function streamAutocomplete(
   body: AutocompleteRequest,
   onDelta: (text: string) => void,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<void> {
   let res: Response;
   try {
@@ -648,7 +648,7 @@ export type RewriteRequest = {
 export async function streamRewrite(
   body: RewriteRequest,
   onDelta: (text: string) => void,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<void> {
   let res: Response;
   try {
@@ -722,7 +722,7 @@ export type DraftDefect = {
 export async function checkDraft(
   docId: string,
   text: string,
-  locale: string
+  locale: string,
 ): Promise<DraftDefect[]> {
   const res = await fetch(`${API_BASE}/api/editor/check`, {
     method: "POST",
@@ -813,7 +813,7 @@ export type OutlineHeading = { level: number; text: string };
 export async function generateOutline(
   docId: string,
   topic: string,
-  locale: string
+  locale: string,
 ): Promise<OutlineHeading[]> {
   const res = await fetch(`${API_BASE}/api/editor/outline`, {
     method: "POST",
@@ -826,7 +826,9 @@ export async function generateOutline(
     throw new ChatRateLimitError(text, m ? Number(m[1]) : 30);
   }
   if (!res.ok) {
-    throw new Error(`generateOutline failed: ${res.status} ${await res.text()}`);
+    throw new Error(
+      `generateOutline failed: ${res.status} ${await res.text()}`,
+    );
   }
   const data = (await res.json()) as { headings: OutlineHeading[] };
   return data.headings;
@@ -861,7 +863,7 @@ export type CitationCandidate = {
 export async function recommendCitations(
   docId: string,
   claim: string,
-  opts: { signal?: AbortSignal; yearFrom?: number } = {}
+  opts: { signal?: AbortSignal; yearFrom?: number } = {},
 ): Promise<CitationCandidate[]> {
   const res = await fetch(`${API_BASE}/api/editor/citations/recommend`, {
     method: "POST",
@@ -879,10 +881,33 @@ export async function recommendCitations(
     throw new ChatRateLimitError(text, m ? Number(m[1]) : 30);
   }
   if (!res.ok) {
-    throw new Error(`recommendCitations failed: ${res.status} ${await res.text()}`);
+    throw new Error(
+      `recommendCitations failed: ${res.status} ${await res.text()}`,
+    );
   }
   const data = (await res.json()) as { candidates: CitationCandidate[] };
   return data.candidates;
+}
+
+/**
+ * Resolve a DOI (or a URL containing one) to a citation candidate via Crossref —
+ * the free manual fallback when OpenAlex search is rate-limited or a work isn't
+ * indexed. Returns null when the input has no DOI or the DOI is unknown (404).
+ */
+export async function resolveDoi(
+  doi: string,
+): Promise<CitationCandidate | null> {
+  const res = await fetch(`${API_BASE}/api/editor/citations/resolve-doi`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ doi }),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`resolveDoi failed: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as { candidate: CitationCandidate };
+  return data.candidate;
 }
 
 // Claim–evidence verdict: does a cited source actually support the claim?
@@ -904,7 +929,7 @@ export async function verifyCitation(
   title: string,
   abstract: string,
   locale: string,
-  openalexId?: string
+  openalexId?: string,
 ): Promise<CitationVerdict> {
   const res = await fetch(`${API_BASE}/api/editor/citations/verify`, {
     method: "POST",
@@ -944,12 +969,17 @@ export async function groundCitation(
   docId: string,
   openalexId: string,
   oaUrl: string,
-  claim: string
+  claim: string,
 ): Promise<GroundResult> {
   const res = await fetch(`${API_BASE}/api/editor/citations/ground`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ doc_id: docId, openalex_id: openalexId, oa_url: oaUrl, claim }),
+    body: JSON.stringify({
+      doc_id: docId,
+      openalex_id: openalexId,
+      oa_url: oaUrl,
+      claim,
+    }),
   });
   if (res.status === 429) {
     const t = await res.text();
@@ -968,7 +998,7 @@ export async function groundCitation(
  * knows are absent, so the caller leaves those citations untouched.
  */
 export async function refreshCitations(
-  openalexIds: string[]
+  openalexIds: string[],
 ): Promise<Record<string, CitationCandidate>> {
   const res = await fetch(`${API_BASE}/api/editor/citations/refresh`, {
     method: "POST",
@@ -976,7 +1006,9 @@ export async function refreshCitations(
     body: JSON.stringify({ openalex_ids: openalexIds }),
   });
   if (!res.ok) {
-    throw new Error(`refreshCitations failed: ${res.status} ${await res.text()}`);
+    throw new Error(
+      `refreshCitations failed: ${res.status} ${await res.text()}`,
+    );
   }
   const data = (await res.json()) as {
     citations: Record<string, CitationCandidate>;
@@ -1005,7 +1037,10 @@ export type UploadEvent = {
 // Thrown so the admin page can distinguish "wrong token" (re-prompt) and
 // "admin disabled" (ADMIN_TOKEN unset on the server) from generic errors.
 export class AdminAuthError extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
     super(message);
     this.name = "AdminAuthError";
   }
@@ -1014,7 +1049,7 @@ export class AdminAuthError extends Error {
 export async function fetchAdminUploads(
   token: string,
   status?: string,
-  limit = 200
+  limit = 200,
 ): Promise<UploadEvent[]> {
   const qs = new URLSearchParams({ limit: String(limit) });
   if (status) qs.set("status", status);
@@ -1025,7 +1060,8 @@ export async function fetchAdminUploads(
   if (res.status === 401 || res.status === 503) {
     throw new AdminAuthError(res.status, await res.text());
   }
-  if (!res.ok) throw new Error(`admin/uploads → ${res.status} ${await res.text()}`);
+  if (!res.ok)
+    throw new Error(`admin/uploads → ${res.status} ${await res.text()}`);
   const data = (await res.json()) as { items: UploadEvent[] };
   return data.items;
 }
@@ -1034,12 +1070,11 @@ export async function fetchAdminUploads(
 // in a header (not the URL). Triggers a browser download client-side.
 export async function downloadAdminUploadFile(
   token: string,
-  event: UploadEvent
+  event: UploadEvent,
 ): Promise<void> {
-  const res = await fetch(
-    `${API_BASE}/api/admin/uploads/${event.id}/file`,
-    { headers: { "X-Admin-Token": token } }
-  );
+  const res = await fetch(`${API_BASE}/api/admin/uploads/${event.id}/file`, {
+    headers: { "X-Admin-Token": token },
+  });
   if (!res.ok) throw new Error(`download → ${res.status} ${await res.text()}`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

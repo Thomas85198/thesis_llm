@@ -101,10 +101,33 @@ function CodeBlockView(props: NodeViewProps) {
   }, [languages, query]);
 
   const copy = () => {
-    navigator.clipboard?.writeText(node.textContent).then(() => {
+    const done = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    });
+    };
+    // navigator.clipboard is undefined in insecure contexts — guard, and fall
+    // back to a hidden-textarea execCommand so copy still works (and never
+    // throws ".then() of undefined").
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(node.textContent)
+        .then(done)
+        .catch(() => {});
+      return;
+    }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = node.textContent;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      done();
+    } catch {
+      /* clipboard unavailable — silently no-op */
+    }
   };
 
   return (

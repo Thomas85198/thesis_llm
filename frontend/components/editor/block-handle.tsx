@@ -40,9 +40,17 @@ function BlockHandleImpl({ editor }: { editor: Editor }) {
 
   const close = () => setMenu(null);
 
+  // Re-resolve the node at `pos` against the *current* doc: the menu's pos was
+  // captured on open, and the doc could have changed since (autosave, undo,
+  // another view). Bounds-check so a stale pos never crashes or hits a wrong node.
+  const blockAt = (pos: number) => {
+    if (pos < 0 || pos >= editor.state.doc.content.size) return null;
+    return editor.state.doc.nodeAt(pos);
+  };
+
   const duplicate = () => {
     if (menu) {
-      const node = editor.state.doc.nodeAt(menu.pos);
+      const node = blockAt(menu.pos);
       if (node) {
         editor
           .chain()
@@ -55,8 +63,17 @@ function BlockHandleImpl({ editor }: { editor: Editor }) {
   };
 
   const remove = () => {
-    if (menu) {
-      editor.chain().focus().setNodeSelection(menu.pos).deleteSelection().run();
+    if (menu && blockAt(menu.pos)) {
+      try {
+        editor
+          .chain()
+          .focus()
+          .setNodeSelection(menu.pos)
+          .deleteSelection()
+          .run();
+      } catch {
+        /* pos is no longer a valid node boundary — ignore */
+      }
     }
     close();
   };

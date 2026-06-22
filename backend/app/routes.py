@@ -1,4 +1,5 @@
 """FastAPI routes: upload paper → analyze → fetch graph, defects, PDF, EDU detail, cost."""
+
 from __future__ import annotations
 
 import hashlib
@@ -19,6 +20,7 @@ from . import autocomplete as autocomplete_mod
 from . import chat as chat_mod
 from . import citation as citation_mod
 from . import citation_relink as citation_relink_mod
+from . import crossref as crossref_mod
 from . import claim_verifier as claim_verifier_mod
 from . import draft_check as draft_check_mod
 from . import export_doc
@@ -63,6 +65,7 @@ class DocumentCreateIn(BaseModel):
 
 class DocumentUpdateIn(BaseModel):
     """Partial patch — autosave sends content only; rename sends title only."""
+
     title: str | None = Field(None, max_length=300)
     content_json: dict[str, Any] | None = None
 
@@ -91,16 +94,24 @@ class CitationRefreshIn(BaseModel):
     openalex_ids: list[str] = Field(..., max_length=100)  # ids of the doc's citations
 
 
+class ResolveDoiIn(BaseModel):
+    doi: str = Field(..., max_length=500)  # a DOI, or a URL/string containing one
+
+
 class CitationRelinkIn(BaseModel):
     doc_id: str
-    content_json: dict[str, Any]  # the live doc; references parsed + in-text markers linked
+    content_json: dict[
+        str, Any
+    ]  # the live doc; references parsed + in-text markers linked
 
 
 class CitationVerifyIn(BaseModel):
     doc_id: str
     claim: str = Field(..., max_length=2000)  # the sentence to support
     title: str = Field("", max_length=500)  # candidate source title (context)
-    abstract: str = Field("", max_length=8000)  # candidate abstract (already on the client)
+    abstract: str = Field(
+        "", max_length=8000
+    )  # candidate abstract (already on the client)
     openalex_id: str | None = None  # references-tab path: re-fetch abstract by id
     locale: str | None = None
 
@@ -133,7 +144,9 @@ class OutlineIn(BaseModel):
 
 class ExportIn(BaseModel):
     title: str = Field("", max_length=300)
-    content_json: dict[str, Any]  # the live TipTap doc (sent directly to avoid DB staleness)
+    content_json: dict[
+        str, Any
+    ]  # the live TipTap doc (sent directly to avoid DB staleness)
     style: str = Field("apa", pattern="^(apa|mla|chicago|harvard|ieee|numeric)$")
     locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
     # "latex" bundles a .zip when figures exist; "pdf" compiles the LaTeX
@@ -169,6 +182,7 @@ def _resolve_pdf_path(pdf_path: str | None) -> Path | None:
         return None
     p = Path(pdf_path)
     return p if p.is_absolute() else UPLOAD_DIR / p
+
 
 JobStatus = Literal["queued", "extracting", "checking", "done", "error"]
 
@@ -415,6 +429,7 @@ def job_status(job_id: str) -> dict[str, Any]:
 
 # ---------- admin: upload audit trail ----------
 
+
 def _require_admin(x_admin_token: str | None = Header(default=None)) -> None:
     """Gate admin endpoints behind ADMIN_TOKEN.
 
@@ -524,14 +539,16 @@ def list_papers() -> list[dict[str, Any]]:
         display_title = (
             user_title or filename or result.get("graph", {}).get("title", "")
         )
-        items.append({
-            "paper_id": p["paper_id"],
-            "title": display_title,
-            "filename": filename,
-            "defect_count": len(result.get("defects", [])),
-            "edu_count": len(result.get("graph", {}).get("edus", [])),
-            "finished_at": p.get("finished_at"),
-        })
+        items.append(
+            {
+                "paper_id": p["paper_id"],
+                "title": display_title,
+                "filename": filename,
+                "defect_count": len(result.get("defects", [])),
+                "edu_count": len(result.get("graph", {}).get("edus", [])),
+                "finished_at": p.get("finished_at"),
+            }
+        )
     return items
 
 
@@ -614,6 +631,7 @@ def paper_cost(paper_id: str) -> dict[str, Any]:
 
 # ---------- human-as-judge evaluation ----------
 
+
 @router.get("/api/papers/{paper_id}/judgments")
 def list_judgments(paper_id: str) -> list[dict[str, Any]]:
     return db.list_judgments(paper_id)
@@ -657,6 +675,7 @@ def eval_summary() -> dict[str, Any]:
 
 # ---------- paper-scoped chat assistant ----------
 
+
 @router.post("/api/papers/{paper_id}/chat")
 def paper_chat(paper_id: str, body: ChatIn) -> dict[str, Any]:
     paper = db.get_paper(paper_id)
@@ -689,6 +708,7 @@ def paper_chat(paper_id: str, body: ChatIn) -> dict[str, Any]:
 # Independent of the paper-analysis flow above. These power the new WYSIWYG
 # writing editor (/[locale]/editor): create a doc, autosave its ProseMirror
 # JSON, and keep version snapshots. No account system yet — docs are global.
+
 
 @router.post("/api/editor/documents")
 def create_document(body: DocumentCreateIn) -> dict[str, Any]:
@@ -796,15 +816,35 @@ def recommend_citations(body: CitationRecommendIn) -> dict[str, Any]:
     """
     allowed, wait = citation_mod.check_rate_limit(body.doc_id)
     if not allowed:
-        raise HTTPException(429, f"citation search rate limit reached, retry in ~{wait}s")
+        raise HTTPException(
+            429, f"citation search rate limit reached, retry in ~{wait}s"
+        )
     claim = body.claim.strip()
     if not claim:
         return {"candidates": []}
     try:
         candidates = citation_mod.recommend(claim, year_from=body.year_from)
     except citation_mod.CitationSearchError as exc:
-        raise HTTPException(502, f"OpenAlex unavailable: {exc}") from exc
+        # Keep the toast clean — drop OpenAlex's raw URL dump; flag rate limits.
+        if "429" in str(exc):
+            raise HTTPException(
+                503, "OpenAlex 暫時忙碌（速率限制），請稍候再試。"
+            ) from exc
+        raise HTTPException(502, "OpenAlex 服務暫時無法使用，請稍候再試。") from exc
     return {"candidates": candidates}
+
+
+@router.post("/api/editor/citations/resolve-doi")
+def resolve_doi(body: ResolveDoiIn) -> dict[str, Any]:
+    """Resolve a DOI (or a URL containing one) to citation metadata via Crossref
+    — the free, no-credit-cap manual fallback for unlinked citations."""
+    try:
+        candidate = crossref_mod.lookup_doi(body.doi)
+    except Exception as exc:  # noqa: BLE001 — network/HTTP blip
+        raise HTTPException(502, "DOI 解析服務暫時無法使用，請稍候再試。") from exc
+    if not candidate:
+        raise HTTPException(404, "找不到這個 DOI，請確認，或改用手動填寫。")
+    return {"candidate": candidate}
 
 
 @router.post("/api/editor/citations/relink")
@@ -855,7 +895,11 @@ def verify_citation(body: CitationVerifyIn) -> dict[str, Any]:
         raise HTTPException(429, f"verify rate limit reached, retry in ~{wait}s")
     try:
         return claim_verifier_mod.verify(
-            body.claim, body.title, body.abstract, body.doc_id, body.locale,
+            body.claim,
+            body.title,
+            body.abstract,
+            body.doc_id,
+            body.locale,
             openalex_id=body.openalex_id,
         )
     except Exception as exc:  # noqa: BLE001 — LLM/quota failure → 502
@@ -873,7 +917,9 @@ def ground_citation(body: CitationGroundIn) -> dict[str, Any]:
     if not allowed:
         raise HTTPException(429, f"grounding rate limit reached, retry in ~{wait}s")
     try:
-        return grounding_mod.ground(body.openalex_id, body.oa_url, body.claim, body.doc_id)
+        return grounding_mod.ground(
+            body.openalex_id, body.oa_url, body.claim, body.doc_id
+        )
     except grounding_mod.GroundingError as exc:
         raise HTTPException(502, f"grounding failed: {exc}") from exc
 
@@ -966,10 +1012,14 @@ def export_document(body: ExportIn) -> Response:
     refs_label = "參考文獻" if body.locale == "zh-Hant" else "References"
     if body.format == "docx":
         data = export_doc.to_docx(document, body.style, refs_label)
-        media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        media = (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
         ext = "docx"
     elif body.format == "pdf":
-        tex, images = export_doc.to_latex(document, body.style, refs_label, body.template, body.locale)
+        tex, images = export_doc.to_latex(
+            document, body.style, refs_label, body.template, body.locale
+        )
         try:
             data = latex_compile.compile_pdf(tex, images)
         except latex_compile.LatexNotInstalled as e:
@@ -979,7 +1029,9 @@ def export_document(body: ExportIn) -> Response:
         media = "application/pdf"
         ext = "pdf"
     elif body.format == "latex":
-        tex, images = export_doc.to_latex(document, body.style, refs_label, body.template, body.locale)
+        tex, images = export_doc.to_latex(
+            document, body.style, refs_label, body.template, body.locale
+        )
         if images:
             # Bundle .tex + referenced images so the export compiles as-is.
             data = _latex_zip(tex, images)

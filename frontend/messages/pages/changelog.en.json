@@ -29,6 +29,18 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_5_0": {
+      "title": "Smart Citation overhaul: plain-text detection, source backfill, auto bibliography",
+      "summary": "Closes the gap between writing a citation in your text and actually linking it to a source — auto-detect the citation forms you type, add free source-resolution paths beyond OpenAlex, and generate a self-updating reference list. With OpenAlex moving to usage-based rate limits, this release adds free Crossref and manual fallbacks so it keeps working.",
+      "changes": {
+        "0": "Plain-text citation detection: parenthetical (Author, year), multi-work (A, 2016; B, 2014), narrative \"Author (year)\", et al. and Chinese separators, plus web/Wikipedia citations are all recognized as citation markers. When no source is found they become amber dashed \"pending source\" chips you can resolve later.",
+        "1": "Backfill a source without OpenAlex: paste a DOI or paper link on an unlinked citation and Crossref (free) fills in the full reference; with no DOI, fill author/title/venue/URL by hand. Every entry in the References tab can be edited or deleted (delete removes all of that citation's occurrences in the text).",
+        "2": "Auto bibliography: insert a self-updating, style-aware reference list with /reference list (web sources include their URL; pending-source citations are excluded). Need to hand-tweak order or wording? \"Convert to text\" freezes it into normal editable paragraphs.",
+        "3": "OpenAlex moved to usage-based pricing and now rate-limits easily (429); this release adds a friendly message and automatic retry/backoff instead of a raw error dump, and hides the no-op \"Refresh links\" button when a document has no OpenAlex-sourced citations.",
+        "4": "Editor fixes: clipboard guard on code copy, block-handle positioning, accidental table drag triggers; Smart Citation panel scrollbar and long-URL wrapping; keyboard-operable citation chips and other a11y/stability fixes.",
+        "5": "Performance: citation numbering is now cached once per document (was an O(n²) full-document scan per chip → O(n)); outline and toolbar recomputation throttled for smoother editing of long documents."
+      }
+    },
     "4_4_0": {
       "title": "Editor experience overhaul: Notion-style code blocks, block dragging, equation editing",
       "summary": "A round of polish across the writing editor — code blocks, math equations, block manipulation, the slash menu, and the side panels are all brought in line with Notion / mainstream note apps, plus a batch of fixes for everyday editing annoyances.",

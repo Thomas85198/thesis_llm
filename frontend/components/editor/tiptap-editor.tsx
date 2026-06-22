@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@tiptap/extension-table";
 import {
+  BookText,
   Bold,
   Code,
   Download,
@@ -58,6 +59,7 @@ import { DefectHighlight } from "@/components/editor/defect-highlight";
 import { DefectPanel } from "@/components/editor/defect-panel";
 import { ExportPanel } from "@/components/editor/export-panel";
 import { Figure, FigureList } from "@/components/editor/figure-extension";
+import { ReferenceList } from "@/components/editor/reference-list-extension";
 import { TableOfContents } from "@/components/editor/toc-extension";
 import { MathBlock, MathInline } from "@/components/editor/math-extension";
 import { OutlinePanel } from "@/components/editor/outline-panel";
@@ -517,6 +519,19 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           editor.chain().focus().insertFigureList().run(),
       },
       {
+        title: t("slash.referenceList"),
+        icon: BookText,
+        keywords: [
+          "references",
+          "bibliography",
+          "參考文獻",
+          "書目",
+          "引用清單",
+        ],
+        command: ({ editor }) =>
+          editor.chain().focus().insertReferenceList().run(),
+      },
+      {
         title: t("slash.mathInline"),
         icon: Variable,
         keywords: [
@@ -590,6 +605,13 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           title: t("figureList.title"),
           empty: t("figureList.empty"),
           untitled: t("figure.untitled"),
+        },
+      }),
+      ReferenceList.configure({
+        labels: {
+          title: t("refList.title"),
+          empty: t("refList.empty"),
+          toText: t("refList.toText"),
         },
       }),
       TableOfContents.configure({
@@ -714,6 +736,9 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   const tb = useEditorState({
     editor,
     selector: ({ editor }) => (editor ? readToolbarState(editor) : null),
+    // Avoid re-rendering the toolbar + left outline on every transaction when
+    // the derived state is unchanged (readToolbarState builds a fresh object).
+    equalityFn: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
 
   if (!editor) return null;
@@ -944,7 +969,9 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       <BubbleMenu
         editor={editor}
         pluginKey="tableMenu"
-        shouldShow={({ editor }) => editor.isActive("table")}
+        shouldShow={({ editor }) =>
+          !draggingRef.current && editor.isActive("table")
+        }
       >
         <TableToolbar editor={editor} />
       </BubbleMenu>

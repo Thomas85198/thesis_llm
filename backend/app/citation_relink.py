@@ -13,6 +13,7 @@ confident, because linking to the WRONG paper is worse than not linking:
 
 Chinese theses and web resources (which OpenAlex doesn't index) stay plain text.
 """
+
 from __future__ import annotations
 
 import math
@@ -41,6 +42,7 @@ def check_rate_limit(doc_id: str) -> tuple[bool, int]:
         bucket.append(now)
         _rate_buckets[doc_id] = bucket
         return True, 0
+
 
 _REF_HEADING = re.compile(r"參考文獻|參考書目|引用文獻|References|Bibliography", re.I)
 _SIM_THRESHOLD = 0.80  # parsed-title ↔ OpenAlex-title cosine; below this we don't link
@@ -205,8 +207,153 @@ def _lookup(paren_content: str, index: dict) -> dict | None:
     return index.get((surname, year))
 
 
+# A parenthetical may hold several works: "(A, 2016; B, 2014)" — split on ; first.
+_MULTI_SPLIT = re.compile(r"\s*[;；]\s*")
+# An author-like token: a Capitalized Latin word, or a run of CJK chars.
+_AUTHOR_TOKEN = re.compile(r"[A-Z][A-Za-z.'\-]+|[一-鿿]{2,}")
+# Web / non-academic hints inside a marker (Wikipedia, URLs, n.d.).
+_WEB_HINT = re.compile(
+    r"wiki|https?://|維基|\bn\.?\s?d\.?\b|無日期|retrieved|取自", re.I
+)
+
+# Narrative citation: author(s) in the running text, only the year parenthesized —
+# "Bhattacherjee (2001)", "Guo 與 Li (2018)", "Sheldon et al. (2017)". The leading
+# author must be a Capitalized Latin word (CJK separators/co-authors allowed); a
+# pure-CJK lead is excluded so Chinese prose like "去年 (2020)" doesn't false-match.
+_NARRATIVE_RE = re.compile(
+    r"(?P<authors>[A-Z][A-Za-z.'\-]+"
+    r"(?:\s*(?:,|，|、|&|and|與|et\s+al\.?)\s*(?:[A-Z][A-Za-z.'\-]+|[一-鿿]{2,}))*"
+    r"(?:\s+et\s+al\.?)?)"
+    r"\s*[（(](?P<year>(?:19|20)\d{2})[a-z]?[）)]"
+)
+# Single-token leads that are common non-author words → not a citation.
+_NARR_STOPWORDS = {
+    "table",
+    "figure",
+    "fig",
+    "chapter",
+    "section",
+    "appendix",
+    "equation",
+    "eq",
+    "vol",
+    "no",
+    "the",
+    "this",
+    "that",
+    "in",
+    "since",
+    "around",
+    "circa",
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+}
+
+
+def _parse_narrative(authors_raw: str, year: int, raw: str) -> dict | None:
+    """An author run + parenthesized year → parsed fields, or None if the lead is
+    a stopword (e.g. "Figure (2020)")."""
+    a = authors_raw.strip()
+    surname = _surname_token(a)
+    if not surname:
+        return None
+    tokens = _AUTHOR_TOKEN.findall(a)
+    if len(tokens) <= 1 and surname in _NARR_STOPWORDS:
+        return None
+    authors = _norm_authors(a)
+    return {
+        "surname": surname,
+        "year": year,
+        "authors": authors or a,
+        "web": False,
+        "raw": raw.strip(),
+    }
+
+
+def _chip_for(ps: dict, index: dict, stats: dict, narrative: bool = False) -> dict:
+    """Parsed segment → a citation atom: linked when a high-confidence source
+    exists, else an unlinked (pending-source) chip."""
+    linked = index.get((ps["surname"], ps["year"])) if ps["year"] is not None else None
+    if linked:
+        attrs = dict(linked)
+        stats["intext_linked"] += 1
+    else:
+        attrs = _unlinked_attrs(ps)
+        stats["intext_unlinked"] += 1
+    if narrative:
+        attrs["narrative"] = True
+    return {"type": "citation", "attrs": attrs}
+
+
+def _norm_authors(before: str) -> str:
+    """Author text before the year → comma-joined names (so inTextLabel works)."""
+    s = re.sub(r"\s*(?:&|et al\.?|and|與)\s*", ", ", before)
+    return s.strip().strip(",，、. ")
+
+
+def _parse_intext_segment(seg: str) -> dict | None:
+    """One in-text citation segment → parsed fields, or None if not a citation.
+
+    Needs an author-like token plus EITHER a year OR a web hint (Wikipedia / URL
+    / n.d.), so non-citations like "(n=2009)" or "(see Eq. 3)" stay plain text
+    while year-less web refs like "(Wikipedia, n.d.)" are still recognized."""
+    ym = _YEAR_RE.search(seg)
+    web = bool(_WEB_HINT.search(seg))
+    if not ym and not web:
+        return None
+    before = seg[: ym.start()] if ym else seg
+    if not _AUTHOR_TOKEN.search(before):
+        return None
+    surname = _surname_token(before)
+    if not surname:
+        return None
+    authors = _norm_authors(before)
+    # Drop a trailing "n.d." so a web ref reads "Wikipedia", not "Wikipedia, n.d".
+    authors = re.sub(r",?\s*n\.?\s?d\.?\s*$", "", authors, flags=re.I).strip(", ")
+    return {
+        "surname": surname,
+        "year": int(ym.group(0)) if ym else None,
+        "authors": authors or before.strip(),
+        "web": web,
+        "raw": seg.strip(),
+    }
+
+
+def _unlinked_attrs(ps: dict) -> dict:
+    """A recognized-but-unresolved citation chip (no source linked yet)."""
+    return {
+        "openalexId": "",
+        "authors": ps["authors"],
+        "year": ps["year"],
+        "title": "",
+        "venue": "",
+        "doi": "",
+        "oaUrl": "",
+        "url": "",
+        "unlinked": True,
+        "kind": "web" if ps["web"] else "academic",
+        "raw": ps["raw"],
+    }
+
+
 def _relink_inline(nodes: list[dict], index: dict, stats: dict) -> list[dict]:
-    """Replace matched (Author, year) markers in a text node with citation atoms."""
+    """Replace in-text citation markers in a text node with citation atoms.
+
+    Two forms are recognized and merged in document order:
+      • narrative — author in the prose, year parenthesized: "Smith (2020)";
+      • parenthetical — "(Smith, 2020)", possibly multi-work "(A, 2016; B, 2014)".
+    Narrative spans win over the bare "(year)" they contain. Each work links to a
+    high-confidence source when one exists, else becomes an unlinked chip."""
     out: list[dict] = []
     for n in nodes:
         if n.get("type") != "text":
@@ -214,28 +361,51 @@ def _relink_inline(nodes: list[dict], index: dict, stats: dict) -> list[dict]:
             continue
         text = n.get("text", "")
         marks = n.get("marks")
-        pos = 0
-        pieces: list[dict] = []
-        for m in _PAREN_RE.finditer(text):
-            attrs = _lookup(m.group(1), index)
-            if not attrs:
+
+        def _seg(t: str) -> dict:
+            s = {"type": "text", "text": t}
+            if marks:
+                s["marks"] = marks
+            return s
+
+        # (start, end, [chips]) spans. Narrative first; parenthetical skipped when
+        # it overlaps a narrative span (the "(year)" inside it).
+        spans: list[tuple[int, int, list[dict]]] = []
+        narr: list[tuple[int, int]] = []
+        for m in _NARRATIVE_RE.finditer(text):
+            ps = _parse_narrative(m.group("authors"), int(m.group("year")), m.group(0))
+            if not ps:
                 continue
-            if m.start() > pos:
-                seg = {"type": "text", "text": text[pos:m.start()]}
-                if marks:
-                    seg["marks"] = marks
-                pieces.append(seg)
-            pieces.append({"type": "citation", "attrs": attrs})
-            stats["intext_linked"] += 1
-            pos = m.end()
-        if not pieces:
+            spans.append((m.start(), m.end(), [_chip_for(ps, index, stats, True)]))
+            narr.append((m.start(), m.end()))
+        for m in _PAREN_RE.finditer(text):
+            if any(a <= m.start() < b for a, b in narr):
+                continue
+            parsed = [_parse_intext_segment(s) for s in _MULTI_SPLIT.split(m.group(1))]
+            if not any(parsed):
+                continue  # not a citation paren — leave as plain text
+            chips = [_chip_for(ps, index, stats) for ps in parsed if ps]
+            if chips:
+                spans.append((m.start(), m.end(), chips))
+        if not spans:
             out.append(n)
             continue
+
+        spans.sort(key=lambda s: s[0])
+        pos = 0
+        pieces: list[dict] = []
+        for start, end, chips in spans:
+            if start < pos:
+                continue  # overlapping match already consumed — skip
+            if start > pos:
+                pieces.append(_seg(text[pos:start]))
+            for i, chip in enumerate(chips):
+                if i:
+                    pieces.append(_seg("; "))  # separate multi-work chips
+                pieces.append(chip)
+            pos = end
         if pos < len(text):
-            seg = {"type": "text", "text": text[pos:]}
-            if marks:
-                seg["marks"] = marks
-            pieces.append(seg)
+            pieces.append(_seg(text[pos:]))
         out.extend(pieces)
     return out
 
@@ -263,8 +433,10 @@ def relink(content: dict, doc_id: str | None = None) -> dict:
         "academic": sum(1 for r in parsed if r.get("is_academic") and r.get("title")),
         "matched": len(matches),
         "intext_linked": 0,
+        "intext_unlinked": 0,
     }
-    if index:
-        for block in content.get("content", []):
-            _walk_relink(block, index, stats)
+    # Always scan: even with no resolved sources, recognize in-text citations as
+    # (unlinked) chips so they're counted/listed and can get a source later.
+    for block in content.get("content", []):
+        _walk_relink(block, index, stats)
     return {"content_json": content, "stats": stats}

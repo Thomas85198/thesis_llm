@@ -13,12 +13,14 @@ import {
   FileText,
   Link2,
   Loader2,
+  Pencil,
   Plus,
   Quote,
   RefreshCw,
   Search,
   ShieldCheck,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,12 +31,14 @@ import {
   groundCitation,
   recommendCitations,
   refreshCitations,
+  resolveDoi,
   verifyCitation,
   type CitationCandidate,
   type CitationVerdict,
   type GroundResult,
 } from "@/lib/api";
 import {
+  citeKey,
   fullReference,
   referenceLinks,
   type CitationAttrs,
@@ -42,7 +46,6 @@ import {
 import { useEditorStore } from "@/lib/editor-store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
   SheetContent,
@@ -65,15 +68,17 @@ function candidateToAttrs(c: CitationCandidate): CitationAttrs {
   };
 }
 
-/** Distinct citations in the doc, by first appearance — for the references tab. */
+/** Distinct citations in the doc, by first appearance — for the references tab.
+ * Dedup by citeKey so unlinked (pending-source) citations are listed too. */
 function collectCitations(editor: Editor): CitationAttrs[] {
   const seen = new Set<string>();
   const out: CitationAttrs[] = [];
   editor.state.doc.descendants((node) => {
     if (node.type.name === "citation") {
       const a = node.attrs as CitationAttrs;
-      if (a.openalexId && !seen.has(a.openalexId)) {
-        seen.add(a.openalexId);
+      const k = citeKey(a);
+      if (k && !seen.has(k)) {
+        seen.add(k);
         out.push(a);
       }
     }
@@ -153,8 +158,22 @@ function CitationPanelBody({
   const locale = useLocale();
   const closeCitePanel = useEditorStore((s) => s.closeCitePanel);
   const citationStyle = useEditorStore((s) => s.citationStyle);
+  // Set when the panel was opened to resolve an unlinked chip → show the manual
+  // "paste DOI / fill in" fallback so a source can always be attached.
+  const resolving = useEditorStore((s) => s.citeReplaceKey) !== null;
 
   const [query, setQuery] = useState(initialQuery);
+  // Manual-source fallback state.
+  const [doiInput, setDoiInput] = useState("");
+  const [doiBusy, setDoiBusy] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manual, setManual] = useState({
+    authors: "",
+    year: "",
+    title: "",
+    venue: "",
+    url: "",
+  });
   const [loading, setLoading] = useState(false);
   const [candidates, setCandidates] = useState<CitationCandidate[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
@@ -215,24 +234,176 @@ function CitationPanelBody({
     [docId, t],
   );
 
-  // On open: auto-search a prefilled claim (from BubbleMenu), else focus the box.
+  // On open: auto-search a prefilled claim (from the BubbleMenu). But when
+  // resolving an unlinked chip (citeReplaceKey set), the seed is just the
+  // marker text ("Author, year") — a poor OpenAlex query that also hammers the
+  // API — so only prefill + focus and let the user add keywords, then search.
   useEffect(() => {
-    if (initialQuery.trim()) doSearch(initialQuery, undefined);
-    else inputRef.current?.focus();
+    const resolving = !!useEditorStore.getState().citeReplaceKey;
+    if (initialQuery.trim() && !resolving) {
+      doSearch(initialQuery, undefined);
+    } else {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
     return () => abortRef.current?.abort();
   }, [initialQuery, doSearch]);
 
+  // Auto-grow the search box to fit the (possibly long) claim — works in every
+  // browser (CSS field-sizing is Chrome-only); max-height + overflow caps it.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [query]);
+
   const [refreshing, setRefreshing] = useState(false);
 
+  // Apply a chosen source. If the panel was opened to resolve an unlinked
+  // citation (citeReplaceKey set), relink every matching unlinked chip in place;
+  // otherwise insert a new chip at the cursor.
+  function applyPick(attrs: CitationAttrs) {
+    const { citeReplaceKey, citeAnchor } = useEditorStore.getState();
+    if (citeReplaceKey) {
+      editor
+        .chain()
+        .focus()
+        .command(({ tr, state }) => {
+          state.doc.descendants((node, pos) => {
+            if (
+              node.type.name === "citation" &&
+              citeKey(node.attrs as CitationAttrs) === citeReplaceKey
+            ) {
+              tr.setNodeMarkup(pos, undefined, {
+                ...node.attrs,
+                ...attrs,
+                unlinked: false,
+                kind: "academic",
+                raw: "",
+              });
+            }
+            return true;
+          });
+          return true;
+        })
+        .run();
+    } else {
+      editor
+        .chain()
+        .focus()
+        .insertCitation(attrs, citeAnchor ?? undefined)
+        .run();
+    }
+    toast.success(t("citation.inserted"));
+    closeCitePanel();
+  }
+
   function handleInsert(c: CitationCandidate) {
-    const anchor = useEditorStore.getState().citeAnchor;
+    applyPick(candidateToAttrs(c));
+  }
+
+  // Manual fallback #1 — paste a DOI (or a URL containing one): resolve metadata
+  // via Crossref (free) and link the chip. A bare URL with no DOI prefills the
+  // manual form instead.
+  async function handleResolveDoi() {
+    const raw = doiInput.trim();
+    if (!raw) return;
+    setDoiBusy(true);
+    try {
+      const cand = await resolveDoi(raw);
+      if (cand) {
+        applyPick(candidateToAttrs(cand));
+      } else {
+        // No DOI found — keep the URL and open the manual form to fill the rest.
+        setManual((m) => ({
+          ...m,
+          url: /^https?:\/\//.test(raw) ? raw : m.url,
+        }));
+        setManualOpen(true);
+        toast.info(t("citation.doiNotFound"));
+      }
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setDoiBusy(false);
+    }
+  }
+
+  // Manual fallback #2 — type the reference fields; we format it per the chosen
+  // citation style. At least a title or an author is required.
+  function handleApplyManual() {
+    if (!manual.title.trim() && !manual.authors.trim()) {
+      toast.error(t("citation.manualNeedsFields"));
+      return;
+    }
+    applyPick({
+      openalexId: "",
+      authors: manual.authors.trim(),
+      year: manual.year.trim() ? Number(manual.year.trim()) : null,
+      title: manual.title.trim(),
+      venue: manual.venue.trim(),
+      doi: "",
+      oaUrl: "",
+      url: manual.url.trim(),
+    });
+  }
+
+  // From the References tab: resolve an unlinked citation — reopen the search
+  // seeded with its marker text, flagged to relink every matching chip on pick.
+  function handleFindSource(r: CitationAttrs) {
+    const { citeAnchor, openCitePanel } = useEditorStore.getState();
+    const query = (r.raw || `${r.authors} ${r.year ?? ""}`).trim();
+    openCitePanel(query, citeAnchor ?? 0, citeKey(r));
+  }
+
+  // Re-cite a work already in the document (from the References tab) without
+  // re-searching — re-running the LLM search may not return the same paper. The
+  // chip reuses the existing openalexId, so numbered styles share its number.
+  function handleInsertRef(r: CitationAttrs) {
+    applyPick(r);
+  }
+
+  // Delete a reference: remove every matching citation chip from the document.
+  // The list is a live view of in-text chips, so it then disappears here too.
+  function handleDeleteRef(r: CitationAttrs) {
+    const key = citeKey(r);
     editor
       .chain()
       .focus()
-      .insertCitation(candidateToAttrs(c), anchor ?? undefined)
+      .command(({ tr, state }) => {
+        const spans: { from: number; to: number }[] = [];
+        state.doc.descendants((node, pos) => {
+          if (
+            node.type.name === "citation" &&
+            citeKey(node.attrs as CitationAttrs) === key
+          ) {
+            spans.push({ from: pos, to: pos + node.nodeSize });
+          }
+          return true;
+        });
+        // Delete bottom-up so earlier positions stay valid.
+        for (let i = spans.length - 1; i >= 0; i--) {
+          tr.delete(spans[i].from, spans[i].to);
+        }
+        return true;
+      })
       .run();
-    toast.success(t("citation.inserted"));
-    closeCitePanel();
+  }
+
+  // Edit a reference: prefill the manual form with its fields and retarget it at
+  // this citation (citeReplaceKey) so saving updates every matching chip.
+  function handleEditRef(r: CitationAttrs) {
+    setManual({
+      authors: r.authors || "",
+      year: r.year != null ? String(r.year) : "",
+      title: r.title || "",
+      venue: r.venue || "",
+      url: r.url || "",
+    });
+    setDoiInput("");
+    setManualOpen(true);
+    useEditorStore.getState().setCiteReplaceKey(citeKey(r));
   }
 
   // Claim–evidence "traffic light": does this candidate actually support the
@@ -372,7 +543,7 @@ function CitationPanelBody({
           }}
           rows={1}
           placeholder={t("citation.searchPlaceholder")}
-          className="max-h-28 min-h-9 w-full resize-none overflow-y-auto rounded-md border bg-transparent px-3 py-1.5 text-sm shadow-xs outline-none [field-sizing:content] placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+          className="max-h-28 min-h-9 w-full resize-none overflow-y-auto rounded-md border bg-transparent px-3 py-1.5 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
         />
         <Button
           type="submit"
@@ -404,6 +575,83 @@ function CitationPanelBody({
         </select>
       </div>
 
+      {/* Manual fallback — only when resolving an unlinked chip. Paste a DOI/URL
+          (resolved free via Crossref) or fill the fields by hand, so a source can
+          always be attached even when search is rate-limited / not indexed. */}
+      {resolving && (
+        <div className="mb-3 rounded-md border bg-muted/30 p-2">
+          <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+            {t("citation.manualTitle")}
+          </p>
+          <div className="flex gap-2">
+            <input
+              value={doiInput}
+              onChange={(e) => setDoiInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleResolveDoi();
+                }
+              }}
+              placeholder={t("citation.doiPlaceholder")}
+              className="w-full rounded-md border bg-background px-2.5 py-1.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="shrink-0"
+              disabled={doiBusy || !doiInput.trim()}
+              onClick={() => void handleResolveDoi()}
+            >
+              {doiBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                t("citation.apply")
+              )}
+            </Button>
+          </div>
+          <button
+            type="button"
+            className="mt-1.5 text-xs text-muted-foreground underline-offset-2 hover:underline"
+            onClick={() => setManualOpen((o) => !o)}
+          >
+            {t("citation.manualToggle")}
+          </button>
+          {manualOpen && (
+            <div className="mt-2 flex flex-col gap-1.5">
+              {(
+                [
+                  ["authors", t("citation.manualAuthors")],
+                  ["title", t("citation.manualPaperTitle")],
+                  ["venue", t("citation.manualVenue")],
+                  ["year", t("citation.manualYear")],
+                  ["url", t("citation.manualUrl")],
+                ] as const
+              ).map(([k, ph]) => (
+                <input
+                  key={k}
+                  value={manual[k]}
+                  onChange={(e) =>
+                    setManual((m) => ({ ...m, [k]: e.target.value }))
+                  }
+                  placeholder={ph}
+                  className="w-full rounded-md border bg-background px-2.5 py-1 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+              ))}
+              <Button
+                type="button"
+                size="sm"
+                className="self-end"
+                onClick={handleApplyManual}
+              >
+                {t("citation.apply")}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       <Tabs defaultValue="recommend" className="flex min-h-0 flex-1 flex-col">
         <TabsList className="mb-3">
           <TabsTrigger value="recommend">
@@ -420,7 +668,7 @@ function CitationPanelBody({
         </TabsList>
 
         {/* Recommendations */}
-        <TabsContent value="recommend" className="min-h-0 flex-1">
+        <TabsContent value="recommend" className="flex min-h-0 flex-1 flex-col">
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -435,7 +683,7 @@ function CitationPanelBody({
               {t("citation.noResults")}
             </p>
           ) : (
-            <ScrollArea className="h-full pr-3">
+            <div className="min-h-0 flex-1 overflow-y-auto pr-3">
               <ul className="flex flex-col gap-2">
                 {candidates.map((c) => (
                   <li
@@ -443,7 +691,7 @@ function CitationPanelBody({
                     className="rounded-lg border bg-card p-3 transition-colors hover:border-primary/40"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-medium leading-snug">
+                      <p className="break-words text-sm font-medium leading-snug">
                         {c.title}
                       </p>
                       <Button
@@ -520,12 +768,15 @@ function CitationPanelBody({
                   </li>
                 ))}
               </ul>
-            </ScrollArea>
+            </div>
           )}
         </TabsContent>
 
         {/* References built from the doc's citation chips */}
-        <TabsContent value="references" className="min-h-0 flex-1">
+        <TabsContent
+          value="references"
+          className="flex min-h-0 flex-1 flex-col"
+        >
           {refs.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
               <BookText className="h-5 w-5 opacity-60" />
@@ -533,32 +784,109 @@ function CitationPanelBody({
             </div>
           ) : (
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="mb-2 flex justify-end">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
-                  onClick={handleRefreshLinks}
-                  disabled={refreshing}
-                  title={t("citation.refreshHint")}
-                >
-                  <RefreshCw
-                    className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
-                  />
-                  {t("citation.refreshLinks")}
-                </Button>
-              </div>
-              <ScrollArea className="h-full pr-3">
+              {/* "Refresh links" only re-pulls OpenAlex-sourced citations; hide it
+                  when none exist (DOI/manual/web have nothing to refresh). */}
+              {refs.some((r) => r.openalexId) && (
+                <div className="mb-2 flex justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                    onClick={handleRefreshLinks}
+                    disabled={refreshing}
+                    title={t("citation.refreshHint")}
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
+                    />
+                    {t("citation.refreshLinks")}
+                  </Button>
+                </div>
+              )}
+              <div className="min-h-0 flex-1 overflow-y-auto pr-3">
                 <ol className="flex flex-col gap-3 text-sm">
                   {refs.map((r, i) => {
+                    if (r.unlinked) {
+                      return (
+                        <li
+                          key={citeKey(r)}
+                          className="flex items-start justify-between gap-2"
+                        >
+                          <span className="min-w-0 break-words leading-snug text-muted-foreground">
+                            {r.raw ||
+                              `${r.authors}${r.year ? ` (${r.year})` : ""}`}
+                            <span className="ml-1.5 whitespace-nowrap rounded border border-amber-300/50 px-1 py-0.5 text-[10px] text-amber-600 dark:text-amber-300">
+                              {t("citation.pendingSource")}
+                            </span>
+                          </span>
+                          <div className="flex shrink-0 items-start gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 gap-1 px-2 text-xs"
+                              onClick={() => handleFindSource(r)}
+                              title={t("citation.findSource")}
+                            >
+                              <Search className="h-3.5 w-3.5" />
+                              {t("citation.findSource")}
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              aria-label={t("citation.deleteRef")}
+                              title={t("citation.deleteRef")}
+                              onClick={() => handleDeleteRef(r)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </li>
+                      );
+                    }
                     const text = fullReference(r, citationStyle, i + 1);
                     const links = referenceLinks(r);
                     return (
-                      <li key={r.openalexId} className="flex flex-col gap-1">
-                        <span className="leading-snug text-foreground/90">
-                          {text}
-                        </span>
+                      <li key={citeKey(r)} className="flex flex-col gap-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="min-w-0 break-all leading-snug text-foreground/90">
+                            {text}
+                          </span>
+                          <div className="flex shrink-0 items-start">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              aria-label={t("citation.editRef")}
+                              title={t("citation.editRef")}
+                              onClick={() => handleEditRef(r)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              aria-label={t("citation.insert")}
+                              title={t("citation.insert")}
+                              onClick={() => handleInsertRef(r)}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              aria-label={t("citation.deleteRef")}
+                              title={t("citation.deleteRef")}
+                              onClick={() => handleDeleteRef(r)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
                         {links.length > 0 && (
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                             {links.map((link) => {
@@ -643,7 +971,7 @@ function CitationPanelBody({
                     );
                   })}
                 </ol>
-              </ScrollArea>
+              </div>
             </div>
           )}
         </TabsContent>

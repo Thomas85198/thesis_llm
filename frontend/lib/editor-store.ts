@@ -43,8 +43,18 @@ type EditorStore = {
   citePanelOpen: boolean;
   citeClaim: string;
   citeAnchor: number | null;
+  /** When opened from an unlinked citation: its citeKey, so picking a source
+   * relinks every matching unlinked chip in place instead of inserting anew. */
+  citeReplaceKey: string | null;
   citeNonce: number;
-  openCitePanel: (claim: string, anchor: number) => void;
+  openCitePanel: (
+    claim: string,
+    anchor: number,
+    replaceKey?: string | null,
+  ) => void;
+  /** Toggle resolve/edit mode while the panel stays open (no remount) — used by
+   * "edit reference" to retarget the manual form at an existing citation. */
+  setCiteReplaceKey: (key: string | null) => void;
   closeCitePanel: () => void;
 
   // ----- AI rewrite -----
@@ -158,6 +168,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         citePanelOpen: false,
         citeClaim: "",
         citeAnchor: null,
+        citeReplaceKey: null,
         rewriteOpen: false,
         rewriteText: "",
         rewriteRange: null,
@@ -175,14 +186,17 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     citePanelOpen: false,
     citeClaim: "",
     citeAnchor: null,
+    citeReplaceKey: null,
     citeNonce: 0,
-    openCitePanel: (citeClaim, citeAnchor) =>
+    openCitePanel: (citeClaim, citeAnchor, citeReplaceKey = null) =>
       set((s) => ({
         citePanelOpen: true,
         citeClaim,
         citeAnchor,
+        citeReplaceKey,
         citeNonce: s.citeNonce + 1,
       })),
+    setCiteReplaceKey: (citeReplaceKey) => set({ citeReplaceKey }),
     closeCitePanel: () => set({ citePanelOpen: false }),
 
     // ----- AI rewrite -----

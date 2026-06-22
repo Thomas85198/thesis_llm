@@ -6,10 +6,12 @@ candidates, normalized to a flat shape the editor renders. No embedding /
 re-ranking here — we trust OpenAlex's own `relevance_score` ordering (the MVP
 ranking decision); semantic rerank is a later phase.
 """
+
 from __future__ import annotations
 
 import os
 import re
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -72,9 +74,7 @@ def _host(url: str) -> str:
 
 
 def _is_trusted(host: str) -> bool:
-    return any(
-        host == h or host.endswith("." + h) for h in _TRUSTED_FULLTEXT_HOSTS
-    )
+    return any(host == h or host.endswith("." + h) for h in _TRUSTED_FULLTEXT_HOSTS)
 
 
 def fulltext_url(work: dict[str, Any]) -> str:
@@ -107,18 +107,14 @@ def source_url(work: dict[str, Any]) -> str:
     else the primary landing page, else the OpenAlex record (which always exists).
     """
     primary = (work.get("primary_location") or {}).get("landing_page_url")
-    return (
-        fulltext_url(work)
-        or work.get("doi")
-        or primary
-        or work.get("id")
-        or ""
-    )
+    return fulltext_url(work) or work.get("doi") or primary or work.get("id") or ""
 
 
 def normalize(work: dict[str, Any]) -> dict[str, Any]:
     """Flatten one OpenAlex Work into the editor's candidate shape."""
-    oa_id = (work.get("id") or "").rsplit("/", 1)[-1]  # ".../W2741809807" → "W2741809807"
+    oa_id = (work.get("id") or "").rsplit("/", 1)[
+        -1
+    ]  # ".../W2741809807" → "W2741809807"
     authors = [
         a["author"].get("display_name", "")
         for a in (work.get("authorships") or [])
@@ -185,11 +181,9 @@ def get_works_by_ids(openalex_ids: list[str]) -> dict[str, dict[str, Any]]:
     # Keep only well-formed work ids (W + digits). OpenAlex 400s the whole batch
     # if any id is malformed, so a single junk attr would otherwise sink the
     # refresh; dropping it just leaves that citation untouched.
-    ids = [
-        i.strip()
-        for i in openalex_ids
-        if re.fullmatch(r"W\d+", i.strip())
-    ][:REFRESH_MAX_IDS]
+    ids = [i.strip() for i in openalex_ids if re.fullmatch(r"W\d+", i.strip())][
+        :REFRESH_MAX_IDS
+    ]
     out: dict[str, dict[str, Any]] = {}
     for i in range(0, len(ids), 50):
         chunk = ids[i : i + 50]
@@ -202,11 +196,23 @@ def get_works_by_ids(openalex_ids: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def _fetch_results(params: dict[str, Any]) -> list[dict[str, Any]]:
-    """GET the works endpoint with our standard select + polite-pool params."""
+    """GET the works endpoint with our standard select + polite-pool params.
+
+    OpenAlex bursts can return 429 (Too Many Requests) / 503; these are usually
+    transient, so retry a couple of times with a short backoff (honoring
+    Retry-After) before giving up — most rate-limit blips clear within a second.
+    """
     params = {**params, "mailto": _MAILTO, "select": _SELECT}
     headers = {"User-Agent": f"thesis-llm-demo/1.0 (mailto:{_MAILTO})"}
     with httpx.Client(timeout=_TIMEOUT, headers=headers) as cli:
-        resp = cli.get(_BASE_URL, params=params)
+        resp = None
+        for attempt in range(3):
+            resp = cli.get(_BASE_URL, params=params)
+            if resp.status_code not in (429, 503):
+                break
+            ra = resp.headers.get("retry-after", "")
+            delay = float(ra) if ra.isdigit() else 0.8 * (attempt + 1)
+            time.sleep(min(delay, 3.0))
+        assert resp is not None
         resp.raise_for_status()
-        data = resp.json()
-    return data.get("results") or []
+        return resp.json().get("results") or []

@@ -211,8 +211,13 @@ def _fetch_results(params: dict[str, Any]) -> list[dict[str, Any]]:
             if resp.status_code not in (429, 503):
                 break
             ra = resp.headers.get("retry-after", "")
-            delay = float(ra) if ra.isdigit() else 0.8 * (attempt + 1)
-            time.sleep(min(delay, 3.0))
+            ra_secs = float(ra) if ra.isdigit() else 0.0
+            # A large Retry-After means a sustained limit (e.g. the daily quota is
+            # spent, hours away) — don't burn seconds retrying; fail fast so the
+            # caller can fall back to Crossref. Only short bursts are worth a wait.
+            if ra_secs > 5:
+                break
+            time.sleep(min(ra_secs or 0.8 * (attempt + 1), 3.0))
         assert resp is not None
         resp.raise_for_status()
         return resp.json().get("results") or []

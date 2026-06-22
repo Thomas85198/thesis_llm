@@ -38,6 +38,15 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.6.0",
+    date: "2026-06-22",
+    changes: [
+      { type: "feat" }, // Crossref 加入搜尋來源（免費）：OpenAlex 為主、限流時自動退 Crossref，搜尋不再卡 429
+      { type: "feat" }, // 中文論述查得到中文/台灣期刊（Crossref 用原文中文查、結果中文優先）
+      { type: "fix" }, // 經典論文重複來源去重（標題+首作者、保留最高被引用）+ 無標題結果篩除
+    ],
+  },
+  {
     version: "4.5.0",
     date: "2026-06-22",
     changes: [

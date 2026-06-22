@@ -825,12 +825,9 @@ def recommend_citations(body: CitationRecommendIn) -> dict[str, Any]:
     try:
         candidates = citation_mod.recommend(claim, year_from=body.year_from)
     except citation_mod.CitationSearchError as exc:
-        # Keep the toast clean — drop OpenAlex's raw URL dump; flag rate limits.
-        if "429" in str(exc):
-            raise HTTPException(
-                503, "OpenAlex 暫時忙碌（速率限制），請稍候再試。"
-            ) from exc
-        raise HTTPException(502, "OpenAlex 服務暫時無法使用，請稍候再試。") from exc
+        # Both sources failed (OpenAlex primary + Crossref fallback). Keep the
+        # toast clean — drop the raw URL dump.
+        raise HTTPException(502, "引用搜尋暫時無法使用，請稍候再試。") from exc
     return {"candidates": candidates}
 
 

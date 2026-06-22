@@ -29,6 +29,15 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_6_0": {
+      "title": "Citation search adds Crossref: free, rate-limit-proof, finds Chinese journals",
+      "summary": "With OpenAlex now metered and easily rate-limited, this release wires free Crossref into citation search: OpenAlex stays primary (fast, semantic), and search automatically falls back to Crossref when OpenAlex is rate-limited or returns nothing — so a 429 no longer breaks search. Chinese claims also query Crossref in the original Chinese, surfacing Taiwan and Chinese journals (mostly with DOIs, one-click linkable).",
+      "changes": {
+        "0": "Crossref added as a search source: OpenAlex stays primary (fast, semantic, abstracts for rerank); when OpenAlex is rate-limited (429) or returns nothing, search falls back to free, uncapped Crossref so it no longer breaks when OpenAlex's quota runs out (the fallback is slower, a few seconds).",
+        "1": "Chinese claims now find Chinese / Taiwan journals: previously a Chinese claim was translated to English before searching (so Chinese works never surfaced); now Chinese claims also query Crossref in the original Chinese (most Taiwan journals register DOIs), with Chinese results shown first. Theses (Taiwan's NDLTD) aren't in Crossref and will be covered later via search links.",
+        "2": "Result quality: Crossref's multiple duplicate registrations of one classic paper (different DOIs) are merged by title + first author, keeping the most-cited copy; title-less stub records are filtered out so they no longer clutter results."
+      }
+    },
     "4_5_0": {
       "title": "Smart Citation overhaul: plain-text detection, source backfill, auto bibliography",
       "summary": "Closes the gap between writing a citation in your text and actually linking it to a source — auto-detect the citation forms you type, add free source-resolution paths beyond OpenAlex, and generate a self-updating reference list. With OpenAlex moving to usage-based rate limits, this release adds free Crossref and manual fallbacks so it keeps working.",

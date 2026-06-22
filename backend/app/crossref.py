@@ -16,8 +16,22 @@ import httpx
 # gives more reliable routing). Reuse the same env knob as OpenAlex.
 _MAILTO = os.getenv("OPENALEX_MAILTO", "thesis-llm-demo@example.com")
 _WORKS = "https://api.crossref.org/works/"
-_TIMEOUT = 10.0
+_SEARCH = "https://api.crossref.org/works"
+_TIMEOUT = 12.0
 _DOI_RE = re.compile(r"10\.\d{4,9}/[-._;()/:a-z0-9]+", re.I)
+# Crossref abstracts ship as JATS XML (<jats:p>…</jats:p>); strip tags to text.
+_TAG_RE = re.compile(r"<[^>]+>")
+# Only the fields we render — smaller, faster responses.
+_SELECT = (
+    "DOI,title,author,container-title,published,published-print,"
+    "published-online,URL,is-referenced-by-count,type,abstract"
+)
+
+
+def _strip_abstract(raw: str) -> str:
+    if not raw:
+        return ""
+    return re.sub(r"\s+", " ", _TAG_RE.sub(" ", raw)).strip()
 
 
 def extract_doi(text: str) -> str:
@@ -53,9 +67,38 @@ def _normalize(msg: dict[str, Any]) -> dict[str, Any]:
         "url": msg.get("URL") or (f"https://doi.org/{doi}" if doi else ""),
         "cited_by_count": msg.get("is-referenced-by-count") or 0,
         "type": msg.get("type") or "",
-        "abstract": "",
+        "abstract": _strip_abstract(msg.get("abstract", "")),
         "relevance_score": None,
     }
+
+
+def search_works(
+    query: str, rows: int = 15, year_from: int | None = None
+) -> list[dict[str, Any]]:
+    """Keyword-search Crossref → normalized candidates in Crossref's own relevance
+    order. Free with no per-day credit cap, so this is the primary search source
+    (OpenAlex is the fallback). Most records lack abstracts, so semantic rerank
+    upstream simply no-ops and Crossref's relevance ranking stands.
+
+    Raises httpx.HTTPError on network/HTTP failure; empty query returns []."""
+    query = (query or "").strip()
+    if not query:
+        return []
+    params: dict[str, Any] = {
+        "query.bibliographic": query[:500],
+        "rows": max(1, min(rows, 25)),
+        "select": _SELECT,
+        "mailto": _MAILTO,
+    }
+    if year_from:
+        params["filter"] = f"from-pub-date:{year_from}-01-01"
+    headers = {"User-Agent": f"thesis-llm-demo/1.0 (mailto:{_MAILTO})"}
+    with httpx.Client(timeout=_TIMEOUT, headers=headers) as cli:
+        resp = cli.get(_SEARCH, params=params)
+        resp.raise_for_status()
+        items = (resp.json().get("message") or {}).get("items") or []
+    # Skip metadata-only stubs with no usable title (empty string or missing).
+    return [_normalize(it) for it in items if (it.get("title") or [""])[0].strip()]
 
 
 def lookup_doi(doi_or_url: str) -> dict[str, Any] | None:

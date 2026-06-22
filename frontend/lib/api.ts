@@ -779,7 +779,8 @@ export async function exportDocument(body: {
   style: string; // citation style
   locale: string;
   format: ExportFormat;
-  template?: string; // LaTeX only: article | twocolumn | ieee
+  template?: string; // LaTeX only: article | twocolumn | ieee | twthesis
+  cover?: Record<string, string>; // twthesis bilingual title page (optional)
 }): Promise<{ blob: Blob; filename: string }> {
   const res = await fetch(`${API_BASE}/api/editor/export`, {
     method: "POST",

@@ -29,6 +29,17 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_7_0": {
+      "title": "One-click Taiwan thesis: consistent PDF / Word / LaTeX + bilingual cover + live preview",
+      "summary": "The Taiwan graduate-thesis layout is now complete and consistent across all three outputs: 標楷體 (Kai) + Times New Roman + 14pt, centered 第X章 chapter titles, chapter-scoped figure/table numbers (圖 2-1), Roman front-matter → Arabic body page numbers, 3cm margins, 1.5 line spacing, and a reference list grouped into Web / Chinese / English with hanging indents (Chinese entries in full-width style). A bilingual cover page (university, department, degree, titles, advisor, student, date) is filled in the export panel and remembered. Word and LaTeX/PDF share one rule set; the online preview now reflects the chosen layout — the Taiwan-thesis preview is the on-screen twin of the PDF.",
+      "changes": {
+        "0": "Taiwan-thesis PDF/LaTeX format: 標楷體 body (Times New Roman for Latin), 14pt, centered chapter titles (第一章 緒論), chapter-scoped figure/table numbers (圖 2-1 / 表 2-1), Roman page numbers for front matter then Arabic from chapter one, A4 with 3cm margins and 1.5 line spacing.",
+        "1": "Bilingual cover page: university, department, degree, Chinese/English titles, advisor, student and ROC date; empty fields are skipped, saved per document so the next export needs no retyping (Chinese title defaults to the document title).",
+        "2": "Word (.docx) matches the same Taiwan format: cover, section-split page numbers (cover unnumbered → Arabic body), 第X章, figure/table numbers, grouped & hanging-indent references, run-level 標楷體/Times/14pt — fully editable.",
+        "3": "Online preview follows the layout: choosing Taiwan-thesis shows the on-screen twin of the PDF (cover, chapters, figure/table numbers, grouped references).",
+        "4": "References grouped into Web / Chinese / English with hanging indents, full-width Chinese style, and long DOIs/URLs that wrap; citation numbering now uses citeKey (Crossref / Chinese / unlinked sources all number correctly), narrative citations render as 'Author (year)', and duplicate references are de-duplicated."
+      }
+    },
     "4_6_0": {
       "title": "Citation search adds Crossref: free, rate-limit-proof, finds Chinese journals",
       "summary": "With OpenAlex now metered and easily rate-limited, this release wires free Crossref into citation search: OpenAlex stays primary (fast, semantic), and search automatically falls back to Crossref when OpenAlex is rate-limited or returns nothing — so a 429 no longer breaks search. Chinese claims also query Crossref in the original Chinese, surfacing Taiwan and Chinese journals (mostly with DOIs, one-click linkable).",

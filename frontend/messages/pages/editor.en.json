@@ -12,7 +12,30 @@
   "deleted": "Document deleted",
   "notFound": "Document not found",
   "backToList": "Back to documents",
-  "outline": "Outline",
+  "outline": {
+    "find": "Outline",
+    "panelTitle": "Outline generator",
+    "panelDesc": "Apply the standard IMRaD structure, or type a topic and let AI generate a tailored heading tree.",
+    "imradTitle": "IMRaD standard structure",
+    "imradDesc": "Intro · Literature · Methods · Results · Discussion · Conclusion",
+    "smartTitle": "AI-generated outline",
+    "topicPlaceholder": "Enter a topic, e.g. “the effect of flow on online learning motivation”",
+    "generate": "Generate",
+    "working": "Generating outline…",
+    "prompt": "Enter a topic and generate to preview the heading tree here.",
+    "insert": "Insert",
+    "insertGenerated": "Insert this outline",
+    "inserted": "Outline inserted",
+    "rateLimited": "Too many requests, retry in {seconds}s.",
+    "imrad": {
+      "intro": "Introduction",
+      "litReview": "Literature Review",
+      "methods": "Methodology",
+      "results": "Results",
+      "discussion": "Discussion",
+      "conclusion": "Conclusion"
+    }
+  },
   "outlineEmpty": "Add headings and they'll show up here.",
   "titlePlaceholder": "Untitled document",
   "titleAria": "Document title",
@@ -135,30 +158,6 @@
       "fix_grammar": "Fix grammar"
     }
   },
-  "outline": {
-    "find": "Outline",
-    "panelTitle": "Outline generator",
-    "panelDesc": "Apply the standard IMRaD structure, or type a topic and let AI generate a tailored heading tree.",
-    "imradTitle": "IMRaD standard structure",
-    "imradDesc": "Intro · Literature · Methods · Results · Discussion · Conclusion",
-    "smartTitle": "AI-generated outline",
-    "topicPlaceholder": "Enter a topic, e.g. “the effect of flow on online learning motivation”",
-    "generate": "Generate",
-    "working": "Generating outline…",
-    "prompt": "Enter a topic and generate to preview the heading tree here.",
-    "insert": "Insert",
-    "insertGenerated": "Insert this outline",
-    "inserted": "Outline inserted",
-    "rateLimited": "Too many requests, retry in {seconds}s.",
-    "imrad": {
-      "intro": "Introduction",
-      "litReview": "Literature Review",
-      "methods": "Methodology",
-      "results": "Results",
-      "discussion": "Discussion",
-      "conclusion": "Conclusion"
-    }
-  },
   "slash": {
     "text": "Text",
     "textHint": "Plain paragraph",
@@ -274,6 +273,17 @@
     "tplIeee": "IEEE conference (IEEEtran)",
     "ieeeStyleHint": "IEEE layouts usually pair with the bracketed IEEE citation style ([1])",
     "ieeeStyleSwitch": "Switch to IEEE",
-    "done": "Download started"
+    "done": "Download started",
+    "cover": {
+      "toggle": "Add cover page (Taiwan thesis)",
+      "hint": "Top line Chinese, bottom line English per row; empty fields are omitted. Saved with this document.",
+      "university": "University",
+      "department": "Department",
+      "degree": "Degree",
+      "title": "Thesis title",
+      "advisor": "Advisor",
+      "student": "Graduate student",
+      "date": "Date"
+    }
   }
 }

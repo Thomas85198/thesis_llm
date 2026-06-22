@@ -12,7 +12,30 @@
   "deleted": "已刪除文件",
   "notFound": "找不到這份文件",
   "backToList": "回到文件列表",
-  "outline": "大綱",
+  "outline": {
+    "find": "大綱",
+    "panelTitle": "大綱生成",
+    "panelDesc": "套用 IMRaD 標準結構，或輸入主題讓 AI 生成量身的標題樹。",
+    "imradTitle": "IMRaD 標準結構",
+    "imradDesc": "緒論・文獻探討・方法・結果・討論・結論",
+    "smartTitle": "AI 生成大綱",
+    "topicPlaceholder": "輸入論文主題，例如「心流對線上學習動機的影響」",
+    "generate": "生成",
+    "working": "生成大綱中…",
+    "prompt": "輸入主題並生成，會在這裡預覽標題樹。",
+    "insert": "插入",
+    "insertGenerated": "插入此大綱",
+    "inserted": "已插入大綱",
+    "rateLimited": "生成太頻繁，請 {seconds} 秒後再試。",
+    "imrad": {
+      "intro": "緒論",
+      "litReview": "文獻探討",
+      "methods": "研究方法",
+      "results": "研究結果",
+      "discussion": "討論",
+      "conclusion": "結論"
+    }
+  },
   "outlineEmpty": "加入標題後，大綱會出現在這裡。",
   "titlePlaceholder": "未命名文件",
   "titleAria": "文件標題",
@@ -135,30 +158,6 @@
       "fix_grammar": "修正文法"
     }
   },
-  "outline": {
-    "find": "大綱",
-    "panelTitle": "大綱生成",
-    "panelDesc": "套用 IMRaD 標準結構，或輸入主題讓 AI 生成量身的標題樹。",
-    "imradTitle": "IMRaD 標準結構",
-    "imradDesc": "緒論・文獻探討・方法・結果・討論・結論",
-    "smartTitle": "AI 生成大綱",
-    "topicPlaceholder": "輸入論文主題，例如「心流對線上學習動機的影響」",
-    "generate": "生成",
-    "working": "生成大綱中…",
-    "prompt": "輸入主題並生成，會在這裡預覽標題樹。",
-    "insert": "插入",
-    "insertGenerated": "插入此大綱",
-    "inserted": "已插入大綱",
-    "rateLimited": "生成太頻繁，請 {seconds} 秒後再試。",
-    "imrad": {
-      "intro": "緒論",
-      "litReview": "文獻探討",
-      "methods": "研究方法",
-      "results": "研究結果",
-      "discussion": "討論",
-      "conclusion": "結論"
-    }
-  },
   "slash": {
     "text": "內文",
     "textHint": "純文字段落",
@@ -274,6 +273,17 @@
     "tplIeee": "IEEE 會議（IEEEtran）",
     "ieeeStyleHint": "IEEE 版型通常搭配 IEEE 編號式引用格式（[1]）",
     "ieeeStyleSwitch": "切換為 IEEE",
-    "done": "已開始下載"
+    "done": "已開始下載",
+    "cover": {
+      "toggle": "加入封面頁（台灣論文）",
+      "hint": "每列上為中文、下為英文；留空的欄位不會出現。資料會記在此文件。",
+      "university": "校名",
+      "department": "系所",
+      "degree": "學位",
+      "title": "論文題目",
+      "advisor": "指導教授",
+      "student": "研究生",
+      "date": "日期"
+    }
   }
 }

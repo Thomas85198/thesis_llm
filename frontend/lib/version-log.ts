@@ -38,6 +38,17 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.7.0",
+    date: "2026-06-22",
+    changes: [
+      { type: "feat" }, // 台灣論文 PDF/LaTeX 格式：標楷體+Times+14pt、第X章、章節式圖表編號、前置Roman→正文Arabic、3cm/1.5、參考文獻分組懸掛縮排
+      { type: "feat" }, // 雙語封面頁（校名/系所/學位/中英題目/指導教授/研究生/日期，匯出面板填寫並記住）
+      { type: "feat" }, // Word(DOCX) 對齊同套台灣格式（封面、頁碼分段、章節、圖表編號、參考文獻分組）
+      { type: "feat" }, // 線上預覽依版型呈現：台灣論文版型預覽＝PDF 螢幕版
+      { type: "fix" }, // 引用編號改 citeKey（Crossref/中文/未串接皆正確）、敘述式引用、參考文獻去重、長 DOI/URL 斷行
+    ],
+  },
+  {
     version: "4.6.0",
     date: "2026-06-22",
     changes: [

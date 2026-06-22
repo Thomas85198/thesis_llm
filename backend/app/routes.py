@@ -154,6 +154,10 @@ class ExportIn(BaseModel):
     format: str = Field("docx", pattern="^(docx|latex|pdf|md|txt|html)$")
     # Document layout — applies to latex/pdf renders.
     template: str = Field("article", pattern="^(article|twocolumn|ieee|twthesis)$")
+    # Optional Taiwan-thesis bilingual cover page (twthesis + pdf/latex only).
+    # A flat dict of string fields (university/department/degree/title/advisor/
+    # student/date, each zh + en); when present a titlepage replaces \maketitle.
+    cover: dict[str, str] | None = None
 
 
 router = APIRouter()
@@ -1008,14 +1012,16 @@ def export_document(body: ExportIn) -> Response:
     document = {"title": body.title, "content_json": body.content_json}
     refs_label = "參考文獻" if body.locale == "zh-Hant" else "References"
     if body.format == "docx":
-        data = export_doc.to_docx(document, body.style, refs_label)
+        data = export_doc.to_docx(
+            document, body.style, refs_label, body.template, body.locale, body.cover
+        )
         media = (
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
         ext = "docx"
     elif body.format == "pdf":
         tex, images = export_doc.to_latex(
-            document, body.style, refs_label, body.template, body.locale
+            document, body.style, refs_label, body.template, body.locale, body.cover
         )
         try:
             data = latex_compile.compile_pdf(tex, images)
@@ -1027,7 +1033,7 @@ def export_document(body: ExportIn) -> Response:
         ext = "pdf"
     elif body.format == "latex":
         tex, images = export_doc.to_latex(
-            document, body.style, refs_label, body.template, body.locale
+            document, body.style, refs_label, body.template, body.locale, body.cover
         )
         if images:
             # Bundle .tex + referenced images so the export compiles as-is.
@@ -1047,7 +1053,9 @@ def export_document(body: ExportIn) -> Response:
         media = "text/plain; charset=utf-8"
         ext = "txt"
     else:  # html (for online preview / browser print-to-PDF)
-        data = export_doc.to_html(document, body.style, refs_label).encode("utf-8")
+        data = export_doc.to_html(
+            document, body.style, refs_label, body.template, body.locale, body.cover
+        ).encode("utf-8")
         media = "text/html; charset=utf-8"
         ext = "html"
     # RFC 5987 filename* carries the (possibly CJK) title; ascii filename is a fallback.

@@ -53,6 +53,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-lang-chinese \
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
+    fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # PyMuPDF's get_textpage_ocr reads this to locate traineddata files. The

@@ -4,6 +4,7 @@ No real network — httpx.Client is monkeypatched with a fake. Covers the two
 tricky bits: abstract inverted-index restoration and candidate normalization
 (including missing fields), plus the per-doc rate-limit backstop.
 """
+
 from __future__ import annotations
 
 import httpx
@@ -13,6 +14,7 @@ from app import citation, openalex
 
 
 # ---------- restore_abstract ----------
+
 
 def test_restore_abstract_reorders_by_position():
     inverted = {"Hello": [0], "world": [1], "again": [2, 4], "and": [3]}
@@ -43,11 +45,17 @@ FULL_WORK = {
     # in `locations`. We must ignore the former and surface the latter.
     "open_access": {"is_oa": True, "oa_url": "https://scraped-mirror.example/dl/9"},
     "locations": [
-        {"is_oa": True, "source": None,
-         "pdf_url": "https://scraped-mirror.example/dl/9"},  # untrusted → skipped
-        {"is_oa": True, "source": {"display_name": "arXiv"},
-         "landing_page_url": "https://arxiv.org/abs/1706.03762",
-         "pdf_url": "https://arxiv.org/pdf/1706.03762"},
+        {
+            "is_oa": True,
+            "source": None,
+            "pdf_url": "https://scraped-mirror.example/dl/9",
+        },  # untrusted → skipped
+        {
+            "is_oa": True,
+            "source": {"display_name": "arXiv"},
+            "landing_page_url": "https://arxiv.org/abs/1706.03762",
+            "pdf_url": "https://arxiv.org/pdf/1706.03762",
+        },
     ],
     "cited_by_count": 54321,
     "type": "article",
@@ -95,14 +103,21 @@ def test_normalize_falls_back_to_display_name():
 
 # ---------- fulltext_url / source_url ----------
 
+
 def test_fulltext_url_skips_untrusted_mirror_for_trusted_arxiv():
     work = {
         "open_access": {"oa_url": "https://scraped-mirror.example/x"},
         "locations": [
-            {"is_oa": True, "source": None,
-             "pdf_url": "https://scraped-mirror.example/x"},
-            {"is_oa": True, "source": {"display_name": "arXiv"},
-             "landing_page_url": "https://arxiv.org/abs/1706.03762"},
+            {
+                "is_oa": True,
+                "source": None,
+                "pdf_url": "https://scraped-mirror.example/x",
+            },
+            {
+                "is_oa": True,
+                "source": {"display_name": "arXiv"},
+                "landing_page_url": "https://arxiv.org/abs/1706.03762",
+            },
         ],
     }
     assert openalex.fulltext_url(work) == "https://arxiv.org/abs/1706.03762"
@@ -111,8 +126,12 @@ def test_fulltext_url_skips_untrusted_mirror_for_trusted_arxiv():
 def test_fulltext_url_prefers_landing_over_pdf():
     work = {
         "locations": [
-            {"is_oa": True, "source": {"display_name": "arXiv"},
-             "landing_page_url": "https://arxiv.org/abs/1", "pdf_url": "https://arxiv.org/pdf/1"},
+            {
+                "is_oa": True,
+                "source": {"display_name": "arXiv"},
+                "landing_page_url": "https://arxiv.org/abs/1",
+                "pdf_url": "https://arxiv.org/pdf/1",
+            },
         ],
     }
     assert openalex.fulltext_url(work) == "https://arxiv.org/abs/1"
@@ -123,21 +142,33 @@ def test_fulltext_url_empty_when_no_trusted_oa():
     work = {"locations": [{"is_oa": True, "pdf_url": "https://random.example/p.pdf"}]}
     assert openalex.fulltext_url(work) == ""
     # Non-OA trusted-looking host is also ignored (we require is_oa).
-    work2 = {"locations": [{"is_oa": False, "landing_page_url": "https://arxiv.org/abs/2"}]}
+    work2 = {
+        "locations": [{"is_oa": False, "landing_page_url": "https://arxiv.org/abs/2"}]
+    }
     assert openalex.fulltext_url(work2) == ""
 
 
 def test_fulltext_url_ignores_doi_org_landing():
-    work = {"locations": [{"is_oa": True, "landing_page_url": "https://doi.org/10.1/x"}]}
+    work = {
+        "locations": [{"is_oa": True, "landing_page_url": "https://doi.org/10.1/x"}]
+    }
     assert openalex.fulltext_url(work) == ""
 
 
 def test_source_url_falls_back_doi_then_landing_then_record():
     base_loc = {"landing_page_url": "https://pub/land"}
     # trusted full text wins
-    work = {"doi": "https://doi.org/10.1/x", "primary_location": base_loc,
-            "locations": [{"is_oa": True, "source": {"display_name": "arXiv"},
-                           "landing_page_url": "https://arxiv.org/abs/9"}]}
+    work = {
+        "doi": "https://doi.org/10.1/x",
+        "primary_location": base_loc,
+        "locations": [
+            {
+                "is_oa": True,
+                "source": {"display_name": "arXiv"},
+                "landing_page_url": "https://arxiv.org/abs/9",
+            }
+        ],
+    }
     assert openalex.source_url(work) == "https://arxiv.org/abs/9"
     # no trusted full text → DOI
     work = {"doi": "https://doi.org/10.1/x", "primary_location": base_loc}
@@ -146,12 +177,20 @@ def test_source_url_falls_back_doi_then_landing_then_record():
     work = {"primary_location": base_loc}
     assert openalex.source_url(work) == "https://pub/land"
     # nothing but the record id
-    assert openalex.source_url({"id": "https://openalex.org/W9"}) == "https://openalex.org/W9"
+    assert (
+        openalex.source_url({"id": "https://openalex.org/W9"})
+        == "https://openalex.org/W9"
+    )
 
 
 # ---------- search_works (httpx mocked) ----------
 
+
 class _FakeResp:
+    # _fetch_results inspects status_code / headers for its 429/503 retry loop.
+    status_code = 200
+    headers: dict = {}
+
     def __init__(self, data):
         self._data = data
 
@@ -205,6 +244,7 @@ def test_search_works_empty_query_skips_call(fake_httpx):
 
 # ---------- get_works_by_ids (refresh) ----------
 
+
 def test_get_works_by_ids_keys_by_openalex_id(fake_httpx):
     out = openalex.get_works_by_ids(["W123", "W999"])
     assert set(out) == {"W123"}  # only the work OpenAlex returned
@@ -227,6 +267,7 @@ def test_get_works_by_ids_empty_skips_call(fake_httpx):
 
 # ---------- rerank_by_claim (semantic re-ranking) ----------
 
+
 def test_rerank_orders_by_claim_similarity(monkeypatch):
     cands = [
         {"openalex_id": "A", "abstract": "about soil bacteria"},
@@ -242,23 +283,32 @@ def test_rerank_orders_by_claim_similarity(monkeypatch):
 
 
 def test_rerank_graceful_on_embed_failure(monkeypatch):
-    cands = [{"openalex_id": "A", "abstract": "x"}, {"openalex_id": "B", "abstract": "y"}]
+    cands = [
+        {"openalex_id": "A", "abstract": "x"},
+        {"openalex_id": "B", "abstract": "y"},
+    ]
+
     def boom(_texts):
         raise RuntimeError("no quota")
+
     monkeypatch.setattr(citation.llm, "embed", boom)
     out = citation.rerank_by_claim("c", cands)
     assert [c["openalex_id"] for c in out] == ["A", "B"]  # unchanged order
 
 
 def test_rerank_keeps_abstract_less_at_end(monkeypatch):
-    cands = [{"openalex_id": "A", "abstract": ""}, {"openalex_id": "B", "abstract": "y"},
-             {"openalex_id": "C", "abstract": "z"}]
+    cands = [
+        {"openalex_id": "A", "abstract": ""},
+        {"openalex_id": "B", "abstract": "y"},
+        {"openalex_id": "C", "abstract": "z"},
+    ]
     monkeypatch.setattr(citation.llm, "embed", lambda texts: [[1.0], [0.5], [1.0]])
     out = citation.rerank_by_claim("c", cands)
     assert out[-1]["openalex_id"] == "A"  # the abstract-less one sinks to the end
 
 
 # ---------- to_search_query (CJK → English via LLM) ----------
+
 
 def test_to_search_query_english_passthrough():
     # No CJK → returned verbatim, no LLM call.
@@ -267,7 +317,9 @@ def test_to_search_query_english_passthrough():
 
 def test_to_search_query_chinese_uses_llm(monkeypatch):
     monkeypatch.setattr(
-        citation.llm, "call_with_tool", lambda **k: {"query": "self attention long range"}
+        citation.llm,
+        "call_with_tool",
+        lambda **k: {"query": "self attention long range"},
     )
     assert citation.to_search_query("自注意力機制") == "self attention long range"
 
@@ -283,16 +335,21 @@ def test_to_search_query_chinese_llm_failure_falls_back(monkeypatch):
 
 # ---------- recommend (error wrapping) ----------
 
+
 def test_recommend_wraps_httpx_error(monkeypatch):
     def boom(*a, **k):
         raise httpx.ConnectError("no route to host")
 
+    # recommend() now falls back to Crossref when OpenAlex fails, so it only
+    # hard-fails when *every* source errored — patch both.
     monkeypatch.setattr(openalex, "search_works", boom)
+    monkeypatch.setattr(citation.crossref, "search_works", boom)
     with pytest.raises(citation.CitationSearchError):
         citation.recommend("anything")
 
 
 # ---------- rate limit ----------
+
 
 def test_rate_limit_allows_then_blocks(monkeypatch):
     monkeypatch.setattr(citation, "_rate_buckets", {})

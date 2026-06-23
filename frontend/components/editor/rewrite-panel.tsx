@@ -6,7 +6,7 @@
 import type { Editor } from "@tiptap/core";
 import { Check, Loader2, RotateCw, Sparkles, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ChatRateLimitError, streamRewrite } from "@/lib/api";
@@ -72,6 +72,7 @@ function RewritePanelBody({
   const t = useTranslations("editor");
   const locale = useLocale();
   const original = useEditorStore((s) => s.rewriteText);
+  const preset = useEditorStore((s) => s.rewritePreset);
   const closeRewrite = useEditorStore((s) => s.closeRewrite);
 
   const [result, setResult] = useState("");
@@ -109,6 +110,15 @@ function RewritePanelBody({
     },
     [docId, original, locale, t],
   );
+
+  // Defect "AI fix" path: the store seeds an instruction, so auto-run it once on
+  // open (the body remounts per nonce, so this fires exactly once per fix). Kick
+  // the stream after commit (microtask) so the mount effect doesn't setState
+  // synchronously.
+  useEffect(() => {
+    if (preset) queueMicrotask(() => run(preset));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleAccept() {
     const range = useEditorStore.getState().rewriteRange;

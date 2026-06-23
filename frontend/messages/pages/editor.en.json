@@ -247,6 +247,9 @@
     "rateLimited": "Too many checks, retry in {seconds}s.",
     "suggestionLabel": "Suggestion: ",
     "locate": "Locate",
+    "applyFix": "AI fix",
+    "fixNotFound": "Couldn't find the sentence (the text may have changed); can't auto-fix.",
+    "fixInstruction": "This passage has the following defect: {description}. Suggested change: {suggestion}. Rewrite the passage to fix the defect; output only the revised text itself, with no explanation.",
     "severity": {
       "high": "High",
       "medium": "Medium",

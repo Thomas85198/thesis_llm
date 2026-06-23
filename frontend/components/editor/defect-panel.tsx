@@ -4,7 +4,8 @@
 // Each defect shows its rule, severity, description, suggestion and the cited
 // sentence; clicking "locate" selects that sentence in the editor.
 import type { Editor } from "@tiptap/core";
-import { Loader2, MapPin, ShieldAlert } from "lucide-react";
+import { Loader2, MapPin, ShieldAlert, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
@@ -38,6 +39,7 @@ export function DefectPanel({
   const loading = useEditorStore((s) => s.defectLoading);
   const defects = useEditorStore((s) => s.defects);
   const closeDefects = useEditorStore((s) => s.closeDefects);
+  const openRewrite = useEditorStore((s) => s.openRewrite);
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   // A fresh check / reopen resets which card is focused.
@@ -48,6 +50,29 @@ export function DefectPanel({
   const locate = (i: number, sentence: string) => {
     setActiveIdx(i);
     editor.commands.focusDefect(sentence);
+  };
+
+  // "AI fix": locate the evidence sentence (reusing focusDefect's span search),
+  // then hand its range + an instruction built from this defect to the rewrite
+  // panel — the author previews the AI fix before it replaces the sentence.
+  const applyFix = (i: number, d: (typeof defects)[number]) => {
+    const sentence = d.evidence[0];
+    if (!sentence) return;
+    if (!editor.commands.focusDefect(sentence)) {
+      toast.error(t("defect.fixNotFound"));
+      return;
+    }
+    setActiveIdx(i);
+    const { from, to } = editor.state.selection;
+    openRewrite(
+      editor.state.doc.textBetween(from, to),
+      from,
+      to,
+      t("defect.fixInstruction", {
+        description: d.description,
+        suggestion: d.suggestion,
+      }),
+    );
   };
 
   return (
@@ -172,18 +197,31 @@ export function DefectPanel({
                       </p>
                     )}
                     {d.evidence[0] && (
-                      <span
-                        className={`mt-1.5 inline-flex items-center gap-1 text-xs ${
-                          activeIdx === i
-                            ? "text-primary"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        <MapPin className="h-3.5 w-3.5" />
-                        {activeIdx === i
-                          ? t("defect.located")
-                          : t("defect.locate")}
-                      </span>
+                      <div className="mt-1.5 flex items-center gap-3">
+                        <span
+                          className={`inline-flex items-center gap-1 text-xs ${
+                            activeIdx === i
+                              ? "text-primary"
+                              : "text-muted-foreground"
+                          }`}
+                        >
+                          <MapPin className="h-3.5 w-3.5" />
+                          {activeIdx === i
+                            ? t("defect.located")
+                            : t("defect.locate")}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            applyFix(i, d);
+                          }}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          {t("defect.applyFix")}
+                        </button>
+                      </div>
                     )}
                   </li>
                 ))}

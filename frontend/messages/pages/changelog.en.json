@@ -29,6 +29,13 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_17_0": {
+      "title": "One-click defect fix (AI fix)",
+      "summary": "The defect-check panel gains an \"AI fix\": for a defect tied to a problem sentence, one click locates that sentence, generates a rewrite from the defect's description and suggestion, and lets you preview it before deciding — it only replaces the text once you accept, never editing your draft on its own.",
+      "changes": {
+        "0": "One-click defect fix: an \"AI fix\" button on defect cards → locates the problem sentence → rewrites it from the defect description + suggestion → replaces only after you preview and accept (reuses the AI rewrite panel; never edits the draft silently)."
+      }
+    },
     "4_16_0": {
       "title": "Grammar / style check (rule-based, no token)",
       "summary": "A new rule-based grammar/style check runs entirely locally with zero token cost, catching common objective issues in a Chinese thesis: half-width punctuation that should be full-width (e.g. '結果,' → '結果，'), missing spaces between CJK and Latin ('使用LLM' → '使用 LLM'), and stray spaces before Chinese punctuation. Issues are underlined inline in real time, and the side panel lists each with a one-click Fix, plus Fix all.",

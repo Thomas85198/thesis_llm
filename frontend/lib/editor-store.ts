@@ -84,7 +84,15 @@ type EditorStore = {
   rewriteText: string;
   rewriteRange: { from: number; to: number } | null;
   rewriteNonce: number;
-  openRewrite: (text: string, from: number, to: number) => void;
+  /** When set, the panel auto-runs this instruction on open (defect "AI fix"
+   * path) instead of waiting for the author to pick a preset. */
+  rewritePreset: string | null;
+  openRewrite: (
+    text: string,
+    from: number,
+    to: number,
+    presetInstruction?: string,
+  ) => void;
   closeRewrite: () => void;
 
   // ----- Outline -----
@@ -314,6 +322,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         rewriteOpen: false,
         rewriteText: "",
         rewriteRange: null,
+        rewritePreset: null,
         outlineOpen: false,
         exportOpen: false,
         versionsOpen: false,
@@ -351,11 +360,13 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     rewriteText: "",
     rewriteRange: null,
     rewriteNonce: 0,
-    openRewrite: (rewriteText, from, to) =>
+    rewritePreset: null,
+    openRewrite: (rewriteText, from, to, presetInstruction) =>
       set((s) => ({
         rewriteOpen: true,
         rewriteText,
         rewriteRange: { from, to },
+        rewritePreset: presetInstruction ?? null,
         rewriteNonce: s.rewriteNonce + 1,
       })),
     closeRewrite: () => set({ rewriteOpen: false }),

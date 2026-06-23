@@ -247,6 +247,9 @@
     "rateLimited": "檢查太頻繁，請 {seconds} 秒後再試。",
     "suggestionLabel": "建議：",
     "locate": "定位",
+    "applyFix": "AI 修正",
+    "fixNotFound": "找不到對應句子（內容可能已修改過），無法自動修正。",
+    "fixInstruction": "這段文字有以下缺陷：{description}。修改建議：{suggestion}。請改寫這段文字以修正該缺陷，只輸出修改後的文字本身，不要加任何說明。",
     "severity": {
       "high": "高",
       "medium": "中",

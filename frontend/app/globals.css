@@ -460,3 +460,9 @@ body.is-drag-ended .prosemirror-dropcursor-block,
 body.is-drag-ended .prosemirror-dropcursor-inline {
   display: none !important;
 }
+
+/* Focus mode (distraction-free writing): hide the site header. The editor's own
+   sidebar + toolbar are hidden via React state in tiptap-editor. */
+body.editor-focus [data-site-header] {
+  display: none;
+}

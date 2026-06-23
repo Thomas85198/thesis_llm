@@ -386,5 +386,9 @@
     "untitled": "（未命名章）",
     "noGoal": "設定目標後顯示進度條",
     "clearGoal": "清除"
+  },
+  "focus": {
+    "enter": "專注模式",
+    "exit": "離開專注（Esc）"
   }
 }

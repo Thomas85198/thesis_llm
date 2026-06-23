@@ -26,9 +26,11 @@ import {
   Image as ImageIcon,
   Images,
   BadgeCheck,
+  Focus,
   History,
   Italic,
   Keyboard,
+  Minimize2,
   Network,
   List,
   ListOrdered,
@@ -521,6 +523,23 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     total: number;
     cross: number;
   } | null>(null);
+
+  // Focus mode: distraction-free writing — hide the outline sidebar + toolbar and
+  // narrow the column. Esc exits. Pure layout, no token cost.
+  const [focusMode, setFocusMode] = useState(false);
+  useEffect(() => {
+    if (!focusMode) return;
+    // Hide the site header too (CSS targets body.editor-focus) for full immersion.
+    document.body.classList.add("editor-focus");
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFocusMode(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.classList.remove("editor-focus");
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [focusMode]);
   const handleDeepCheck = useCallback(async () => {
     const ed = editorRef.current;
     if (!ed) return;
@@ -963,9 +982,13 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-1 gap-6 px-4 py-6 sm:px-6">
-      {/* Outline */}
-      <aside className="hidden w-56 shrink-0 lg:block">
+    <div
+      className={`mx-auto flex w-full flex-1 gap-6 px-4 py-6 sm:px-6 ${
+        focusMode ? "max-w-3xl" : "max-w-6xl"
+      }`}
+    >
+      {/* Outline — hidden in focus mode */}
+      <aside className={focusMode ? "hidden" : "hidden w-56 shrink-0 lg:block"}>
         <div className="sticky top-20">
           <h2 className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {t("outline.find")}
@@ -993,6 +1016,16 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
 
       {/* Editor column */}
       <div className="relative flex min-w-0 flex-1 flex-col">
+        {focusMode && (
+          <button
+            type="button"
+            onClick={() => setFocusMode(false)}
+            className="fixed bottom-6 right-6 z-30 flex items-center gap-1.5 rounded-full border bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-md backdrop-blur transition hover:text-foreground"
+          >
+            <Minimize2 className="h-3.5 w-3.5" />
+            {t("focus.exit")}
+          </button>
+        )}
         <FindReplaceBar editor={editor} />
         <ConflictBanner editor={editor} docId={doc.doc_id} />
         {/* Title + save status */}
@@ -1008,8 +1041,12 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           <SaveBadge state={saveState} />
         </div>
 
-        {/* Toolbar */}
-        <div className="sticky top-14 z-10 mb-3 flex flex-wrap items-center gap-0.5 rounded-lg border bg-background/95 p-1 backdrop-blur">
+        {/* Toolbar — hidden in focus mode */}
+        <div
+          className={`sticky top-14 z-10 mb-3 flex flex-wrap items-center gap-0.5 rounded-lg border bg-background/95 p-1 backdrop-blur ${
+            focusMode ? "hidden" : ""
+          }`}
+        >
           <ToolbarButton
             active={tb?.h1}
             label={t("tools.h1")}
@@ -1164,6 +1201,12 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           </ToolbarButton>
           <ToolbarButton label={t("shortcuts.title")} onClick={openShortcuts}>
             <Keyboard className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton
+            label={t("focus.enter")}
+            onClick={() => setFocusMode(true)}
+          >
+            <Focus className="h-4 w-4" />
           </ToolbarButton>
           <div className="mx-1 h-5 w-px bg-border" />
           <Button

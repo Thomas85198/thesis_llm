@@ -13,9 +13,16 @@ import { CURRENT_VERSION } from "@/lib/version-log";
 export function SiteHeader() {
   const t = useTranslations("header");
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <header
+      data-site-header
+      className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+    >
       <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-4 px-4 sm:px-6">
-        <Link href="/" aria-label={t("appNameAria")} className="flex items-center">
+        <Link
+          href="/"
+          aria-label={t("appNameAria")}
+          className="flex items-center"
+        >
           <svg
             viewBox="0 0 32 32"
             className="h-7 w-7 shrink-0"
@@ -47,7 +54,10 @@ export function SiteHeader() {
         </GuardedLink>
         <JobIndicator />
         <nav className="ml-auto hidden items-center gap-1 sm:flex">
-          <Link href="/" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+          <Link
+            href="/"
+            className={buttonVariants({ variant: "ghost", size: "sm" })}
+          >
             {t("upload")}
           </Link>
           <Link

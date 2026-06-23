@@ -386,5 +386,9 @@
     "untitled": "(Untitled chapter)",
     "noGoal": "Set a goal to see the progress bar",
     "clearGoal": "Clear"
+  },
+  "focus": {
+    "enter": "Focus mode",
+    "exit": "Exit focus (Esc)"
   }
 }

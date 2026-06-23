@@ -29,6 +29,13 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_15_0": {
+      "title": "Focus mode: distraction-free writing",
+      "summary": "A new Focus mode in the toolbar hides the outline sidebar, toolbar and top navigation in one click, centering the editor at a comfortable writing width so you can just type. Press Esc or the bottom-right Exit button to leave. Pure layout, no token cost.",
+      "changes": {
+        "0": "Toolbar 'Focus mode': hides the sidebar/toolbar/top nav and centers a narrow column for immersive writing; exit with Esc or the bottom-right button."
+      }
+    },
     "4_14_0": {
       "title": "Writing progress: word goal + bar + per-chapter counts",
       "summary": "The status-row word count becomes a writing-progress widget: click it to set a word goal and instantly see a progress bar and completion percentage, plus a per-chapter (each level-1 heading) word breakdown to track overall progress and chapter balance. The goal is remembered per document; all counting is local with no token cost.",

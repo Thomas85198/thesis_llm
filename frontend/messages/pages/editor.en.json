@@ -374,5 +374,17 @@
     "rerun": "Re-analyze",
     "building": "Analyzing… (building graph + cross-section checks, ~tens of seconds)",
     "empty": "Not analyzed yet."
+  },
+  "progress": {
+    "label": "Writing progress",
+    "words": "{chars} chars",
+    "goalLabel": "Word goal",
+    "goalPlaceholder": "Set a target…",
+    "ofGoal": "{current} / {goal} chars",
+    "byChapter": "By chapter",
+    "preface": "(Front matter)",
+    "untitled": "(Untitled chapter)",
+    "noGoal": "Set a goal to see the progress bar",
+    "clearGoal": "Clear"
   }
 }

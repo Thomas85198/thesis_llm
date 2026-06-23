@@ -29,6 +29,13 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_14_0": {
+      "title": "Writing progress: word goal + bar + per-chapter counts",
+      "summary": "The status-row word count becomes a writing-progress widget: click it to set a word goal and instantly see a progress bar and completion percentage, plus a per-chapter (each level-1 heading) word breakdown to track overall progress and chapter balance. The goal is remembered per document; all counting is local with no token cost.",
+      "changes": {
+        "0": "The word count opens a writing-progress popover: set a per-document word goal with a progress bar and percentage, and see per-chapter word counts. Local-only, no token cost."
+      }
+    },
     "4_13_2": {
       "title": "Three-format consistency: paragraph indent + Taiwan default",
       "summary": "Continues aligning Word with PDF: the PDF indents the first line of each body paragraph by two characters (Chinese-thesis convention) but Word sat flush-left. Word now indents too. Also, the export panel now defaults to the Taiwan-thesis layout instead of a bare article — this is a thesis tool, so the thesis format (cover, 第N章, numbered sections) is the sensible default.",

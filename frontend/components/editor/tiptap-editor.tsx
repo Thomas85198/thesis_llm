@@ -74,7 +74,7 @@ import { SearchReplace } from "@/components/editor/search-replace-extension";
 import { RewritePanel } from "@/components/editor/rewrite-panel";
 import { ShortcutsHelp } from "@/components/editor/shortcuts-help";
 import { VersionHistoryPanel } from "@/components/editor/version-history";
-import { WordCount } from "@/components/editor/word-count";
+import { WritingProgress } from "@/components/editor/writing-progress";
 import {
   TableBlock,
   TableCaption,
@@ -1004,7 +1004,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
             className="min-w-0 flex-1 bg-transparent text-2xl font-semibold outline-none placeholder:text-muted-foreground/50"
             aria-label={t("titleAria")}
           />
-          <WordCount editor={editor} />
+          <WritingProgress editor={editor} docId={doc.doc_id} />
           <SaveBadge state={saveState} />
         </div>
 

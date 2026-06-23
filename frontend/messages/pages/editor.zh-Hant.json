@@ -374,5 +374,17 @@
     "rerun": "重新分析",
     "building": "深度分析中…（建圖＋跨章節檢查，約數十秒）",
     "empty": "尚未分析。"
+  },
+  "progress": {
+    "label": "寫作進度",
+    "words": "{chars} 字",
+    "goalLabel": "目標字數",
+    "goalPlaceholder": "設定目標字數…",
+    "ofGoal": "{current} / {goal} 字",
+    "byChapter": "各章字數",
+    "preface": "（前言）",
+    "untitled": "（未命名章）",
+    "noGoal": "設定目標後顯示進度條",
+    "clearGoal": "清除"
   }
 }

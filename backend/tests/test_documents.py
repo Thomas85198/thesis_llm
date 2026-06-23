@@ -4,6 +4,7 @@ No network, no Neo4j — pure SQLite against a throwaway temp DB. Each test gets
 fresh DB by repointing db.DB_PATH and clearing the init flag, so these never
 touch the real data.db.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -22,8 +23,10 @@ def fresh_db(tmp_path, monkeypatch):
     importlib.reload(db)  # restore module-level DB_PATH for any later import
 
 
-DOC = {"type": "doc", "content": [{"type": "paragraph",
-        "content": [{"type": "text", "text": "Hello"}]}]}
+DOC = {
+    "type": "doc",
+    "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Hello"}]}],
+}
 
 
 def test_create_and_get_roundtrip(fresh_db):
@@ -94,7 +97,9 @@ def test_autosave_versions_are_pruned(fresh_db):
     # Write more autosave snapshots than the cap; oldest should be pruned.
     for i in range(db.MAX_AUTOSAVE_VERSIONS + 5):
         db.snapshot_document("doc:a", {"type": "doc", "n": i}, label="autosave")
-    autosaves = [v for v in db.list_document_versions("doc:a") if v["label"] == "autosave"]
+    autosaves = [
+        v for v in db.list_document_versions("doc:a") if v["label"] == "autosave"
+    ]
     assert len(autosaves) == db.MAX_AUTOSAVE_VERSIONS
 
 
@@ -105,3 +110,32 @@ def test_labelled_versions_never_pruned(fresh_db):
         db.snapshot_document("doc:a", {"type": "doc", "n": i}, label="autosave")
     labels = [v["label"] for v in db.list_document_versions("doc:a")]
     assert "重要版" in labels  # manual version survives the autosave prune
+
+
+def test_oversized_content_rejected(fresh_db, monkeypatch):
+    db.create_document("doc:a", "A", DOC, "en")
+    monkeypatch.setattr(db, "MAX_DOC_BYTES", 50)  # tiny cap for the test
+    big = {"type": "doc", "text": "x" * 200}
+    with pytest.raises(ValueError):
+        db.update_document("doc:a", content_json=big)
+    with pytest.raises(ValueError):
+        db.snapshot_document("doc:a", big, label="autosave")
+
+
+def test_optimistic_concurrency_db(fresh_db):
+    db.create_document("doc:a", "A", DOC, "en")
+    stale = db.get_document("doc:a")["updated_at"]
+    # Matching token succeeds.
+    assert (
+        db.update_document("doc:a", content_json=DOC, expected_updated_at=stale) is True
+    )
+    fresh = db.get_document("doc:a")["updated_at"]
+    # The now-stale token is rejected (no clobber).
+    assert (
+        db.update_document("doc:a", content_json=DOC, expected_updated_at=stale)
+        is False
+    )
+    # The fresh token works again.
+    assert (
+        db.update_document("doc:a", content_json=DOC, expected_updated_at=fresh) is True
+    )

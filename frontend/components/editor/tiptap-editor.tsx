@@ -25,6 +25,7 @@ import {
   Heading3,
   Image as ImageIcon,
   Images,
+  History,
   Italic,
   Link2,
   List,
@@ -62,8 +63,10 @@ import { Figure, FigureList } from "@/components/editor/figure-extension";
 import { ReferenceList } from "@/components/editor/reference-list-extension";
 import { TableOfContents } from "@/components/editor/toc-extension";
 import { MathBlock, MathInline } from "@/components/editor/math-extension";
+import { ConflictBanner } from "@/components/editor/conflict-banner";
 import { OutlinePanel } from "@/components/editor/outline-panel";
 import { RewritePanel } from "@/components/editor/rewrite-panel";
+import { VersionHistoryPanel } from "@/components/editor/version-history";
 import {
   TableBlock,
   TableCaption,
@@ -153,18 +156,37 @@ function readToolbarState(editor: Editor): ToolbarState {
 
 function SaveBadge({ state }: { state: SaveState }) {
   const t = useTranslations("editor");
+  const retryNow = useEditorStore((s) => s.retryNow);
   const label: Record<SaveState, string> = {
     idle: t("save.idle"),
     saving: t("save.saving"),
     saved: t("save.saved"),
+    retrying: t("save.retrying"),
     error: t("save.error"),
   };
   const color: Record<SaveState, string> = {
     idle: "text-muted-foreground",
     saving: "text-muted-foreground",
     saved: "text-emerald-600 dark:text-emerald-400",
+    retrying: "text-amber-600 dark:text-amber-400",
     error: "text-destructive",
   };
+  // While retrying/failed, the badge is a button: click to retry immediately.
+  if (state === "retrying" || state === "error") {
+    return (
+      <button
+        type="button"
+        onClick={retryNow}
+        title={t("save.retryNow")}
+        className={cn(
+          "text-xs tabular-nums underline-offset-2 hover:underline",
+          color[state],
+        )}
+      >
+        {label[state]}
+      </button>
+    );
+  }
   return (
     <span className={cn("text-xs tabular-nums", color[state])}>
       {label[state]}
@@ -217,6 +239,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   const openRewrite = useEditorStore((s) => s.openRewrite);
   const openOutline = useEditorStore((s) => s.openOutline);
   const openExport = useEditorStore((s) => s.openExport);
+  const openVersions = useEditorStore((s) => s.openVersions);
   const openDefects = useEditorStore((s) => s.openDefects);
   const setDefects = useEditorStore((s) => s.setDefects);
   const setDefectLoading = useEditorStore((s) => s.setDefectLoading);
@@ -335,6 +358,21 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   useEffect(() => {
     triggerRef.current = triggerAutocomplete;
   }, [triggerAutocomplete]);
+
+  // Guard against losing unsaved work: if an autosave is still pending /
+  // retrying / failed when the tab closes or navigates away, fire the browser's
+  // native "leave site?" confirmation. Reads `dirty` live so an untouched doc
+  // never warns. Registered once; no re-binding on every keystroke.
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (useEditorStore.getState().dirty) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
 
   // Image upload: the slash item opens a hidden file picker; on pick we upload
   // and insert a figure node at the cursor.
@@ -718,7 +756,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
 
   // Bind store to this document on mount; clear timers on unmount.
   useEffect(() => {
-    init(doc.doc_id, doc.title);
+    init(doc.doc_id, doc.title, doc.updated_at);
     return () => {
       reset();
       cancelAutocomplete();
@@ -758,7 +796,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       <aside className="hidden w-56 shrink-0 lg:block">
         <div className="sticky top-20">
           <h2 className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {t("outline")}
+            {t("outline.find")}
           </h2>
           {tb && tb.outline.length > 0 ? (
             <nav className="flex flex-col gap-0.5">
@@ -783,6 +821,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
 
       {/* Editor column */}
       <div className="flex min-w-0 flex-1 flex-col">
+        <ConflictBanner editor={editor} docId={doc.doc_id} />
         {/* Title + save status */}
         <div className="mb-4 flex items-center gap-3">
           <input
@@ -924,6 +963,9 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
               </option>
             ))}
           </select>
+          <ToolbarButton label={t("versions.find")} onClick={openVersions}>
+            <History className="h-4 w-4" />
+          </ToolbarButton>
           <ToolbarButton label={t("export.find")} onClick={openExport}>
             <Download className="h-4 w-4" />
           </ToolbarButton>
@@ -1037,6 +1079,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       <RewritePanel editor={editor} docId={doc.doc_id} />
       <OutlinePanel editor={editor} docId={doc.doc_id} />
       <ExportPanel editor={editor} />
+      <VersionHistoryPanel editor={editor} docId={doc.doc_id} />
       <DefectPanel editor={editor} />
       <SlashMenu />
       <input

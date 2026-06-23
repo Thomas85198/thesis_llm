@@ -44,7 +44,9 @@
     "idle": "編輯中…",
     "saving": "儲存中…",
     "saved": "已儲存",
-    "error": "儲存失敗"
+    "error": "儲存失敗",
+    "retrying": "未儲存，重試中…",
+    "retryNow": "點擊立即重試"
   },
   "ai": {
     "cycleHint": "AI 補全模式（點擊切換：自動／手動／關）",
@@ -285,5 +287,30 @@
       "student": "研究生",
       "date": "日期"
     }
+  },
+  "versions": {
+    "find": "版本歷史",
+    "panelTitle": "版本歷史",
+    "panelDesc": "每隔一段時間自動存檔（保留最近 20 份），也可手動儲存命名版本。可預覽並還原。",
+    "namePlaceholder": "版本名稱（選填）",
+    "save": "儲存版本",
+    "saved": "已儲存版本",
+    "defaultName": "手動版本",
+    "none": "尚無版本紀錄，編輯一段時間後會自動建立。",
+    "preview": "預覽",
+    "restore": "還原",
+    "confirmRestore": "還原到這個版本？目前內容會先自動備份，可再還原回來。",
+    "restored": "已還原",
+    "empty": "（此版本沒有文字內容）",
+    "labelAutosave": "自動存檔",
+    "labelRestoreBackup": "還原前備份"
+  },
+  "conflict": {
+    "message": "這份文件在其他分頁或裝置被修改了。為避免覆蓋，已暫停自動儲存。",
+    "reload": "載入最新版本",
+    "overwrite": "保留我的版本並覆蓋",
+    "reloaded": "已載入最新版本（你剛才的內容已存為版本，可在版本歷史還原）",
+    "overwritten": "已用你的版本覆蓋",
+    "backupLabel": "衝突備份"
   }
 }

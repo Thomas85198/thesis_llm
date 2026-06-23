@@ -38,6 +38,16 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.8.0",
+    date: "2026-06-23",
+    changes: [
+      { type: "feat" }, // 資料防護網：未儲存離開警告 + autosave 失敗指數退避自動重試（永不弄丟稿件）
+      { type: "feat" }, // 版本歷史與還原：自動快照（保留20份）+ 手動命名版本 + 一鍵還原（還原前自動備份）
+      { type: "feat" }, // 多分頁/裝置並發保護：衝突偵測 + 載入最新／保留覆蓋，本地內容存為「衝突備份」可還原
+      { type: "fix" }, // content_json 大小上限（防爆庫）+ 側欄大綱標題 i18n 修正
+    ],
+  },
+  {
     version: "4.7.0",
     date: "2026-06-22",
     changes: [

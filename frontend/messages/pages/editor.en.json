@@ -44,7 +44,9 @@
     "idle": "Editing…",
     "saving": "Saving…",
     "saved": "Saved",
-    "error": "Save failed"
+    "error": "Save failed",
+    "retrying": "Unsaved, retrying…",
+    "retryNow": "Click to retry now"
   },
   "ai": {
     "cycleHint": "AI autocomplete mode (click to cycle: auto / manual / off)",
@@ -285,5 +287,30 @@
       "student": "Graduate student",
       "date": "Date"
     }
+  },
+  "versions": {
+    "find": "Version history",
+    "panelTitle": "Version history",
+    "panelDesc": "Auto-snapshots periodically (keeps the latest 20); you can also save named versions. Preview and restore any of them.",
+    "namePlaceholder": "Version name (optional)",
+    "save": "Save version",
+    "saved": "Version saved",
+    "defaultName": "Manual version",
+    "none": "No versions yet — one is created automatically after you edit for a while.",
+    "preview": "Preview",
+    "restore": "Restore",
+    "confirmRestore": "Restore this version? The current content is backed up first, so you can undo.",
+    "restored": "Restored",
+    "empty": "(this version has no text)",
+    "labelAutosave": "Autosave",
+    "labelRestoreBackup": "Pre-restore backup"
+  },
+  "conflict": {
+    "message": "This document was changed in another tab or device. Autosave is paused to avoid overwriting.",
+    "reload": "Load latest",
+    "overwrite": "Keep mine & overwrite",
+    "reloaded": "Loaded the latest version (your edits were saved as a version you can restore)",
+    "overwritten": "Overwritten with your version",
+    "backupLabel": "Conflict backup"
   }
 }

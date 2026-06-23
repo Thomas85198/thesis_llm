@@ -29,6 +29,16 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_8_0": {
+      "title": "Safety net: never lose your draft — auto-retry, version restore, conflict guard",
+      "summary": "The writing editor gains a full data-safety net. A failed autosave now retries automatically with exponential backoff until it lands, and closing the tab with unsaved changes triggers a leave confirmation. Version history is new: a snapshot is taken periodically (latest 20 kept), you can save named versions, and preview + restore any of them (the current content is backed up first, so a restore is itself undoable). For editing the same document in multiple tabs/devices, conflict detection pauses autosave and lets you Load latest (your edits are saved as a version) or Keep mine & overwrite.",
+      "changes": {
+        "0": "No lost work: a failed autosave retries with exponential backoff (2→5→15→30 s) until it succeeds; the status shows 'retrying…' and is click-to-retry. Closing/leaving the tab with unsaved changes raises the browser's leave confirmation.",
+        "1": "Version history & restore: snapshots are created periodically while you edit (latest 20 kept), and you can save permanent named versions. Preview any version and restore it with one click; the current content is first saved as a 'pre-restore backup', so a restore is itself undoable.",
+        "2": "Multi-tab/device conflict guard: when the document was changed elsewhere, autosave pauses and a banner appears to avoid silent overwrites. Choose 'Load latest' (your current content is saved as a 'conflict backup' you can restore) or 'Keep mine & overwrite'.",
+        "3": "Stability: cap per-document content size (prevents DB bloat); fix the editor sidebar 'Outline' heading showing a raw key."
+      }
+    },
     "4_7_0": {
       "title": "One-click Taiwan thesis: consistent PDF / Word / LaTeX + bilingual cover + live preview",
       "summary": "The Taiwan graduate-thesis layout is now complete and consistent across all three outputs: 標楷體 (Kai) + Times New Roman + 14pt, centered 第X章 chapter titles, chapter-scoped figure/table numbers (圖 2-1), Roman front-matter → Arabic body page numbers, 3cm margins, 1.5 line spacing, and a reference list grouped into Web / Chinese / English with hanging indents (Chinese entries in full-width style). A bilingual cover page (university, department, degree, titles, advisor, student, date) is filled in the export panel and remembered. Word and LaTeX/PDF share one rule set; the online preview now reflects the chosen layout — the Taiwan-thesis preview is the on-screen twin of the PDF.",

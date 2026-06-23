@@ -68,6 +68,10 @@ class DocumentUpdateIn(BaseModel):
 
     title: str | None = Field(None, max_length=300)
     content_json: dict[str, Any] | None = None
+    # Optimistic-concurrency token: the updated_at the client last saw. When set
+    # and the server's value has moved on (another tab/device saved), the PUT is
+    # rejected with 409 instead of silently clobbering.
+    expected_updated_at: str | None = None
 
 
 class VersionCreateIn(BaseModel):
@@ -740,14 +744,34 @@ def update_document(doc_id: str, body: DocumentUpdateIn) -> dict[str, Any]:
     """Autosave / rename. Sends only the changed fields (see DocumentUpdateIn)."""
     if body.title is None and body.content_json is None:
         raise HTTPException(400, "nothing to update")
-    ok = db.update_document(
-        doc_id,
-        title=body.title.strip() if body.title is not None else None,
-        content_json=body.content_json,
-    )
+    try:
+        ok = db.update_document(
+            doc_id,
+            title=body.title.strip() if body.title is not None else None,
+            content_json=body.content_json,
+            expected_updated_at=body.expected_updated_at,
+        )
+    except ValueError as e:
+        raise HTTPException(413, str(e)) from e
     if not ok:
-        raise HTTPException(404, "document not found")
-    return {"status": "ok", "doc_id": doc_id}
+        # Disambiguate "gone" from "changed elsewhere" (only the latter is
+        # possible when the client sent an expected_updated_at token).
+        current = db.get_document(doc_id)
+        if current is None:
+            raise HTTPException(404, "document not found")
+        raise HTTPException(
+            409,
+            detail={
+                "message": "document changed elsewhere",
+                "updated_at": current["updated_at"],
+            },
+        )
+    saved = db.get_document(doc_id)
+    return {
+        "status": "ok",
+        "doc_id": doc_id,
+        "updated_at": saved["updated_at"] if saved else None,
+    }
 
 
 @router.delete("/api/editor/documents/{doc_id}")
@@ -780,6 +804,26 @@ def get_document_version(doc_id: str, version_id: int) -> dict[str, Any]:
     if version is None:
         raise HTTPException(404, "version not found")
     return version
+
+
+@router.post("/api/editor/documents/{doc_id}/restore/{version_id}")
+def restore_document_version(doc_id: str, version_id: int) -> dict[str, Any]:
+    """Restore a document to a past version. The current content is first saved
+    as a 'restore-backup' snapshot (so the pre-restore state stays recoverable),
+    then the version's content is written back into the document."""
+    version = db.get_document_version(doc_id, version_id)
+    if version is None:
+        raise HTTPException(404, "version not found")
+    current = db.get_document(doc_id)
+    if current is None:
+        raise HTTPException(404, "document not found")
+    db.snapshot_document(doc_id, current["content_json"], label="restore-backup")
+    db.update_document(doc_id, content_json=version["content_json"])
+    return {
+        "status": "ok",
+        "doc_id": doc_id,
+        "content_json": version["content_json"],
+    }
 
 
 @router.post("/api/editor/autocomplete")

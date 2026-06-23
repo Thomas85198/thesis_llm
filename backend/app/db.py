@@ -7,6 +7,7 @@ Single-file DB. Path is env-controlled for Docker / lab server deployment:
 WAL journal mode is enabled in connect() so multiple FastAPI workers can read
 while one writes without blocking each other.
 """
+
 from __future__ import annotations
 
 import json
@@ -271,6 +272,7 @@ def connect() -> Iterator[sqlite3.Connection]:
 
 # ---------- papers ----------
 
+
 def upsert_paper(
     paper_id: str,
     title: str,
@@ -302,9 +304,7 @@ def update_paper_title(paper_id: str, title: str) -> None:
 
 def get_paper(paper_id: str) -> dict[str, Any] | None:
     with connect() as c:
-        row = c.execute(
-            "SELECT * FROM papers WHERE paper_id=?", (paper_id,)
-        ).fetchone()
+        row = c.execute("SELECT * FROM papers WHERE paper_id=?", (paper_id,)).fetchone()
     return dict(row) if row else None
 
 
@@ -355,6 +355,7 @@ def delete_paper(paper_id: str) -> None:
 
 # ---------- results ----------
 
+
 def upsert_result(paper_id: str, result: dict[str, Any]) -> None:
     with connect() as c:
         c.execute(
@@ -380,6 +381,7 @@ def get_result(paper_id: str) -> dict[str, Any] | None:
 
 
 # ---------- LLM call log ----------
+
 
 def log_llm_call(
     *,
@@ -415,6 +417,7 @@ def log_llm_call(
 
 
 # ---------- upload events (persistent upload audit trail) ----------
+
 
 def log_upload_start(
     *,
@@ -617,16 +620,16 @@ def judgment_summary() -> dict[str, Any]:
         d = dict(r)
         # Precision = correct / total (partial counted as 0.5 for soft precision)
         total = d["total"] or 0
-        d["precision"] = (
-            (d["correct"] + 0.5 * d["partial"]) / total if total else None
-        )
+        d["precision"] = (d["correct"] + 0.5 * d["partial"]) / total if total else None
         by_rule.append(d)
 
-    g = dict(global_row) if global_row else {"total": 0, "correct": 0, "wrong": 0, "partial": 0}
-    g_total = g["total"] or 0
-    g["precision"] = (
-        (g["correct"] + 0.5 * g["partial"]) / g_total if g_total else None
+    g = (
+        dict(global_row)
+        if global_row
+        else {"total": 0, "correct": 0, "wrong": 0, "partial": 0}
     )
+    g_total = g["total"] or 0
+    g["precision"] = (g["correct"] + 0.5 * g["partial"]) / g_total if g_total else None
     return {"by_rule": by_rule, "total": g}
 
 
@@ -667,8 +670,7 @@ def export_judgments_with_defects() -> dict[str, Any]:
             continue
         # Resolve evidence EDU text for self-contained export.
         edu_map = {
-            e["id"]: e.get("text", "")
-            for e in result.get("graph", {}).get("edus", [])
+            e["id"]: e.get("text", "") for e in result.get("graph", {}).get("edus", [])
         }
         evidence_texts = [
             edu_map.get(eid, "") for eid in defect.get("evidence_edu_ids", [])
@@ -769,9 +771,7 @@ def evaluation_summary() -> dict[str, Any]:
         correct = sum(1 for x in rows if x["verdict"] == "correct")
         wrong = sum(1 for x in rows if x["verdict"] == "wrong")
         partial = sum(1 for x in rows if x["verdict"] == "partial")
-        precision = (
-            round((correct + 0.5 * partial) / total, 4) if total > 0 else None
-        )
+        precision = round((correct + 0.5 * partial) / total, 4) if total > 0 else None
         return {
             "total": total,
             "correct": correct,
@@ -912,6 +912,18 @@ def cost_summary(paper_id: str | None = None) -> dict[str, Any]:
 # the version table from growing unbounded under frequent debounced autosaves.
 MAX_AUTOSAVE_VERSIONS = 20
 
+# Reject absurdly large content_json before it bloats SQLite / autosave churn.
+# A book-length thesis is well under 25 MB of ProseMirror JSON.
+MAX_DOC_BYTES = 25 * 1024 * 1024
+
+
+def _doc_blob(content_json: dict[str, Any]) -> str:
+    """Serialize + size-guard a document body. Raises ValueError if too large."""
+    blob = json.dumps(content_json, ensure_ascii=False)
+    if len(blob.encode("utf-8")) > MAX_DOC_BYTES:
+        raise ValueError("document content too large")
+    return blob
+
 
 def create_document(
     doc_id: str, title: str, content_json: dict[str, Any], locale: str
@@ -924,7 +936,14 @@ def create_document(
             INSERT INTO documents (doc_id, title, content_json, locale, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (doc_id, title, json.dumps(content_json, ensure_ascii=False), locale, now, now),
+            (
+                doc_id,
+                title,
+                json.dumps(content_json, ensure_ascii=False),
+                locale,
+                now,
+                now,
+            ),
         )
     return {
         "doc_id": doc_id,
@@ -938,9 +957,7 @@ def create_document(
 
 def get_document(doc_id: str) -> dict[str, Any] | None:
     with connect() as c:
-        row = c.execute(
-            "SELECT * FROM documents WHERE doc_id=?", (doc_id,)
-        ).fetchone()
+        row = c.execute("SELECT * FROM documents WHERE doc_id=?", (doc_id,)).fetchone()
     if not row:
         return None
     d = dict(row)
@@ -965,11 +982,15 @@ def update_document(
     doc_id: str,
     title: str | None = None,
     content_json: dict[str, Any] | None = None,
+    expected_updated_at: str | None = None,
 ) -> bool:
-    """Patch title and/or content; bumps updated_at. Returns False if doc absent.
+    """Patch title and/or content; bumps updated_at. Returns False if the doc is
+    absent OR (when expected_updated_at is given) it was modified elsewhere since
+    — an atomic optimistic-concurrency guard against multi-tab clobbering.
 
     Only the provided fields are written, so an autosave (content only) won't
-    clobber a title the user just renamed, and vice versa.
+    clobber a title the user just renamed, and vice versa. Raises ValueError if
+    the content exceeds MAX_DOC_BYTES.
     """
     sets: list[str] = []
     vals: list[Any] = []
@@ -978,16 +999,18 @@ def update_document(
         vals.append(title)
     if content_json is not None:
         sets.append("content_json=?")
-        vals.append(json.dumps(content_json, ensure_ascii=False))
+        vals.append(_doc_blob(content_json))
     if not sets:
         return get_document(doc_id) is not None
     sets.append("updated_at=?")
     vals.append(_now())
+    where = "doc_id=?"
     vals.append(doc_id)
+    if expected_updated_at is not None:
+        where += " AND updated_at=?"
+        vals.append(expected_updated_at)
     with connect() as c:
-        cur = c.execute(
-            f"UPDATE documents SET {', '.join(sets)} WHERE doc_id=?", vals
-        )
+        cur = c.execute(f"UPDATE documents SET {', '.join(sets)} WHERE {where}", vals)
         return cur.rowcount > 0
 
 
@@ -1008,7 +1031,7 @@ def snapshot_document(
             INSERT INTO document_versions (doc_id, content_json, label, created_at)
             VALUES (?, ?, ?, ?)
             """,
-            (doc_id, json.dumps(content_json, ensure_ascii=False), label, _now()),
+            (doc_id, _doc_blob(content_json), label, _now()),
         )
         new_id = cur.lastrowid
         if label == "autosave":
@@ -1058,6 +1081,7 @@ def get_document_version(doc_id: str, version_id: int) -> dict[str, Any] | None:
 
 # ---------- paper_chunks (full-text grounding cache) ----------
 
+
 def get_paper_chunks(openalex_id: str) -> list[dict[str, Any]]:
     """Cached sentence chunks + embeddings for a paper, in order. [] if none."""
     with connect() as c:
@@ -1067,8 +1091,12 @@ def get_paper_chunks(openalex_id: str) -> list[dict[str, Any]]:
             (openalex_id,),
         ).fetchall()
     return [
-        {"idx": r["idx"], "text": r["text"],
-         "embedding": json.loads(r["embedding"]), "source": r["source"]}
+        {
+            "idx": r["idx"],
+            "text": r["text"],
+            "embedding": json.loads(r["embedding"]),
+            "source": r["source"],
+        }
         for r in rows
     ]
 

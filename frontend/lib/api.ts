@@ -514,10 +514,25 @@ export async function importDocument(
   return res.json();
 }
 
+/** Thrown when a PUT is rejected because the document was modified elsewhere
+ * (optimistic-concurrency 409). Carries the server's current updated_at. */
+export class DocumentConflictError extends Error {
+  serverUpdatedAt?: string;
+  constructor(serverUpdatedAt?: string) {
+    super("document changed elsewhere");
+    this.name = "DocumentConflictError";
+    this.serverUpdatedAt = serverUpdatedAt;
+  }
+}
+
 export async function updateDocument(
   docId: string,
-  body: { title?: string; content_json?: ProseMirrorDoc },
-): Promise<void> {
+  body: {
+    title?: string;
+    content_json?: ProseMirrorDoc;
+    expected_updated_at?: string | null;
+  },
+): Promise<{ updated_at?: string }> {
   const res = await fetch(
     `${API_BASE}/api/editor/documents/${encodeURIComponent(docId)}`,
     {
@@ -526,7 +541,17 @@ export async function updateDocument(
       body: JSON.stringify(body),
     },
   );
+  if (res.status === 409) {
+    let serverTs: string | undefined;
+    try {
+      serverTs = (await res.json())?.detail?.updated_at;
+    } catch {
+      /* ignore */
+    }
+    throw new DocumentConflictError(serverTs);
+  }
   if (!res.ok) throw new Error(`updateDocument failed: ${await res.text()}`);
+  return res.json().catch(() => ({}));
 }
 
 export async function deleteDocument(docId: string): Promise<void> {
@@ -560,6 +585,30 @@ export async function listDocumentVersions(
   return get<DocumentVersion[]>(
     `/api/editor/documents/${encodeURIComponent(docId)}/versions`,
   );
+}
+
+export async function getDocumentVersion(
+  docId: string,
+  versionId: number,
+): Promise<DocumentVersion & { doc_id: string; content_json: ProseMirrorDoc }> {
+  return get(
+    `/api/editor/documents/${encodeURIComponent(docId)}/versions/${versionId}`,
+  );
+}
+
+/** Restore a document to a past version (server snapshots the current state as
+ * 'restore-backup' first). Returns the restored content for the editor. */
+export async function restoreDocumentVersion(
+  docId: string,
+  versionId: number,
+): Promise<{ content_json: ProseMirrorDoc }> {
+  const res = await fetch(
+    `${API_BASE}/api/editor/documents/${encodeURIComponent(docId)}/restore/${versionId}`,
+    { method: "POST" },
+  );
+  if (!res.ok)
+    throw new Error(`restoreDocumentVersion failed: ${await res.text()}`);
+  return res.json();
 }
 
 // ---------- editor mode: AI autocomplete (SSE) ----------

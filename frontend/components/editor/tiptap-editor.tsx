@@ -115,6 +115,13 @@ const AUTOCOMPLETE_DEBOUNCE_MS = 1000;
 const AUTOCOMPLETE_MIN_CHARS = 6;
 const AUTOCOMPLETE_BOUNDARY = /[\s。．！？!?,，、；;：:）)】」』.]/;
 
+// Feature flag — the whole-draft knowledge-graph / deep check is very token-heavy
+// (full graph + cross-section Opus, ~tens of seconds per run) and overlaps the
+// upload-analysis flow. Hidden from the writing toolbar on purpose: authors run a
+// deep analysis by exporting a PDF and using the upload-analysis page instead.
+// The feature itself (handleDeepCheck / KGCheckPanel) is kept, just not triggerable.
+const SHOW_KG_DEEP_CHECK = false;
+
 /** AI ghost-text mode: smart auto + hotkey / hotkey-only / off. */
 type AiMode = "auto" | "manual" | "off";
 
@@ -1169,17 +1176,19 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           <ToolbarButton label={t("defect.find")} onClick={handleCheckDefects}>
             <ShieldAlert className="h-4 w-4" />
           </ToolbarButton>
-          <ToolbarButton
-            label={t("kg.find")}
-            disabled={kgLoading}
-            onClick={handleDeepCheck}
-          >
-            {kgLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Network className="h-4 w-4" />
-            )}
-          </ToolbarButton>
+          {SHOW_KG_DEEP_CHECK && (
+            <ToolbarButton
+              label={t("kg.find")}
+              disabled={kgLoading}
+              onClick={handleDeepCheck}
+            >
+              {kgLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Network className="h-4 w-4" />
+              )}
+            </ToolbarButton>
+          )}
           <ToolbarButton
             label={t("verify.find")}
             disabled={verifyingCites}

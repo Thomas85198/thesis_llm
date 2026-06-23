@@ -93,7 +93,7 @@
     "relinking": "Parsing references, matching on OpenAlex… (~a minute)",
     "relinkDone": "Linked {linked} in-text citations ({matched} works matched with high confidence) — see the citation panel",
     "panelTitle": "Smart Citation",
-    "panelDesc": "Search scholarly works (OpenAlex) by keyword, or select a sentence in your text.",
+    "panelDesc": "Search scholarly works by keyword or a sentence (English & Chinese), or select a sentence in your text.",
     "searchPlaceholder": "Search by keyword or a sentence…",
     "search": "Search",
     "searchPrompt": "Type a query above to search scholarly works, or select a sentence in your text.",

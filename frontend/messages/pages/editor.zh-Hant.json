@@ -93,7 +93,7 @@
     "relinking": "解析參考文獻、比對 OpenAlex 中…（約一分鐘）",
     "relinkDone": "已串接 {linked} 處內文引用（高信心比中 {matched} 篇文獻），可在引用面板查看",
     "panelTitle": "智慧引用",
-    "panelDesc": "輸入關鍵字搜尋學術文獻（OpenAlex），或在文中反白一句話。",
+    "panelDesc": "輸入關鍵字或一句話搜尋學術文獻（中英文皆可），或在文中反白一句話自動帶入。",
     "searchPlaceholder": "輸入關鍵字或一句話搜尋文獻…",
     "search": "搜尋",
     "searchPrompt": "在上方輸入關鍵字搜尋學術文獻，或在文中反白一句話。",

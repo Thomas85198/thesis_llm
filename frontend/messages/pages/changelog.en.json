@@ -29,6 +29,14 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_13_2": {
+      "title": "Three-format consistency: paragraph indent + Taiwan default",
+      "summary": "Continues aligning Word with PDF: the PDF indents the first line of each body paragraph by two characters (Chinese-thesis convention) but Word sat flush-left. Word now indents too. Also, the export panel now defaults to the Taiwan-thesis layout instead of a bare article — this is a thesis tool, so the thesis format (cover, 第N章, numbered sections) is the sensible default.",
+      "changes": {
+        "0": "Word body paragraphs now get a 2-character first-line indent (mirrors ctex \\parindent), matching the PDF.",
+        "1": "Export now defaults to the Taiwan-thesis template (was article). Docs you already chose a template for keep their choice."
+      }
+    },
     "4_13_1": {
       "title": "Three-format consistency: numbered section headings in Word",
       "summary": "Fixes a Word (DOCX) vs LaTeX/PDF mismatch: the PDF numbered sub-section headings (1.1, 1.1.1) but the Word export left them unnumbered. Word now numbers them too — level 2 as 1.1 (centered) and level 3 as 1.1.1 (left), restarting at N.1 each chapter, exactly matching the PDF.",

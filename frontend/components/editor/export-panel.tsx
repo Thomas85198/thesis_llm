@@ -171,11 +171,14 @@ export function ExportPanel({ editor }: { editor: Editor }) {
   // The layout is a property of the document, not of one export — remember it
   // per document so reopening the panel keeps the author's choice.
   const [template, setTemplate] = useState<string>(() => {
-    if (typeof window === "undefined" || !docId) return "article";
+    // Default to the Taiwan-thesis layout — this is a thesis-writing tool, so the
+    // thesis format (cover + 第N章 + numbered sections) is the expected default,
+    // not a bare article. Remembered per-doc once the author picks one.
+    if (typeof window === "undefined" || !docId) return "twthesis";
     const saved = window.localStorage.getItem(templateStorageKey(docId));
     return saved && (TEMPLATES as readonly string[]).includes(saved)
       ? saved
-      : "article";
+      : "twthesis";
   });
   // CJK docs get ctex + Noto Serif CJK TC and need XeLaTeX — surface that in
   // the panel so 繁中 users know the font is handled and which compiler to use.

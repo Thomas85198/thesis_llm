@@ -38,6 +38,14 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.13.2",
+    date: "2026-06-23",
+    changes: [
+      { type: "fix" }, // 三格式一致性：DOCX 內文補首行縮排2字（對齊 PDF 中文論文慣例）
+      { type: "fix" }, // 匯出預設版型改「台灣論文」（原本預設 article，易忘了切而匯出成非論文格式）
+    ],
+  },
+  {
     version: "4.13.1",
     date: "2026-06-23",
     changes: [

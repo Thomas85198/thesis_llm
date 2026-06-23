@@ -640,6 +640,11 @@ def _render_block_docx(
                     docx.add_paragraph(full_reference(c, ctx["style"], i + 1))
     else:  # paragraph and any unknown block → a plain paragraph of its inline content
         p = docx.add_paragraph()
+        if tw:
+            # 首行縮排兩個字 — the Chinese-thesis convention ctex applies by default
+            # (\parindent = 2 字寬 ≈ 2×body-size); without it Word body paragraphs
+            # sat flush-left while the PDF indented them.
+            p.paragraph_format.first_line_indent = Pt(28)
         _add_inline_docx(p, _children(block), style, order)
 
 

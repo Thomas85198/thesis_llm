@@ -1242,8 +1242,14 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           )}
         </div>
 
-        {/* Content */}
-        <div className="rounded-lg border bg-background p-6 sm:p-8">
+        {/* Content — borderless in focus mode so the text sits on the page */}
+        <div
+          className={
+            focusMode
+              ? "px-0 py-2"
+              : "rounded-lg border bg-background p-6 sm:p-8"
+          }
+        >
           <EditorContent editor={editor} />
           <BlockHandle editor={editor} />
         </div>

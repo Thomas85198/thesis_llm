@@ -144,37 +144,62 @@ def _dedupe(candidates: list[dict]) -> list[dict]:
     return [by_key[k] for k in order]
 
 
+def _interleave(zh: list[dict], en: list[dict]) -> list[dict]:
+    """Zipper-merge the Chinese (Crossref) and English (OpenAlex) lists so both
+    sides are represented in the top results — keeps famous English papers from
+    being crowded out by low-citation Chinese journal hits, and vice versa."""
+    out: list[dict] = []
+    for i in range(max(len(zh), len(en))):
+        if i < len(zh):
+            out.append(zh[i])
+        if i < len(en):
+            out.append(en[i])
+    return out
+
+
 def recommend(
-    claim: str, per_page: int = 15, year_from: int | None = None, rerank: bool = True
+    claim: str,
+    per_page: int = 15,
+    year_from: int | None = None,
+    rerank: bool = True,
+    lang: str = "all",
 ) -> list[dict]:
     """Return citation candidates for a claim, from OpenAlex and/or Crossref.
 
-    English claims: **OpenAlex first** (fast ~1s, semantic, has abstracts for the
-    rerank), with Crossref as a fallback only when OpenAlex errors / is rate-
-    limited (429) / returns nothing.
+    OpenAlex is searched with an English query (LLM-translated for Chinese claims);
+    Crossref is searched with the original Chinese (it indexes many Chinese/Taiwan
+    journals). `lang` controls how the two are combined:
 
-    Chinese claims: OpenAlex is English-centric, so we search it with an LLM-made
-    English query AND search **Crossref with the original Chinese** (Crossref
-    indexes many Chinese/Taiwan journals) — then merge, Chinese results first.
-    Rerank is skipped for Chinese: Crossref records lack abstracts and would sink.
+    - "all"  : **interleave** so famous English papers AND Chinese journals are
+               both represented in the top results (the representative default).
+    - "en"   : English only (OpenAlex), reranked — the well-cited classics.
+    - "zh"   : Chinese journals first (Crossref), English appended.
+
+    English side has abstracts → reranked by the claim for English claims; for
+    Chinese claims OpenAlex's own (citation-aware) relevance order is kept.
     """
     is_cjk = bool(_CJK.search(claim))
     en_query = to_search_query(claim)
+    want_en = lang in ("all", "en")
+    want_zh = lang in ("all", "zh")
 
     openalex_results: list[dict] = []
     openalex_ok = False
-    try:
-        openalex_results = openalex.search_works(
-            en_query, per_page=per_page, year_from=year_from
-        )
-        openalex_ok = True
-    except httpx.HTTPError:
-        openalex_ok = False  # down / rate-limited → lean on Crossref
+    if want_en:
+        try:
+            openalex_results = openalex.search_works(
+                en_query, per_page=per_page, year_from=year_from
+            )
+            openalex_ok = True
+        except httpx.HTTPError:
+            openalex_ok = False  # down / rate-limited → lean on Crossref
 
     crossref_results: list[dict] = []
     crossref_attempted = False
     crossref_ok = False
-    if is_cjk or not openalex_results:
+    # Crossref for the Chinese side (cjk claim) and as an English fallback when
+    # OpenAlex is empty/down.
+    if (want_zh and is_cjk) or (want_en and not openalex_results):
         crossref_attempted = True
         cr_query = claim if is_cjk else en_query  # Chinese claim → search Chinese
         try:
@@ -185,20 +210,24 @@ def recommend(
         except httpx.HTTPError:
             crossref_ok = False
 
-    # Chinese: surface Crossref (Chinese journals) first; English: OpenAlex first.
-    if is_cjk:
-        candidates = _dedupe(crossref_results + openalex_results)
-    else:
-        candidates = _dedupe(openalex_results + crossref_results)
+    # Rerank the English side (it has abstracts) for English claims; keep
+    # OpenAlex's citation-aware order for Chinese claims.
+    en_list = openalex_results
+    if rerank and not is_cjk and claim.strip() and en_list:
+        en_list = rerank_by_claim(claim.strip(), en_list)
+
+    if lang == "en":
+        candidates = _dedupe(en_list)
+    elif lang == "zh":
+        candidates = _dedupe(crossref_results + en_list)
+    else:  # "all" — interleave so neither language crowds the other out
+        candidates = _dedupe(_interleave(crossref_results, en_list))
 
     # Hard-fail only when every source we tried errored (vs. legitimately empty).
     if not candidates and not openalex_ok and crossref_attempted and not crossref_ok:
         raise CitationSearchError("citation search sources unavailable")
 
-    if rerank and not is_cjk and claim.strip():
-        candidates = rerank_by_claim(claim.strip(), candidates)
-    candidates = candidates[:per_page]
-    return candidates
+    return candidates[:per_page]
 
 
 def refresh(openalex_ids: list[str]) -> dict[str, dict]:

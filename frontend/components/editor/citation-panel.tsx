@@ -31,9 +31,11 @@ import {
   groundCitation,
   recommendCitations,
   refreshCitations,
+  relinkCitations,
   resolveDoi,
   verifyCitation,
   type CitationCandidate,
+  type CitationLang,
   type CitationVerdict,
   type GroundResult,
 } from "@/lib/api";
@@ -179,6 +181,9 @@ function CitationPanelBody({
   const [candidates, setCandidates] = useState<CitationCandidate[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [yearFrom, setYearFrom] = useState<number | undefined>(undefined);
+  // Result-language preference: interleave both (all) vs bias English / Chinese.
+  const [lang, setLang] = useState<CitationLang>("all");
+  const [relinking, setRelinking] = useState(false);
   // openalex_id → verdict, or "loading" while a verify is in flight. Separate
   // maps: recommend cards verify against the search box; references verify
   // against the claim sentence around the inserted chip.
@@ -203,7 +208,7 @@ function CitationPanelBody({
   });
 
   const doSearch = useCallback(
-    (raw: string, yf?: number) => {
+    (raw: string, yf?: number, lg: CitationLang = "all") => {
       const q = raw.trim();
       if (!q) return;
       abortRef.current?.abort();
@@ -217,6 +222,7 @@ function CitationPanelBody({
           const list = await recommendCitations(docId, q, {
             signal: controller.signal,
             yearFrom: yf,
+            lang: lg,
           });
           if (!controller.signal.aborted) setCandidates(list);
         } catch (e) {
@@ -235,6 +241,31 @@ function CitationPanelBody({
     [docId, t],
   );
 
+  // Auto-link plaintext citations across the whole doc to sources (folded in here
+  // from the toolbar so all citation actions live in one panel).
+  const handleRelink = useCallback(async () => {
+    setRelinking(true);
+    const tid = toast.loading(t("citation.relinking"));
+    try {
+      const { content_json, stats } = await relinkCitations(
+        docId,
+        editor.getJSON(),
+      );
+      editor.commands.setContent(content_json);
+      toast.success(
+        t("citation.relinkDone", {
+          linked: stats.intext_linked,
+          matched: stats.matched,
+        }),
+        { id: tid },
+      );
+    } catch (e) {
+      toast.error(String(e), { id: tid });
+    } finally {
+      setRelinking(false);
+    }
+  }, [docId, editor, t]);
+
   // On open: auto-search a prefilled claim (from the BubbleMenu). But when
   // resolving an unlinked chip (citeReplaceKey set), the seed is just the
   // marker text ("Author, year") — a poor OpenAlex query that also hammers the
@@ -242,7 +273,7 @@ function CitationPanelBody({
   useEffect(() => {
     const resolving = !!useEditorStore.getState().citeReplaceKey;
     if (initialQuery.trim() && !resolving) {
-      doSearch(initialQuery, undefined);
+      doSearch(initialQuery, undefined, "all");
     } else {
       inputRef.current?.focus();
       inputRef.current?.select();
@@ -526,7 +557,7 @@ function CitationPanelBody({
         className="mb-3 flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          doSearch(query, yearFrom);
+          doSearch(query, yearFrom, lang);
         }}
       >
         {/* Multi-line, auto-growing search box: long selected claims wrap and
@@ -539,7 +570,7 @@ function CitationPanelBody({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              doSearch(query, yearFrom);
+              doSearch(query, yearFrom, lang);
             }
           }}
           rows={1}
@@ -558,22 +589,70 @@ function CitationPanelBody({
         </Button>
       </form>
 
-      <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
-        <span>{t("citation.yearLabel")}</span>
-        <select
-          value={yearFrom ?? ""}
-          onChange={(e) => {
-            const v = e.target.value ? Number(e.target.value) : undefined;
-            setYearFrom(v);
-            if (query.trim()) doSearch(query, v);
-          }}
-          className="rounded-md border bg-background px-2 py-1 text-xs text-foreground"
+      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <span>{t("citation.yearLabel")}</span>
+          <select
+            value={yearFrom ?? ""}
+            onChange={(e) => {
+              const v = e.target.value ? Number(e.target.value) : undefined;
+              setYearFrom(v);
+              if (query.trim()) doSearch(query, v, lang);
+            }}
+            className="rounded-md border bg-background px-2 py-1 text-xs text-foreground"
+          >
+            <option value="">{t("citation.yearAll")}</option>
+            <option value="2020">
+              {t("citation.yearFrom", { year: 2020 })}
+            </option>
+            <option value="2015">
+              {t("citation.yearFrom", { year: 2015 })}
+            </option>
+            <option value="2010">
+              {t("citation.yearFrom", { year: 2010 })}
+            </option>
+          </select>
+        </div>
+
+        {/* Result-language preference: interleave both / English-first / Chinese-first.
+            Fixes famous English papers being crowded out by low-citation Chinese hits. */}
+        <div className="flex items-center gap-1">
+          <span>{t("citation.langLabel")}</span>
+          <div className="inline-flex overflow-hidden rounded-md border">
+            {(["all", "en", "zh"] as const).map((lg) => (
+              <button
+                key={lg}
+                type="button"
+                onClick={() => {
+                  setLang(lg);
+                  if (query.trim()) doSearch(query, yearFrom, lg);
+                }}
+                className={`px-2 py-1 text-xs transition ${
+                  lang === lg
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-muted-foreground hover:bg-accent"
+                }`}
+              >
+                {t(`citation.lang_${lg}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Auto-link plaintext citations across the doc (moved here from the toolbar). */}
+        <button
+          type="button"
+          onClick={handleRelink}
+          disabled={relinking}
+          className="ml-auto inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium text-foreground transition hover:bg-accent disabled:opacity-60"
         >
-          <option value="">{t("citation.yearAll")}</option>
-          <option value="2020">{t("citation.yearFrom", { year: 2020 })}</option>
-          <option value="2015">{t("citation.yearFrom", { year: 2015 })}</option>
-          <option value="2010">{t("citation.yearFrom", { year: 2010 })}</option>
-        </select>
+          {relinking ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Link2 className="h-3.5 w-3.5" />
+          )}
+          {t("citation.relink")}
+        </button>
       </div>
 
       {/* Manual fallback — only when resolving an unlinked chip. Paste a DOI/URL

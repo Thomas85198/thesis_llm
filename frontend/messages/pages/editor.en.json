@@ -133,7 +133,11 @@
     "refreshed": "Citation links updated",
     "refreshedNoChange": "Links already up to date",
     "rateLimited": "Too many searches — retry in {seconds}s.",
-    "styleLabel": "Citation style"
+    "styleLabel": "Citation style",
+    "langLabel": "Language",
+    "lang_all": "All",
+    "lang_en": "English",
+    "lang_zh": "Chinese"
   },
   "rewrite": {
     "find": "AI rewrite",

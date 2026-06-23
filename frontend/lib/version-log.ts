@@ -38,6 +38,14 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.13.0",
+    date: "2026-06-23",
+    changes: [
+      { type: "feat" }, // 引用搜尋語言偏好（全部/英文/中文）：預設「全部」中英交錯，著名英文高引用論文不再被低引用中文期刊擠掉
+      { type: "feat" }, // 自動串接參考文獻併入「找引用」面板（工具列移除該鈕，引用功能集中）
+    ],
+  },
+  {
     version: "4.12.1",
     date: "2026-06-23",
     changes: [

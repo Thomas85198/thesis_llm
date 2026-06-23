@@ -30,7 +30,6 @@ import {
   Italic,
   Keyboard,
   Network,
-  Link2,
   List,
   ListOrdered,
   ListTree,
@@ -92,7 +91,6 @@ import {
   ChatRateLimitError,
   checkDraft,
   deepCheckDraft,
-  relinkCitations,
   streamAutocomplete,
   uploadImage,
   verifyCitation,
@@ -448,34 +446,6 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     },
     [],
   );
-
-  // Relink: rebuild an imported paper's plain-text references into live citations
-  // (high-confidence OpenAlex matches), so they show up in the citation panel.
-  const [relinking, setRelinking] = useState(false);
-  const handleRelinkCitations = useCallback(async () => {
-    const ed = editorRef.current;
-    if (!ed) return;
-    setRelinking(true);
-    const tid = toast.loading(t("citation.relinking"));
-    try {
-      const { content_json, stats } = await relinkCitations(
-        doc.doc_id,
-        ed.getJSON(),
-      );
-      ed.commands.setContent(content_json);
-      toast.success(
-        t("citation.relinkDone", {
-          linked: stats.intext_linked,
-          matched: stats.matched,
-        }),
-        { id: tid },
-      );
-    } catch (e) {
-      toast.error(String(e), { id: tid });
-    } finally {
-      setRelinking(false);
-    }
-  }, [doc.doc_id, t]);
 
   // Defect check: run the Thesis Critic on the whole draft (heavy, on demand) →
   // list defects in the panel + underline the cited sentences inline.
@@ -1142,17 +1112,6 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
             onClick={() => openCitePanel("", editor.state.selection.to)}
           >
             <Search className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            label={t("citation.relink")}
-            onClick={handleRelinkCitations}
-            disabled={relinking}
-          >
-            {relinking ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Link2 className="h-4 w-4" />
-            )}
           </ToolbarButton>
           <select
             value={citationStyle}

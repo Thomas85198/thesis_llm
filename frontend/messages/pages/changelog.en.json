@@ -29,6 +29,14 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_13_0": {
+      "title": "Citation search language preference + relink folded into the panel",
+      "summary": "Citation search gains a Language toggle (All / English / Chinese). The default 'All' interleaves Chinese journals with English literature so famous, highly-cited English papers are no longer crowded out by low-citation Chinese journal hits — more representative results. Switch to 'English' for the well-cited classics only, or 'Chinese' to put Chinese journals first. The 'Auto-link references' action also moves from the toolbar into the citation panel, so all citation features live in one place and the toolbar is cleaner.",
+      "changes": {
+        "0": "Citation search Language preference (All / English / Chinese): the default 'All' interleaves Chinese + English so famous highly-cited English papers are no longer crowded out by low-citation Chinese hits; switch to 'English' for the classics only, or 'Chinese' to put Chinese journals first.",
+        "1": "'Auto-link references' moves from the toolbar into the citation panel (same row as year/language) — citation features consolidated, toolbar slimmed."
+      }
+    },
     "4_12_1": {
       "title": "Knowledge graph now matches the paper-analysis view",
       "summary": "The editor's 'Knowledge graph (deep check)' now uses the exact same interface as the paper-analysis page instead of a hard-to-read node blob: concept chips grouped by section and colored by type, with search, sort (default / A–Z / most relations) and type filters; click any concept to see its 1-hop relation subgraph and evidence sentences on the right. Drafts have no source PDF, so locate-in-PDF buttons, page numbers and the human-as-judge controls are hidden — everything else is identical.",

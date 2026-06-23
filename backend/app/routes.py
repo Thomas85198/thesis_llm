@@ -92,6 +92,8 @@ class CitationRecommendIn(BaseModel):
     claim: str = Field(..., max_length=2000)  # the selected sentence to cite
     locale: str | None = None  # reserved; OpenAlex search is language-agnostic
     year_from: int | None = Field(None, ge=1900, le=2100)  # optional recency filter
+    # Result-language preference: "all" interleaves zh+en, "en"/"zh" bias one side.
+    lang: str = "all"
 
 
 class CitationRefreshIn(BaseModel):
@@ -883,8 +885,9 @@ def recommend_citations(body: CitationRecommendIn) -> dict[str, Any]:
     claim = body.claim.strip()
     if not claim:
         return {"candidates": []}
+    lang = body.lang if body.lang in ("all", "en", "zh") else "all"
     try:
-        candidates = citation_mod.recommend(claim, year_from=body.year_from)
+        candidates = citation_mod.recommend(claim, year_from=body.year_from, lang=lang)
     except citation_mod.CitationSearchError as exc:
         # Both sources failed (OpenAlex primary + Crossref fallback). Keep the
         # toast clean — drop the raw URL dump.

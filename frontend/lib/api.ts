@@ -942,10 +942,12 @@ export type CitationCandidate = {
  * surfaces as ChatRateLimitError so the caller can show a retry hint. Pass an
  * AbortSignal to cancel a superseded search, and `yearFrom` to filter by recency.
  */
+export type CitationLang = "all" | "en" | "zh";
+
 export async function recommendCitations(
   docId: string,
   claim: string,
-  opts: { signal?: AbortSignal; yearFrom?: number } = {},
+  opts: { signal?: AbortSignal; yearFrom?: number; lang?: CitationLang } = {},
 ): Promise<CitationCandidate[]> {
   const res = await fetch(`${API_BASE}/api/editor/citations/recommend`, {
     method: "POST",
@@ -954,6 +956,7 @@ export async function recommendCitations(
       doc_id: docId,
       claim,
       year_from: opts.yearFrom ?? null,
+      lang: opts.lang ?? "all",
     }),
     signal: opts.signal,
   });

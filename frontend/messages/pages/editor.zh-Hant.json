@@ -133,7 +133,11 @@
     "refreshed": "已更新引用連結",
     "refreshedNoChange": "連結已是最新",
     "rateLimited": "搜尋太頻繁，請 {seconds} 秒後再試。",
-    "styleLabel": "引用格式"
+    "styleLabel": "引用格式",
+    "langLabel": "語言",
+    "lang_all": "全部",
+    "lang_en": "英文",
+    "lang_zh": "中文"
   },
   "rewrite": {
     "find": "AI 改寫",

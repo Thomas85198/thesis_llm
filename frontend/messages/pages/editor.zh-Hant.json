@@ -247,7 +247,9 @@
       "high": "高",
       "medium": "中",
       "low": "低"
-    }
+    },
+    "located": "作用中",
+    "cancel": "取消"
   },
   "export": {
     "find": "匯出",

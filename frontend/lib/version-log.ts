@@ -38,6 +38,15 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.11.0",
+    date: "2026-06-23",
+    changes: [
+      { type: "feat" }, // 缺陷檢查增量快取：依標題切段、只重檢查改動段落（未改段落 0 LLM）
+      { type: "feat" }, // 缺陷定位 UX：點卡片持久高亮(不再點掉就消失)＋滑過卡片內文即時連動＋整卡可點
+      { type: "fix" }, // 缺陷面板改非 modal（邊看邊改）＋競態守衛/取消（慢查詢不蓋新結果、新檢查不清空舊結果）＋游標還原
+    ],
+  },
+  {
     version: "4.10.0",
     date: "2026-06-23",
     changes: [

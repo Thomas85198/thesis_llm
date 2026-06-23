@@ -200,6 +200,20 @@ CREATE TABLE IF NOT EXISTS upload_events (
 CREATE INDEX IF NOT EXISTS idx_upload_events_status ON upload_events(status);
 CREATE INDEX IF NOT EXISTS idx_upload_events_created ON upload_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_upload_events_job ON upload_events(job_id);
+
+-- ============================================================
+-- 表 9: draft_check_cache — 編輯器缺陷檢查的「段落級」結果快取
+-- ----------------------------------------------------------------
+-- 缺陷檢查每段要跑數次 LLM (建圖 + 規則)。把每個段落 (含標題行) 的文字
+-- 連同 locale 與規則版本雜湊成 cache_key，存該段算出的 defects。重檢查時
+-- 未改動的段落直接命中、0 LLM；只有改動段才重跑 (增量)。規則改版時
+-- 改 RULES_VERSION 即整體失效。內容定址 → 與 doc_id 無關、跨文件可共用。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS draft_check_cache (
+    cache_key    TEXT PRIMARY KEY,    -- sha256(section_text | locale | rules_version)
+    defects_json TEXT NOT NULL,       -- 該段 defects 的 JSON 陣列
+    created_at   TEXT NOT NULL
+);
 """
 
 
@@ -1077,6 +1091,28 @@ def get_document_version(doc_id: str, version_id: int) -> dict[str, Any] | None:
     d = dict(row)
     d["content_json"] = json.loads(d["content_json"])
     return d
+
+
+# ---------- draft_check_cache (per-section defect-check cache) ----------
+
+
+def get_draft_cache(cache_key: str) -> list[dict[str, Any]] | None:
+    """Cached defects for a section's content hash, or None on a miss."""
+    with connect() as c:
+        row = c.execute(
+            "SELECT defects_json FROM draft_check_cache WHERE cache_key=?",
+            (cache_key,),
+        ).fetchone()
+    return json.loads(row["defects_json"]) if row else None
+
+
+def set_draft_cache(cache_key: str, defects: list[dict[str, Any]]) -> None:
+    with connect() as c:
+        c.execute(
+            "INSERT OR REPLACE INTO draft_check_cache (cache_key, defects_json, created_at) "
+            "VALUES (?, ?, ?)",
+            (cache_key, json.dumps(defects, ensure_ascii=False), _now()),
+        )
 
 
 # ---------- paper_chunks (full-text grounding cache) ----------

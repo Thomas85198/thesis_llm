@@ -29,6 +29,15 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_11_0": {
+      "title": "Defect check: incremental cache (save LLM) + redesigned locate",
+      "summary": "Defect checking now splits the draft by headings and caches per section: re-checking only re-runs the sections whose text changed — unchanged sections come straight from cache (zero LLM, near-instant). Locating is redesigned too — clicking a defect card persistently highlights its sentence in the text (it stays, instead of vanishing on click-away), and hovering a card lights up its sentence live (two-way link). The panel is now non-modal so you can keep editing while reviewing; cancelling a check keeps the previous results, and a slower check never clobbers a newer one.",
+      "changes": {
+        "0": "Incremental cache: the check splits the doc by H1/H2 headings and caches each section's result by content hash; re-checking only re-runs changed sections (unchanged sections cost 0 LLM, near-instant), saving time and money on repeat checks.",
+        "1": "Redesigned locating: clicking a defect card persistently highlights its sentence and scrolls to it (stays until you pick another or close — no longer a selection that vanishes on click-away); hovering a card lights its sentence live so you can see which card maps to which sentence; the whole card is clickable (and keyboard-accessible).",
+        "2": "Panel & check logic: the defect panel is now non-modal so you can keep editing while it's open; starting a new check no longer blanks the panel (previous results stay until new ones arrive); you can Cancel a running check and keep prior results; a slower check no longer overwrites a newer one. The cursor over a flagged sentence is back to a normal text cursor."
+      }
+    },
     "4_10_0": {
       "title": "Citation traffic-light verification + fix click-to-404",
       "summary": "A new 'verify citations' one-click check: for each linked citation it takes the sentence it backs and the source abstract, asks the model whether the abstract supports the claim, and marks the chip 🟢 supports / 🟡 partial / 🔴 unsupported (hover for details). The abstract is stored when the citation is inserted, so verification no longer needs OpenAlex (which is rate-limited). Also fixes a bug where clicking some citations navigated the whole page to a 404.",

@@ -9,21 +9,39 @@ Only single-section rules run — the cross-section rules (REL-04/08/12) need
 whole-paper context and are meaningless on a working draft. This is heavy
 (several LLM calls), so it is triggered on demand, not on every keystroke.
 """
+
 from __future__ import annotations
 
+import hashlib
 import threading
 import time
 import uuid
 from typing import Any
 
-from . import i18n, kg, pipeline, rules
+from . import db, i18n, kg, pipeline, rules
 
 # Rules meaningful on a draft fragment (exclude whole-paper REL-04/08/12).
 SINGLE_SECTION_RULES = {
-    "REL-01", "REL-02", "REL-03", "REL-05", "REL-06",
-    "REL-07", "REL-09", "REL-10", "REL-11", "REL-13",
+    "REL-01",
+    "REL-02",
+    "REL-03",
+    "REL-05",
+    "REL-06",
+    "REL-07",
+    "REL-09",
+    "REL-10",
+    "REL-11",
+    "REL-13",
 }
 MAX_DRAFT_CHARS = 20000
+
+# Bump to invalidate every cached section result (e.g. when rules/prompts change).
+RULES_VERSION = "1"
+
+
+def _section_key(text: str, loc: str) -> str:
+    return hashlib.sha256(f"{text}|{loc}|{RULES_VERSION}".encode("utf-8")).hexdigest()
+
 
 # Defect check fans out into many LLM calls; cap hard per document.
 RATE_LIMIT_PER_MIN = 6  # per doc_id
@@ -47,17 +65,9 @@ def check_rate_limit(doc_id: str) -> tuple[bool, int]:
     return True, 0
 
 
-def check_draft(text: str, doc_id: str, locale: str | None) -> list[dict[str, Any]]:
-    """Run single-section REL rules on `text`; return a list of defect dicts.
-
-    Each defect: {rule_id, defect_type, severity, section, description,
-    suggestion, confidence, evidence: [edu_text, …]}. The temporary graph is
-    always cleared, even on error.
-    """
-    text = (text or "").strip()
-    if not text:
-        return []
-    loc = i18n.normalize_locale(locale)
+def _check_one_section(text: str, loc: str) -> list[dict[str, Any]]:
+    """Build a graph for one section's text + run single-section rules. Heavy
+    (several LLM calls). The temporary graph is always cleared, even on error."""
     paper_id = f"draft:{uuid.uuid4().hex[:8]}"
     try:
         spans = pipeline.extract_spans_from_bytes(
@@ -77,7 +87,9 @@ def check_draft(text: str, doc_id: str, locale: str | None) -> list[dict[str, An
                 {
                     "rule_id": d.rule_id,
                     "defect_type": d.defect_type,
-                    "severity": d.severity.value if hasattr(d.severity, "value") else str(d.severity),
+                    "severity": d.severity.value
+                    if hasattr(d.severity, "value")
+                    else str(d.severity),
                     "section": str(d.section),
                     "description": i18n.pick(d.description, loc),
                     "suggestion": i18n.pick(d.suggestion, loc),
@@ -91,3 +103,34 @@ def check_draft(text: str, doc_id: str, locale: str | None) -> list[dict[str, An
             kg.clear_paper(paper_id)
         except Exception:  # noqa: BLE001 — best-effort cleanup
             pass
+
+
+def check_draft_sections(
+    sections: list[str], doc_id: str, locale: str | None
+) -> list[dict[str, Any]]:
+    """Incremental defect check: each section's defects are cached by its content
+    hash, so re-checking only re-runs the sections whose text changed (cache hits
+    cost 0 LLM). Merges and returns all sections' defect dicts."""
+    loc = i18n.normalize_locale(locale)
+    out: list[dict[str, Any]] = []
+    for raw in sections:
+        text = (raw or "").strip()
+        if not text:
+            continue
+        key = _section_key(text, loc)
+        cached = db.get_draft_cache(key)
+        if cached is not None:
+            out.extend(cached)
+            continue
+        defects = _check_one_section(text, loc)
+        db.set_draft_cache(key, defects)
+        out.extend(defects)
+    return out
+
+
+def check_draft(text: str, doc_id: str, locale: str | None) -> list[dict[str, Any]]:
+    """Single-section convenience wrapper (back-compat) over the section API."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    return check_draft_sections([text], doc_id, locale)

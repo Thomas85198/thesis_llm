@@ -247,7 +247,9 @@
       "high": "High",
       "medium": "Medium",
       "low": "Low"
-    }
+    },
+    "located": "Located",
+    "cancel": "Cancel"
   },
   "export": {
     "find": "Export",

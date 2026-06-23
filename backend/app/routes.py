@@ -129,7 +129,10 @@ class CitationGroundIn(BaseModel):
 
 class DraftCheckIn(BaseModel):
     doc_id: str
-    text: str = Field(..., min_length=1, max_length=20000)  # the draft to check
+    # Either a single `text` blob (legacy) or `sections` (each section's text,
+    # heading included) for incremental per-section caching. Cap each section.
+    text: str | None = Field(None, max_length=20000)
+    sections: list[str] | None = Field(None, max_length=60)
     locale: str | None = None
 
 
@@ -977,11 +980,18 @@ def check_draft(body: DraftCheckIn) -> dict[str, Any]:
     {defects: [{rule_id, defect_type, severity, section, description,
     suggestion, confidence, evidence}]} for the editor to render inline.
     """
+    sections = body.sections
+    if sections is None:
+        sections = [body.text] if body.text else []
+    if not any((s or "").strip() for s in sections):
+        raise HTTPException(400, "nothing to check")
     allowed, wait = draft_check_mod.check_rate_limit(body.doc_id)
     if not allowed:
         raise HTTPException(429, f"defect check rate limit reached, retry in ~{wait}s")
     try:
-        defects = draft_check_mod.check_draft(body.text, body.doc_id, body.locale)
+        defects = draft_check_mod.check_draft_sections(
+            sections, body.doc_id, body.locale
+        )
     except Exception as exc:  # noqa: BLE001 — pipeline/LLM failure → 502
         raise HTTPException(502, f"defect check failed: {exc}") from exc
     return {"defects": defects}

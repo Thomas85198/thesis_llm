@@ -246,6 +246,29 @@ function claimAtPos(editor: Editor, pos: number): string {
   );
 }
 
+// Split the doc into section text blocks at each top-level heading (level ≤ 2),
+// each block = its heading line + the content up to the next heading. Used for
+// per-section incremental defect checking (only changed sections re-run). Text
+// before the first heading is its own section; a heading-less doc → one block.
+function splitIntoSections(editor: Editor, maxChars: number): string[] {
+  const out: string[] = [];
+  let cur: string[] = [];
+  const flush = () => {
+    const text = cur.join("\n").trim();
+    if (text) out.push(text.slice(0, maxChars));
+    cur = [];
+  };
+  editor.state.doc.forEach((node) => {
+    const isBreak =
+      node.type.name === "heading" && (node.attrs.level ?? 1) <= 2;
+    if (isBreak) flush();
+    const t = node.textContent;
+    if (t) cur.push(t);
+  });
+  flush();
+  return out;
+}
+
 export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   const t = useTranslations("editor");
   const locale = useLocale();
@@ -445,35 +468,51 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
 
   // Defect check: run the Thesis Critic on the whole draft (heavy, on demand) →
   // list defects in the panel + underline the cited sentences inline.
+  // A monotonic token guards against a slow earlier check (e.g. a selection)
+  // landing *after* a newer one and clobbering its results; an AbortController
+  // actively cancels the previous in-flight check when a new one starts.
+  const checkTokenRef = useRef(0);
+  const checkAbortRef = useRef<AbortController | null>(null);
+  const cancelCheck = useCallback(() => {
+    checkTokenRef.current += 1; // invalidate the in-flight result
+    checkAbortRef.current?.abort();
+    setDefectLoading(false);
+  }, [setDefectLoading]);
   const handleCheckDefects = useCallback(async () => {
     const ed = editorRef.current;
     if (!ed) return;
-    // The critic checks a draft section, not a whole thesis. Prefer the selection;
-    // fall back to the full doc, but cap at the backend's limit (DraftCheckIn.text).
     const MAX_CHECK_CHARS = 20000;
     const sel = ed.state.selection;
     const selected = sel.empty
       ? ""
       : ed.state.doc.textBetween(sel.from, sel.to, "\n", " ").trim();
-    let text = (selected || ed.getText()).trim();
-    if (!text) {
-      toast.error(t("defect.needsText"));
-      return;
-    }
-    if (text.length > MAX_CHECK_CHARS) {
-      if (selected) {
-        text = text.slice(0, MAX_CHECK_CHARS);
+    // A selection checks just that passage. Otherwise split the whole doc by its
+    // top-level headings into sections, so re-checking only re-runs (and re-pays
+    // for) the sections whose text changed — the backend caches per section.
+    let payload: { text: string } | { sections: string[] };
+    if (selected) {
+      payload = { text: selected.slice(0, MAX_CHECK_CHARS) };
+      if (selected.length > MAX_CHECK_CHARS)
         toast.warning(t("defect.selectionTrimmed"));
-      } else {
-        toast.error(t("defect.tooLong"));
+    } else {
+      const sections = splitIntoSections(ed, MAX_CHECK_CHARS);
+      if (!sections.length) {
+        toast.error(t("defect.needsText"));
         return;
       }
+      payload = { sections };
     }
+    const token = ++checkTokenRef.current;
+    checkAbortRef.current?.abort(); // cancel any check still running
+    const ac = new AbortController();
+    checkAbortRef.current = ac;
     openDefects();
     setDefectLoading(true);
-    setDefects([]);
+    // Keep the previous results visible while the new check runs — don't blank
+    // the panel — so cancelling (or a slow check) leaves the old defects in place.
     try {
-      const defects = await checkDraft(doc.doc_id, text, locale);
+      const defects = await checkDraft(doc.doc_id, payload, locale, ac.signal);
+      if (checkTokenRef.current !== token) return; // superseded by a newer check
       setDefects(defects);
       ed.commands.setDefectHighlights(
         defects.flatMap((d) =>
@@ -481,11 +520,13 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
         ),
       );
     } catch (e) {
+      if ((e as Error)?.name === "AbortError") return; // superseded / cancelled
+      if (checkTokenRef.current !== token) return;
       if (e instanceof ChatRateLimitError)
         toast.error(t("defect.rateLimited", { seconds: e.retryAfter }));
       else toast.error(String(e));
     } finally {
-      setDefectLoading(false);
+      if (checkTokenRef.current === token) setDefectLoading(false);
     }
   }, [doc.doc_id, locale, t, openDefects, setDefects, setDefectLoading]);
 
@@ -1202,7 +1243,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       <ExportPanel editor={editor} />
       <VersionHistoryPanel editor={editor} docId={doc.doc_id} />
       <ShortcutsHelp />
-      <DefectPanel editor={editor} />
+      <DefectPanel editor={editor} onCancel={cancelCheck} />
       <SlashMenu />
       <input
         ref={fileInputRef}

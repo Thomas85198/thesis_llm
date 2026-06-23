@@ -770,13 +770,17 @@ export type DraftDefect = {
  */
 export async function checkDraft(
   docId: string,
-  text: string,
+  // A single passage (selection) or the doc split into sections (per-section
+  // incremental caching — only changed sections re-run the LLM).
+  payload: { text: string } | { sections: string[] },
   locale: string,
+  signal?: AbortSignal,
 ): Promise<DraftDefect[]> {
   const res = await fetch(`${API_BASE}/api/editor/check`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ doc_id: docId, text, locale }),
+    body: JSON.stringify({ doc_id: docId, ...payload, locale }),
+    signal,
   });
   if (res.status === 429) {
     const t = await res.text();

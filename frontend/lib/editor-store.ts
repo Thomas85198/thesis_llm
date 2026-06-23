@@ -114,6 +114,11 @@ type EditorStore = {
   openFind: () => void;
   closeFind: () => void;
 
+  // ----- Knowledge graph (deep check) -----
+  kgOpen: boolean;
+  openKG: () => void;
+  closeKG: () => void;
+
   // ----- Defect check (Thesis Critic on the draft) -----
   defectOpen: boolean;
   defectLoading: boolean;
@@ -309,6 +314,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         versionsOpen: false,
         shortcutsOpen: false,
         findOpen: false,
+        kgOpen: false,
         defectOpen: false,
         defects: [],
         defectLoading: false,
@@ -374,6 +380,11 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     findOpen: false,
     openFind: () => set({ findOpen: true }),
     closeFind: () => set({ findOpen: false }),
+
+    // ----- Knowledge graph -----
+    kgOpen: false,
+    openKG: () => set({ kgOpen: true }),
+    closeKG: () => set({ kgOpen: false }),
 
     // ----- Defect check -----
     defectOpen: false,

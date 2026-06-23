@@ -360,5 +360,15 @@
     "supports": "Source supports the claim",
     "partial": "Source partially supports",
     "unsupported": "Source does not support the claim"
+  },
+  "kg": {
+    "find": "Knowledge graph (deep check)",
+    "panelTitle": "Knowledge graph",
+    "panelDesc": "Whole-draft deep analysis: concept graph + cross-section rule checks (slower).",
+    "summary": "Found {total} defects ({cross} cross-section).",
+    "seeDefects": "See defects",
+    "rerun": "Re-analyze",
+    "building": "Analyzing… (building graph + cross-section checks, ~tens of seconds)",
+    "empty": "Not analyzed yet."
   }
 }

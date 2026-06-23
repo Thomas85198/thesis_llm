@@ -360,5 +360,15 @@
     "supports": "來源支持此論點",
     "partial": "來源部分支持",
     "unsupported": "來源未支持此論點"
+  },
+  "kg": {
+    "find": "知識圖譜（深度檢查）",
+    "panelTitle": "知識圖譜",
+    "panelDesc": "整篇深度分析：概念關係圖＋跨章節規則檢查（較久）。",
+    "summary": "本次發現 {total} 個缺陷（含 {cross} 個跨章節）。",
+    "seeDefects": "看缺陷",
+    "rerun": "重新分析",
+    "building": "深度分析中…（建圖＋跨章節檢查，約數十秒）",
+    "empty": "尚未分析。"
   }
 }

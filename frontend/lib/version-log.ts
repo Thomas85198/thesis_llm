@@ -38,6 +38,14 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.12.0",
+    date: "2026-06-23",
+    changes: [
+      { type: "feat" }, // 跨章節規則檢查：深度檢查建整篇圖＋跑 REL-04/08/12，抓緒論↔方法↔結論不對齊
+      { type: "feat" }, // 知識圖譜面板：把草稿的概念關係（Entity + ER）畫成可平移縮放的圖
+    ],
+  },
+  {
     version: "4.11.0",
     date: "2026-06-23",
     changes: [

@@ -29,6 +29,14 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_12_0": {
+      "title": "Deep check: cross-section rules + knowledge graph",
+      "summary": "Defect checking gains a 'deep check (knowledge graph)'. It combines the whole draft into one graph and, on top of the single-section rules, runs cross-section rules (REL-04/08/12) — catching mismatches like 'the intro frames a research question the method never addresses / the conclusion doesn't align', which a single paragraph can't reveal. It also draws the draft's concepts and relations as a pannable, zoomable knowledge graph so you can see the whole picture. Cross-section defects flow into the defect panel.",
+      "changes": {
+        "0": "Cross-section rule checks: the toolbar 'Knowledge graph (deep check)' combines the whole draft into one graph and runs single-section + cross-section rules (REL-04/08/12), catching intro↔method↔conclusion misalignment (e.g. a research question framed in the intro that the method never addresses). Cross-section defects appear alongside the rest in the defect panel. Heavier (not per-section cached), ~tens of seconds.",
+        "1": "Knowledge-graph panel: draws the draft's extracted concepts (entities) and their relations (ER) as a pannable, zoomable graph, for a whole-draft overview of what concepts appear and how they connect. The panel is non-modal so you can keep editing while viewing it."
+      }
+    },
     "4_11_0": {
       "title": "Defect check: incremental cache (save LLM) + redesigned locate",
       "summary": "Defect checking now splits the draft by headings and caches per section: re-checking only re-runs the sections whose text changed — unchanged sections come straight from cache (zero LLM, near-instant). Locating is redesigned too — clicking a defect card persistently highlights its sentence in the text (it stays, instead of vanishing on click-away), and hovering a card lights up its sentence live (two-way link). The panel is now non-modal so you can keep editing while reviewing; cancelling a check keeps the previous results, and a slower check never clobbers a newer one.",

@@ -775,11 +775,14 @@ export async function checkDraft(
   payload: { text: string } | { sections: string[] },
   locale: string,
   signal?: AbortSignal,
+  // Whole-draft "deep" check: builds one combined graph (kept for the KG view)
+  // and adds cross-section rules (REL-04/08/12). Heavier, not per-section cached.
+  full?: boolean,
 ): Promise<DraftDefect[]> {
   const res = await fetch(`${API_BASE}/api/editor/check`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ doc_id: docId, ...payload, locale }),
+    body: JSON.stringify({ doc_id: docId, ...payload, locale, full }),
     signal,
   });
   if (res.status === 429) {
@@ -792,6 +795,24 @@ export async function checkDraft(
   }
   const data = (await res.json()) as { defects: DraftDefect[] };
   return data.defects;
+}
+
+// The draft's knowledge graph (from the last full check). Nodes/edges carry the
+// Neo4j label/type + props; the KG panel renders the Entity + ER layer.
+export type DraftGraph = {
+  nodes: { id: number; labels: string[]; props: Record<string, unknown> }[];
+  edges: {
+    source: number;
+    target: number;
+    type: string;
+    props: Record<string, unknown>;
+  }[];
+};
+
+export async function getDraftGraph(docId: string): Promise<DraftGraph> {
+  return get<DraftGraph>(
+    `/api/editor/documents/${encodeURIComponent(docId)}/graph`,
+  );
 }
 
 // ---------- editor mode: image upload ----------

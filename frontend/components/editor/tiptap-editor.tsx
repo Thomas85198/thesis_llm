@@ -29,6 +29,7 @@ import {
   History,
   Italic,
   Keyboard,
+  Network,
   Link2,
   List,
   ListOrdered,
@@ -68,6 +69,7 @@ import { TableOfContents } from "@/components/editor/toc-extension";
 import { MathBlock, MathInline } from "@/components/editor/math-extension";
 import { ConflictBanner } from "@/components/editor/conflict-banner";
 import { FindReplaceBar } from "@/components/editor/find-replace-bar";
+import { KGCheckPanel } from "@/components/editor/kg-check-panel";
 import { OutlinePanel } from "@/components/editor/outline-panel";
 import { SearchReplace } from "@/components/editor/search-replace-extension";
 import { RewritePanel } from "@/components/editor/rewrite-panel";
@@ -89,10 +91,12 @@ import { Button } from "@/components/ui/button";
 import {
   ChatRateLimitError,
   checkDraft,
+  getDraftGraph,
   relinkCitations,
   streamAutocomplete,
   uploadImage,
   verifyCitation,
+  type DraftGraph,
   type EditorDoc,
   type ProseMirrorDoc,
 } from "@/lib/api";
@@ -529,6 +533,56 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       if (checkTokenRef.current === token) setDefectLoading(false);
     }
   }, [doc.doc_id, locale, t, openDefects, setDefects, setDefectLoading]);
+
+  // Deep check: build ONE combined graph for the whole draft + run cross-section
+  // rules (REL-04/08/12) → cross-section defects land in the defect panel, and
+  // the concept graph shows in the KG panel. Heavier (not per-section cached).
+  const openKG = useEditorStore((s) => s.openKG);
+  const [kgGraph, setKgGraph] = useState<DraftGraph | null>(null);
+  const [kgLoading, setKgLoading] = useState(false);
+  const [kgSummary, setKgSummary] = useState<{
+    total: number;
+    cross: number;
+  } | null>(null);
+  const handleDeepCheck = useCallback(async () => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const sections = splitIntoSections(ed, 20000);
+    if (!sections.length) {
+      toast.error(t("defect.needsText"));
+      return;
+    }
+    checkTokenRef.current += 1; // supersede any in-flight quick check
+    checkAbortRef.current?.abort();
+    openKG();
+    setKgLoading(true);
+    try {
+      const defects = await checkDraft(
+        doc.doc_id,
+        { sections },
+        locale,
+        undefined,
+        true,
+      );
+      setDefects(defects);
+      ed.commands.setDefectHighlights(
+        defects.flatMap((d) =>
+          d.evidence.map((e) => ({ text: e, severity: d.severity })),
+        ),
+      );
+      const cross = defects.filter((d) =>
+        ["REL-04", "REL-08", "REL-12"].includes(d.rule_id),
+      ).length;
+      setKgSummary({ total: defects.length, cross });
+      setKgGraph(await getDraftGraph(doc.doc_id));
+    } catch (e) {
+      if (e instanceof ChatRateLimitError)
+        toast.error(t("defect.rateLimited", { seconds: e.retryAfter }));
+      else toast.error(String(e));
+    } finally {
+      setKgLoading(false);
+    }
+  }, [doc.doc_id, locale, t, openKG, setDefects]);
 
   // Verify every linked citation's claim support (the "traffic light"): for each
   // chip, take the sentence it supports + the source abstract and ask the model
@@ -1118,6 +1172,17 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
             <ShieldAlert className="h-4 w-4" />
           </ToolbarButton>
           <ToolbarButton
+            label={t("kg.find")}
+            disabled={kgLoading}
+            onClick={handleDeepCheck}
+          >
+            {kgLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Network className="h-4 w-4" />
+            )}
+          </ToolbarButton>
+          <ToolbarButton
             label={t("verify.find")}
             disabled={verifyingCites}
             onClick={handleVerifyCitations}
@@ -1244,6 +1309,12 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       <VersionHistoryPanel editor={editor} docId={doc.doc_id} />
       <ShortcutsHelp />
       <DefectPanel editor={editor} onCancel={cancelCheck} />
+      <KGCheckPanel
+        graph={kgGraph}
+        loading={kgLoading}
+        summary={kgSummary}
+        onRerun={handleDeepCheck}
+      />
       <SlashMenu />
       <input
         ref={fileInputRef}

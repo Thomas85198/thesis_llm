@@ -134,6 +134,9 @@ class DraftCheckIn(BaseModel):
     text: str | None = Field(None, max_length=20000)
     sections: list[str] | None = Field(None, max_length=60)
     locale: str | None = None
+    # Whole-draft "deep" check: one combined graph (kept for the KG view) +
+    # cross-section rules (REL-04/08/12). Heavier; not per-section cached.
+    full: bool = False
 
 
 class RewriteIn(BaseModel):
@@ -785,6 +788,13 @@ def delete_document(doc_id: str) -> dict[str, str]:
     return {"status": "deleted", "doc_id": doc_id}
 
 
+@router.get("/api/editor/documents/{doc_id}/graph")
+def get_draft_graph(doc_id: str) -> dict[str, Any]:
+    """The EDU/entity/relation graph from the document's last *full* defect check
+    (kept in Neo4j under a stable draft id). Empty if no full check has run yet."""
+    return kg.fetch_graph_for_viz(draft_check_mod.draft_paper_id(doc_id))
+
+
 @router.post("/api/editor/documents/{doc_id}/versions")
 def create_document_version(doc_id: str, body: VersionCreateIn) -> dict[str, Any]:
     """Save a version snapshot (autosave-pruned, or a permanent named version)."""
@@ -989,9 +999,14 @@ def check_draft(body: DraftCheckIn) -> dict[str, Any]:
     if not allowed:
         raise HTTPException(429, f"defect check rate limit reached, retry in ~{wait}s")
     try:
-        defects = draft_check_mod.check_draft_sections(
-            sections, body.doc_id, body.locale
-        )
+        if body.full:
+            defects = draft_check_mod.check_draft_full(
+                sections, body.doc_id, body.locale
+            )
+        else:
+            defects = draft_check_mod.check_draft_sections(
+                sections, body.doc_id, body.locale
+            )
     except Exception as exc:  # noqa: BLE001 — pipeline/LLM failure → 502
         raise HTTPException(502, f"defect check failed: {exc}") from exc
     return {"defects": defects}

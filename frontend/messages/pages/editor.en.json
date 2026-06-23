@@ -392,5 +392,20 @@
     "exit": "Exit focus (Esc)",
     "fullscreen": "Fullscreen",
     "exitFullscreen": "Exit fullscreen"
+  },
+  "lint": {
+    "find": "Grammar / style check",
+    "panelTitle": "Grammar / style check",
+    "panelDesc": "Rule-based (no token): half-width punctuation, CJK–Latin spacing, space before punctuation.",
+    "count": "{n} issues",
+    "clean": "No issues 👍",
+    "fixAll": "Fix all",
+    "fix": "Fix",
+    "locate": "Locate",
+    "type": {
+      "halfPunct": "Half-width punct.",
+      "pangu": "CJK–Latin spacing",
+      "spaceBeforePunct": "Space before punct."
+    }
   }
 }

@@ -29,6 +29,13 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_16_0": {
+      "title": "Grammar / style check (rule-based, no token)",
+      "summary": "A new rule-based grammar/style check runs entirely locally with zero token cost, catching common objective issues in a Chinese thesis: half-width punctuation that should be full-width (e.g. '結果,' → '結果，'), missing spaces between CJK and Latin ('使用LLM' → '使用 LLM'), and stray spaces before Chinese punctuation. Issues are underlined inline in real time, and the side panel lists each with a one-click Fix, plus Fix all.",
+      "changes": {
+        "0": "Grammar/style check (spell-check toolbar icon): rule-based detection of half→full-width punctuation, CJK–Latin spacing, and space-before-punctuation; live dotted underlines + per-issue or fix-all in the panel. Local, no token cost."
+      }
+    },
     "4_15_0": {
       "title": "Focus mode: distraction-free writing",
       "summary": "A new Focus mode hides the outline sidebar, toolbar and top navigation, centers the editor at a comfortable width, and turns off autocomplete so it's purely your own writing (select-to-rewrite/cite is still available on demand, just non-intrusive). Exit with Esc or the bottom-right button; your AI setting is restored on exit. Pure layout, no token cost.",

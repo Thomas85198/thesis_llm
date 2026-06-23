@@ -466,3 +466,22 @@ body.is-drag-ended .prosemirror-dropcursor-inline {
 body.editor-focus [data-site-header] {
   display: none;
 }
+
+/* Rule-based writing lint: dotted underline per issue type. */
+.lint {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+.lint-halfPunct {
+  text-decoration-color: #f59e0b;
+  background: color-mix(in oklab, #f59e0b 12%, transparent);
+}
+.lint-pangu {
+  text-decoration-color: #0ea5e9;
+}
+.lint-spaceBeforePunct {
+  text-decoration-color: #a78bfa;
+  background: color-mix(in oklab, #a78bfa 12%, transparent);
+}

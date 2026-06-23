@@ -119,6 +119,11 @@ type EditorStore = {
   openKG: () => void;
   closeKG: () => void;
 
+  // ----- Writing lint (rule-based, no token) -----
+  lintOpen: boolean;
+  openLint: () => void;
+  closeLint: () => void;
+
   // ----- Defect check (Thesis Critic on the draft) -----
   defectOpen: boolean;
   defectLoading: boolean;
@@ -315,6 +320,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         shortcutsOpen: false,
         findOpen: false,
         kgOpen: false,
+        lintOpen: false,
         defectOpen: false,
         defects: [],
         defectLoading: false,
@@ -385,6 +391,11 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     kgOpen: false,
     openKG: () => set({ kgOpen: true }),
     closeKG: () => set({ kgOpen: false }),
+
+    // ----- Writing lint -----
+    lintOpen: false,
+    openLint: () => set({ lintOpen: true }),
+    closeLint: () => set({ lintOpen: false }),
 
     // ----- Defect check -----
     defectOpen: false,

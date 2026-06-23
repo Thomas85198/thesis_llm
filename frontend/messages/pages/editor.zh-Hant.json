@@ -392,5 +392,20 @@
     "exit": "離開專注（Esc）",
     "fullscreen": "全螢幕",
     "exitFullscreen": "離開全螢幕"
+  },
+  "lint": {
+    "find": "文法／風格檢查",
+    "panelTitle": "文法／風格檢查",
+    "panelDesc": "規則式檢查（不耗 token）：半形標點、中英文空格、標點前空格。",
+    "count": "{n} 個問題",
+    "clean": "沒發現問題 👍",
+    "fixAll": "全部修正",
+    "fix": "修正",
+    "locate": "定位",
+    "type": {
+      "halfPunct": "半形標點",
+      "pangu": "中英空格",
+      "spaceBeforePunct": "標點前空格"
+    }
   }
 }

@@ -47,6 +47,7 @@ import {
   ShieldAlert,
   Sigma,
   Sparkles,
+  SpellCheck,
   Strikethrough,
   Table as TableIcon,
   TableProperties,
@@ -64,6 +65,8 @@ import { CodeBlock } from "@/components/editor/code-block-extension";
 import { Citation } from "@/components/editor/citation-extension";
 import { CitationPanel } from "@/components/editor/citation-panel";
 import { DefectHighlight } from "@/components/editor/defect-highlight";
+import { LintHighlight } from "@/components/editor/lint-highlight";
+import { LintPanel } from "@/components/editor/lint-panel";
 import { DefectPanel } from "@/components/editor/defect-panel";
 import { ExportPanel } from "@/components/editor/export-panel";
 import { Figure, FigureList } from "@/components/editor/figure-extension";
@@ -299,6 +302,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   const openShortcuts = useEditorStore((s) => s.openShortcuts);
   const openFind = useEditorStore((s) => s.openFind);
   const openDefects = useEditorStore((s) => s.openDefects);
+  const openLint = useEditorStore((s) => s.openLint);
   const setDefects = useEditorStore((s) => s.setDefects);
   const setDefectLoading = useEditorStore((s) => s.setDefectLoading);
   const citationStyle = useEditorStore((s) => s.citationStyle);
@@ -888,6 +892,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       TableCell,
       TableBlock,
       DefectHighlight,
+      LintHighlight,
       TableCaption.configure({ labels: { tableWord: t("table.word") } }),
       TableList.configure({
         labels: {
@@ -1208,6 +1213,9 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           <ToolbarButton label={t("export.find")} onClick={openExport}>
             <Download className="h-4 w-4" />
           </ToolbarButton>
+          <ToolbarButton label={t("lint.find")} onClick={openLint}>
+            <SpellCheck className="h-4 w-4" />
+          </ToolbarButton>
           <ToolbarButton label={t("defect.find")} onClick={handleCheckDefects}>
             <ShieldAlert className="h-4 w-4" />
           </ToolbarButton>
@@ -1363,6 +1371,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       <VersionHistoryPanel editor={editor} docId={doc.doc_id} />
       <ShortcutsHelp />
       <DefectPanel editor={editor} onCancel={cancelCheck} />
+      <LintPanel editor={editor} />
       <KGCheckPanel
         result={kgResult}
         loading={kgLoading}

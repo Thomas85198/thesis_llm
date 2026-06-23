@@ -30,6 +30,8 @@ import {
   History,
   Italic,
   Keyboard,
+  Maximize,
+  Minimize,
   Minimize2,
   Network,
   List,
@@ -546,6 +548,23 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       window.removeEventListener("keydown", onKey);
     };
   }, [focusMode]);
+
+  // Browser fullscreen (hides the browser chrome too — URL bar / tabs) for the
+  // deepest immersion. Tracked via the fullscreenchange event so the button
+  // icon stays correct even when the user exits with the browser's own Esc.
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+    } else {
+      void document.documentElement.requestFullscreen().catch(() => {});
+    }
+  }, []);
   const handleDeepCheck = useCallback(async () => {
     const ed = editorRef.current;
     if (!ed) return;
@@ -1023,14 +1042,28 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       {/* Editor column */}
       <div className="relative flex min-w-0 flex-1 flex-col">
         {focusMode && (
-          <button
-            type="button"
-            onClick={() => setFocusMode(false)}
-            className="fixed bottom-6 right-6 z-30 flex items-center gap-1.5 rounded-full border bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-md backdrop-blur transition hover:text-foreground"
-          >
-            <Minimize2 className="h-3.5 w-3.5" />
-            {t("focus.exit")}
-          </button>
+          <div className="fixed bottom-6 right-6 z-30 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="flex items-center gap-1.5 rounded-full border bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-md backdrop-blur transition hover:text-foreground"
+            >
+              {isFullscreen ? (
+                <Minimize className="h-3.5 w-3.5" />
+              ) : (
+                <Maximize className="h-3.5 w-3.5" />
+              )}
+              {isFullscreen ? t("focus.exitFullscreen") : t("focus.fullscreen")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFocusMode(false)}
+              className="flex items-center gap-1.5 rounded-full border bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-md backdrop-blur transition hover:text-foreground"
+            >
+              <Minimize2 className="h-3.5 w-3.5" />
+              {t("focus.exit")}
+            </button>
+          </div>
         )}
         <FindReplaceBar editor={editor} />
         <ConflictBanner editor={editor} docId={doc.doc_id} />

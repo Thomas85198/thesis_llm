@@ -389,6 +389,8 @@
   },
   "focus": {
     "enter": "專注模式（純寫作，關閉自動提示）",
-    "exit": "離開專注（Esc）"
+    "exit": "離開專注（Esc）",
+    "fullscreen": "全螢幕",
+    "exitFullscreen": "離開全螢幕"
   }
 }

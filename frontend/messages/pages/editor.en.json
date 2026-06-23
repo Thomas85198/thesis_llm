@@ -389,6 +389,8 @@
   },
   "focus": {
     "enter": "Focus mode (no autocomplete)",
-    "exit": "Exit focus (Esc)"
+    "exit": "Exit focus (Esc)",
+    "fullscreen": "Fullscreen",
+    "exitFullscreen": "Exit fullscreen"
   }
 }

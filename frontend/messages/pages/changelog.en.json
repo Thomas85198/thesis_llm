@@ -33,7 +33,7 @@
       "title": "Focus mode: distraction-free writing",
       "summary": "A new Focus mode hides the outline sidebar, toolbar and top navigation, centers the editor at a comfortable width, and turns off autocomplete so it's purely your own writing (select-to-rewrite/cite is still available on demand, just non-intrusive). Exit with Esc or the bottom-right button; your AI setting is restored on exit. Pure layout, no token cost.",
       "changes": {
-        "0": "Toolbar 'Focus mode': hides sidebar/toolbar/top nav, centers a narrow column, and disables autocomplete (pure self-writing, restored on exit); select-to-rewrite stays on demand; exit with Esc or the bottom-right button."
+        "0": "Toolbar 'Focus mode': hides sidebar/toolbar/top nav, centers a narrow column, and disables autocomplete (pure self-writing, restored on exit); select-to-rewrite stays on demand; exit with Esc or the bottom-right button; with a one-click browser-fullscreen toggle (hides the URL bar/tabs too)。"
       }
     },
     "4_14_0": {

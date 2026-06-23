@@ -29,6 +29,13 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_12_1": {
+      "title": "Knowledge graph now matches the paper-analysis view",
+      "summary": "The editor's 'Knowledge graph (deep check)' now uses the exact same interface as the paper-analysis page instead of a hard-to-read node blob: concept chips grouped by section and colored by type, with search, sort (default / A–Z / most relations) and type filters; click any concept to see its 1-hop relation subgraph and evidence sentences on the right. Drafts have no source PDF, so locate-in-PDF buttons, page numbers and the human-as-judge controls are hidden — everything else is identical.",
+      "changes": {
+        "0": "The deep-check knowledge graph now reuses the paper-analysis KGFlow UI: section-grouped, type-colored concept chips, search/sort/type filters, and a 1-hop relation subgraph with evidence on entity selection — replacing the previous unreadable node graph. Gracefully degrades for drafts (no PDF locate / page refs / judgments)."
+      }
+    },
     "4_12_0": {
       "title": "Deep check: cross-section rules + knowledge graph",
       "summary": "Defect checking gains a 'deep check (knowledge graph)'. It combines the whole draft into one graph and, on top of the single-section rules, runs cross-section rules (REL-04/08/12) — catching mismatches like 'the intro frames a research question the method never addresses / the conclusion doesn't align', which a single paragraph can't reveal. It also draws the draft's concepts and relations as a pannable, zoomable knowledge graph so you can see the whole picture. Cross-section defects flow into the defect panel.",

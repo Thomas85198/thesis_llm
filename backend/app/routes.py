@@ -1000,13 +1000,11 @@ def check_draft(body: DraftCheckIn) -> dict[str, Any]:
         raise HTTPException(429, f"defect check rate limit reached, retry in ~{wait}s")
     try:
         if body.full:
-            defects = draft_check_mod.check_draft_full(
-                sections, body.doc_id, body.locale
-            )
-        else:
-            defects = draft_check_mod.check_draft_sections(
-                sections, body.doc_id, body.locale
-            )
+            # {defects, result}: result is the AnalysisResult for the KG view.
+            return draft_check_mod.check_draft_full(sections, body.doc_id, body.locale)
+        defects = draft_check_mod.check_draft_sections(
+            sections, body.doc_id, body.locale
+        )
     except Exception as exc:  # noqa: BLE001 — pipeline/LLM failure → 502
         raise HTTPException(502, f"defect check failed: {exc}") from exc
     return {"defects": defects}

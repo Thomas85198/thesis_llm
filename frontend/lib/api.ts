@@ -775,14 +775,11 @@ export async function checkDraft(
   payload: { text: string } | { sections: string[] },
   locale: string,
   signal?: AbortSignal,
-  // Whole-draft "deep" check: builds one combined graph (kept for the KG view)
-  // and adds cross-section rules (REL-04/08/12). Heavier, not per-section cached.
-  full?: boolean,
 ): Promise<DraftDefect[]> {
   const res = await fetch(`${API_BASE}/api/editor/check`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ doc_id: docId, ...payload, locale, full }),
+    body: JSON.stringify({ doc_id: docId, ...payload, locale }),
     signal,
   });
   if (res.status === 429) {
@@ -797,22 +794,32 @@ export async function checkDraft(
   return data.defects;
 }
 
-// The draft's knowledge graph (from the last full check). Nodes/edges carry the
-// Neo4j label/type + props; the KG panel renders the Entity + ER layer.
-export type DraftGraph = {
-  nodes: { id: number; labels: string[]; props: Record<string, unknown> }[];
-  edges: {
-    source: number;
-    target: number;
-    type: string;
-    props: Record<string, unknown>;
-  }[];
-};
-
-export async function getDraftGraph(docId: string): Promise<DraftGraph> {
-  return get<DraftGraph>(
-    `/api/editor/documents/${encodeURIComponent(docId)}/graph`,
-  );
+// Deep check: whole-draft graph + cross-section rules. Returns the editor-shaped
+// defects (for the defect panel) AND the full AnalysisResult, so the editor can
+// render the SAME rich KGFlow knowledge-graph view as the paper-analysis page.
+export async function deepCheckDraft(
+  docId: string,
+  sections: string[],
+  locale: string,
+  signal?: AbortSignal,
+): Promise<{ defects: DraftDefect[]; result: AnalysisResult | null }> {
+  const res = await fetch(`${API_BASE}/api/editor/check`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ doc_id: docId, sections, locale, full: true }),
+    signal,
+  });
+  if (res.status === 429) {
+    const t = await res.text();
+    const m = t.match(/~(\d+)s/);
+    throw new ChatRateLimitError(t, m ? Number(m[1]) : 30);
+  }
+  if (!res.ok)
+    throw new Error(`deepCheckDraft failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as {
+    defects: DraftDefect[];
+    result: AnalysisResult | null;
+  };
 }
 
 // ---------- editor mode: image upload ----------

@@ -91,12 +91,12 @@ import { Button } from "@/components/ui/button";
 import {
   ChatRateLimitError,
   checkDraft,
-  getDraftGraph,
+  deepCheckDraft,
   relinkCitations,
   streamAutocomplete,
   uploadImage,
   verifyCitation,
-  type DraftGraph,
+  type AnalysisResult,
   type EditorDoc,
   type ProseMirrorDoc,
 } from "@/lib/api";
@@ -538,7 +538,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   // rules (REL-04/08/12) → cross-section defects land in the defect panel, and
   // the concept graph shows in the KG panel. Heavier (not per-section cached).
   const openKG = useEditorStore((s) => s.openKG);
-  const [kgGraph, setKgGraph] = useState<DraftGraph | null>(null);
+  const [kgResult, setKgResult] = useState<AnalysisResult | null>(null);
   const [kgLoading, setKgLoading] = useState(false);
   const [kgSummary, setKgSummary] = useState<{
     total: number;
@@ -557,12 +557,10 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     openKG();
     setKgLoading(true);
     try {
-      const defects = await checkDraft(
+      const { defects, result } = await deepCheckDraft(
         doc.doc_id,
-        { sections },
+        sections,
         locale,
-        undefined,
-        true,
       );
       setDefects(defects);
       ed.commands.setDefectHighlights(
@@ -574,7 +572,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
         ["REL-04", "REL-08", "REL-12"].includes(d.rule_id),
       ).length;
       setKgSummary({ total: defects.length, cross });
-      setKgGraph(await getDraftGraph(doc.doc_id));
+      setKgResult(result);
     } catch (e) {
       if (e instanceof ChatRateLimitError)
         toast.error(t("defect.rateLimited", { seconds: e.retryAfter }));
@@ -1310,7 +1308,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       <ShortcutsHelp />
       <DefectPanel editor={editor} onCancel={cancelCheck} />
       <KGCheckPanel
-        graph={kgGraph}
+        result={kgResult}
         loading={kgLoading}
         summary={kgSummary}
         onRerun={handleDeepCheck}

@@ -19,6 +19,7 @@ import uuid
 from typing import Any
 
 from . import db, i18n, kg, pipeline, rules
+from .schemas import AnalysisResult
 
 # Rules meaningful on a draft fragment (exclude whole-paper REL-04/08/12).
 SINGLE_SECTION_RULES = {
@@ -118,16 +119,19 @@ MAX_FULL_CHARS = 40000
 
 def check_draft_full(
     sections: list[str], doc_id: str, locale: str | None
-) -> list[dict[str, Any]]:
-    """Whole-draft check: build ONE combined graph (kept under a stable id for
-    visualization) and run single-section + cross-section rules (REL-04/08/12).
-    Heavier than the cached per-section path — used on demand for the deep /
-    knowledge-graph check. Cross-section is best-effort (skipped if the model is
-    unavailable)."""
+) -> dict[str, Any]:
+    """Whole-draft check: build ONE combined graph and run single-section +
+    cross-section rules (REL-04/08/12). Heavier than the cached per-section path
+    — used on demand for the deep / knowledge-graph check. Cross-section is
+    best-effort (skipped if the model is unavailable).
+
+    Returns both the editor-shaped defect dicts (for the defect panel) and the
+    full AnalysisResult (for the KGFlow knowledge-graph view), so the editor
+    renders the SAME rich graph UI as the paper-analysis page."""
     loc = i18n.normalize_locale(locale)
     text = "\n\n".join(s.strip() for s in sections if (s or "").strip())
     if not text:
-        return []
+        return {"defects": [], "result": None}
     paper_id = draft_paper_id(doc_id)
     kg.clear_paper(paper_id)  # replace the previous draft graph
     spans = pipeline.extract_spans_from_bytes(
@@ -136,14 +140,21 @@ def check_draft_full(
     graph = pipeline.build_paper_graph(spans, title="", paper_id=paper_id)
     kg.write_graph(graph)  # kept (not cleared) for the KG viz
     edu_text = {e.id: e.text for e in graph.edus}
-    defects, _meta = rules.check_all_rules(paper_id)
+    defects, rule_meta = rules.check_all_rules(paper_id)
     if graph.edus:
         try:
-            cs_defects, _cs_meta = rules.cross_section_pass(paper_id, "", graph.edus)
+            cs_defects, cs_meta = rules.cross_section_pass(paper_id, "", graph.edus)
             defects.extend(cs_defects)
+            rule_meta.append(cs_meta)
         except Exception:  # noqa: BLE001 — model unavailable → skip cross-section
             pass
-    return [_format_defect(d, loc, edu_text) for d in defects]
+    result = AnalysisResult(
+        paper_id=paper_id, graph=graph, defects=defects, rule_meta=rule_meta
+    )
+    return {
+        "defects": [_format_defect(d, loc, edu_text) for d in defects],
+        "result": result.model_dump(),
+    }
 
 
 def check_draft_sections(

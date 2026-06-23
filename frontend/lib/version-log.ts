@@ -38,6 +38,13 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.12.1",
+    date: "2026-06-23",
+    changes: [
+      { type: "fix" }, // 知識圖譜改用與論文分析一致的介面（依 section 分組實體 chip／type 篩選／選實體看 1-hop 關係），取代難讀的 node 圖；草稿無 PDF 時優雅降級
+    ],
+  },
+  {
     version: "4.12.0",
     date: "2026-06-23",
     changes: [

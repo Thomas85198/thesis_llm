@@ -26,12 +26,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { layoutDagre } from "@/lib/kg-layout";
 import { cn } from "@/lib/utils";
 import {
@@ -75,7 +70,7 @@ const PdfViewer = nextDynamic(
   {
     ssr: false,
     loading: () => <Skeleton className="h-full w-full" />,
-  }
+  },
 );
 
 type PdfHighlight = {
@@ -132,7 +127,8 @@ const SEVERITY_BORDER: Record<Severity, string> = {
 };
 const SEVERITY_BADGE: Record<Severity, string> = {
   high: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
-  medium: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
+  medium:
+    "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
   low: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300",
 };
 const SEVERITY_RANK: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
@@ -184,32 +180,39 @@ function useResizableAside() {
   const [width, setWidth] = useState(ASIDE_DEFAULT);
   const dragging = useRef(false);
 
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    dragging.current = true;
-    const startX = e.clientX;
-    const startW = width;
-    const onMove = (ev: MouseEvent) => {
-      if (!dragging.current) return;
-      // Handle sits on the aside's LEFT edge → dragging left widens it.
-      const next = startW + (startX - ev.clientX);
-      setWidth(Math.min(ASIDE_MAX, Math.max(ASIDE_MIN, next)));
-    };
-    const onUp = () => {
-      dragging.current = false;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      document.body.style.userSelect = "";
-    };
-    document.body.style.userSelect = "none";
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [width]);
+  const onMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      dragging.current = true;
+      const startX = e.clientX;
+      const startW = width;
+      const onMove = (ev: MouseEvent) => {
+        if (!dragging.current) return;
+        // Handle sits on the aside's LEFT edge → dragging left widens it.
+        const next = startW + (startX - ev.clientX);
+        setWidth(Math.min(ASIDE_MAX, Math.max(ASIDE_MIN, next)));
+      };
+      const onUp = () => {
+        dragging.current = false;
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        document.body.style.userSelect = "";
+      };
+      document.body.style.userSelect = "none";
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [width],
+  );
 
   return { width, onMouseDown };
 }
 
-function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
+function ResizeHandle({
+  onMouseDown,
+}: {
+  onMouseDown: (e: React.MouseEvent) => void;
+}) {
   return (
     <div
       role="separator"
@@ -248,7 +251,7 @@ function SortControl<T extends string>({
               "px-2 py-0.5 text-[11px] transition",
               value === opt.value
                 ? "bg-muted font-medium"
-                : "text-muted-foreground hover:bg-muted"
+                : "text-muted-foreground hover:bg-muted",
             )}
           >
             {opt.label}
@@ -350,11 +353,12 @@ function analyzeEntities(result: AnalysisResult): EntityModel {
   // earliest EDU (in document order) whose text mentions the entity name. This
   // is a heuristic for grouping only — relation-evidenced sections take priority.
   const unassigned = result.graph.entities.filter(
-    (e) => !best.has(e.id) && e.name.length >= 3
+    (e) => !best.has(e.id) && e.name.length >= 3,
   );
   if (unassigned.length > 0) {
     const edusInOrder = [...result.graph.edus].sort(
-      (a, b) => sectionRank(a.section) - sectionRank(b.section) || a.order - b.order
+      (a, b) =>
+        sectionRank(a.section) - sectionRank(b.section) || a.order - b.order,
     );
     const lowered = edusInOrder.map((e) => ({
       section: e.section,
@@ -384,7 +388,7 @@ function analyzeEntities(result: AnalysisResult): EntityModel {
         if (seen.has(k)) return false;
         seen.add(k);
         return true;
-      })
+      }),
     );
   }
 
@@ -425,7 +429,7 @@ function analyzeEntities(result: AnalysisResult): EntityModel {
     .concat(
       [...counts.keys()]
         .filter((t) => !(t in ENTITY_COLORS))
-        .map((t) => ({ type: t, count: counts.get(t)! }))
+        .map((t) => ({ type: t, count: counts.get(t)! })),
     );
 
   return { groups, relationsById, sectionById, typeCounts };
@@ -479,7 +483,12 @@ function EgoGraph({
       ranksep: 90,
     });
 
-    const mkNode = (id: string, name: string, type: string, center: boolean): Node => {
+    const mkNode = (
+      id: string,
+      name: string,
+      type: string,
+      center: boolean,
+    ): Node => {
       const pos = layout.get(id) ?? { x: 0, y: 0, w: NODE_W, h: NODE_H };
       const c = entityColor(type);
       return {
@@ -489,7 +498,10 @@ function EgoGraph({
           // span carries the full name as a native tooltip; the node's own
           // ellipsis styling still truncates the visible text.
           label: (
-            <span title={name} className="block overflow-hidden text-ellipsis whitespace-nowrap">
+            <span
+              title={name}
+              className="block overflow-hidden text-ellipsis whitespace-nowrap"
+            >
               {name}
             </span>
           ),
@@ -521,7 +533,12 @@ function EgoGraph({
     const nodes: Node[] = [
       mkNode(centerId, centerName, centerType, true),
       ...[...neighborName.keys()].map((id) =>
-        mkNode(id, neighborName.get(id) ?? id, neighborType.get(id) ?? "Other", false)
+        mkNode(
+          id,
+          neighborName.get(id) ?? id,
+          neighborType.get(id) ?? "Other",
+          false,
+        ),
       ),
     ];
 
@@ -580,9 +597,11 @@ function EgoGraph({
 function EntityLayer({
   result,
   onOpenPdf,
+  noPdf = false,
 }: {
   result: AnalysisResult;
   onOpenPdf: OpenPdf;
+  noPdf?: boolean;
 }) {
   const t = useTranslations("kgFlow");
   const model = useMemo(() => analyzeEntities(result), [result]);
@@ -607,7 +626,7 @@ function EntityLayer({
         (a, b) =>
           (model.relationsById.get(b.id)?.length ?? 0) -
             (model.relationsById.get(a.id)?.length ?? 0) ||
-          a.name.localeCompare(b.name)
+          a.name.localeCompare(b.name),
       );
     return arr; // "default" keeps the model's section+order sort
   };
@@ -629,10 +648,10 @@ function EntityLayer({
     });
 
   const selected = selectedId
-    ? result.graph.entities.find((e) => e.id === selectedId) ?? null
+    ? (result.graph.entities.find((e) => e.id === selectedId) ?? null)
     : null;
   const selectedRelations = selectedId
-    ? model.relationsById.get(selectedId) ?? []
+    ? (model.relationsById.get(selectedId) ?? [])
     : [];
   const selectedSection = selectedId ? model.sectionById.get(selectedId) : null;
 
@@ -687,7 +706,7 @@ function EntityLayer({
                   "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition",
                   on
                     ? "border-foreground/40 bg-muted font-medium"
-                    : "border-transparent bg-muted/50 text-muted-foreground hover:bg-muted"
+                    : "border-transparent bg-muted/50 text-muted-foreground hover:bg-muted",
                 )}
               >
                 <span
@@ -713,8 +732,8 @@ function EntityLayer({
           {model.groups.map((g) => {
             const visible = sortEntities(
               g.entities.filter(
-                (e) => matchesType(e.type) && matchesQuery(e.name)
-              )
+                (e) => matchesType(e.type) && matchesQuery(e.name),
+              ),
             );
             // Hide groups emptied by an active filter or search.
             if ((filterActive || q) && visible.length === 0) return null;
@@ -729,7 +748,7 @@ function EntityLayer({
                     <ChevronRight
                       className={cn(
                         "h-4 w-4 text-muted-foreground transition-transform",
-                        !isCollapsed && "rotate-90"
+                        !isCollapsed && "rotate-90",
                       )}
                     />
                     {g.key === UNSECTIONED ? t("unsectioned") : g.key}
@@ -748,13 +767,11 @@ function EntityLayer({
                       return (
                         <button
                           key={e.id}
-                          onClick={() =>
-                            setSelectedId(isSel ? null : e.id)
-                          }
+                          onClick={() => setSelectedId(isSel ? null : e.id)}
                           title={`${e.name} · ${e.type}`}
                           className={cn(
                             "rounded-md border px-2 py-1 text-xs transition",
-                            isSel && "ring-2 ring-offset-1"
+                            isSel && "ring-2 ring-offset-1",
                           )}
                           style={{
                             background: `${c}1f`,
@@ -824,7 +841,9 @@ function EntityLayer({
 
             <div>
               <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {t("relations")} {selectedRelations.length > 0 && `(${selectedRelations.length})`}
+                {t("relations")}{" "}
+                {selectedRelations.length > 0 &&
+                  `(${selectedRelations.length})`}
               </p>
               {selectedRelations.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
@@ -864,7 +883,7 @@ function EntityLayer({
                           >
                             {r.evidenceText}
                           </p>
-                          {r.evidenceEduId && (
+                          {!noPdf && r.evidenceEduId && (
                             <button
                               onClick={() =>
                                 onOpenPdf([r.evidenceEduId], r.evidenceEduId)
@@ -895,8 +914,9 @@ function fruColor(fn: string): string {
 
 function topSeverity(defects: Defect[]): Severity {
   return defects.reduce<Severity>(
-    (acc, d) => (SEVERITY_RANK[d.severity] < SEVERITY_RANK[acc] ? d.severity : acc),
-    "low"
+    (acc, d) =>
+      SEVERITY_RANK[d.severity] < SEVERITY_RANK[acc] ? d.severity : acc,
+    "low",
   );
 }
 
@@ -933,12 +953,17 @@ function analyzeFrus(result: AnalysisResult): FruModel {
   const buckets = new Map<string, FruItem[]>();
   const sectionById = new Map<string, string>();
   for (const f of result.graph.fru_nodes) {
-    let best: { rank: number; order: number; section: SectionName } | null = null;
+    let best: { rank: number; order: number; section: SectionName } | null =
+      null;
     for (const id of f.edu_ids) {
       const edu = eduMap.get(id);
       if (!edu) continue;
       const rank = sectionRank(edu.section);
-      if (!best || rank < best.rank || (rank === best.rank && edu.order < best.order)) {
+      if (
+        !best ||
+        rank < best.rank ||
+        (rank === best.rank && edu.order < best.order)
+      ) {
         best = { rank, order: edu.order, section: edu.section };
       }
     }
@@ -973,7 +998,7 @@ function analyzeFrus(result: AnalysisResult): FruModel {
     .concat(
       [...counts.keys()]
         .filter((fn) => !(fn in FRU_COLORS))
-        .map((fn) => ({ fn, count: counts.get(fn)! }))
+        .map((fn) => ({ fn, count: counts.get(fn)! })),
     );
 
   // Defects touching each FRU, via edu_ids ∩ defect.evidence_edu_ids. Note this
@@ -983,7 +1008,7 @@ function analyzeFrus(result: AnalysisResult): FruModel {
   for (const f of result.graph.fru_nodes) {
     const set = new Set(f.edu_ids);
     const ds = result.defects.filter((d) =>
-      d.evidence_edu_ids.some((e) => set.has(e))
+      d.evidence_edu_ids.some((e) => set.has(e)),
     );
     if (ds.length > 0) defectsByFru.set(f.id, ds);
   }
@@ -994,9 +1019,11 @@ function analyzeFrus(result: AnalysisResult): FruModel {
 function FruLayer({
   result,
   onOpenPdf,
+  noPdf = false,
 }: {
   result: AnalysisResult;
   onOpenPdf: OpenPdf;
+  noPdf?: boolean;
 }) {
   const t = useTranslations("kgFlow");
   const locale = useLocale();
@@ -1010,7 +1037,9 @@ function FruLayer({
   const aside = useResizableAside();
 
   // Human-as-judge verdicts, shared with the result page via the same API.
+  // Drafts have no judgment workflow — skip the fetch entirely.
   useEffect(() => {
+    if (noPdf) return;
     let cancelled = false;
     fetchJudgments(result.paper_id)
       .then((items) => {
@@ -1025,7 +1054,7 @@ function FruLayer({
     return () => {
       cancelled = true;
     };
-  }, [result.paper_id]);
+  }, [result.paper_id, noPdf]);
 
   const handleJudge = useCallback(
     async (defectId: string, ruleId: string, verdict: Verdict | null) => {
@@ -1059,7 +1088,7 @@ function FruLayer({
         }
       }
     },
-    [result.paper_id, t]
+    [result.paper_id, t],
   );
 
   const filterActive = activeFns.size > 0;
@@ -1081,7 +1110,11 @@ function FruLayer({
         const da = model.defectsByFru.get(a.id)?.length ?? 0;
         const db = model.defectsByFru.get(b.id)?.length ?? 0;
         // Defective FRUs first, then by defect count, then keep document order.
-        return (db > 0 ? 1 : 0) - (da > 0 ? 1 : 0) || db - da || a.sortKey - b.sortKey;
+        return (
+          (db > 0 ? 1 : 0) - (da > 0 ? 1 : 0) ||
+          db - da ||
+          a.sortKey - b.sortKey
+        );
       });
     return arr; // "default" keeps the model's section+order sort
   };
@@ -1103,10 +1136,10 @@ function FruLayer({
     });
 
   const selected = selectedId
-    ? result.graph.fru_nodes.find((f) => f.id === selectedId) ?? null
+    ? (result.graph.fru_nodes.find((f) => f.id === selectedId) ?? null)
     : null;
   const selectedDefects = selectedId
-    ? model.defectsByFru.get(selectedId) ?? []
+    ? (model.defectsByFru.get(selectedId) ?? [])
     : [];
   const selectedSection = selectedId ? model.sectionById.get(selectedId) : null;
   const selectedEdus = selected
@@ -1168,7 +1201,7 @@ function FruLayer({
                   "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition",
                   on
                     ? "border-foreground/40 bg-muted font-medium"
-                    : "border-transparent bg-muted/50 text-muted-foreground hover:bg-muted"
+                    : "border-transparent bg-muted/50 text-muted-foreground hover:bg-muted",
                 )}
               >
                 <span
@@ -1193,7 +1226,7 @@ function FruLayer({
         <div className="space-y-2">
           {model.groups.map((g) => {
             const visible = sortFrus(
-              g.frus.filter((f) => matchesFn(f.function) && matchesQuery(f))
+              g.frus.filter((f) => matchesFn(f.function) && matchesQuery(f)),
             );
             // Hide groups emptied by an active filter or search.
             if ((filterActive || q) && visible.length === 0) return null;
@@ -1208,7 +1241,7 @@ function FruLayer({
                     <ChevronRight
                       className={cn(
                         "h-4 w-4 text-muted-foreground transition-transform",
-                        !isCollapsed && "rotate-90"
+                        !isCollapsed && "rotate-90",
                       )}
                     />
                     {g.key === UNSECTIONED ? t("unsectioned") : g.key}
@@ -1231,7 +1264,7 @@ function FruLayer({
                           onClick={() => setSelectedId(isSel ? null : f.id)}
                           className={cn(
                             "flex w-full flex-col items-start gap-1 rounded-md border px-2 py-1.5 text-left transition",
-                            isSel && "ring-2 ring-offset-1"
+                            isSel && "ring-2 ring-offset-1",
                           )}
                           style={{
                             borderColor: c,
@@ -1251,7 +1284,7 @@ function FruLayer({
                               <span
                                 className={cn(
                                   "ml-auto rounded px-1 py-0.5 text-[10px] font-medium",
-                                  SEVERITY_BADGE[topSeverity(ds)]
+                                  SEVERITY_BADGE[topSeverity(ds)],
                                 )}
                               >
                                 {t("defectCount", { count: ds.length })}
@@ -1304,7 +1337,9 @@ function FruLayer({
                   ? selectedSection
                   : t("unsectioned")}
                 {` · ${t("coversSegments", { count: selected.edu_ids.length })}`}
-                {selectedPage > 0 ? ` · ${t("page", { page: selectedPage })}` : ""}
+                {!noPdf && selectedPage > 0
+                  ? ` · ${t("page", { page: selectedPage })}`
+                  : ""}
               </p>
             </div>
 
@@ -1322,13 +1357,15 @@ function FruLayer({
                     <p className="flex-1 text-[11px] italic leading-relaxed text-muted-foreground">
                       「{e.text.trim()}」
                     </p>
-                    <button
-                      onClick={() => onOpenPdf(selected.edu_ids, e.id)}
-                      title={t("locateInPdf")}
-                      className="mt-0.5 shrink-0 text-muted-foreground transition hover:text-foreground"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                    </button>
+                    {!noPdf && (
+                      <button
+                        onClick={() => onOpenPdf(selected.edu_ids, e.id)}
+                        title={t("locateInPdf")}
+                        className="mt-0.5 shrink-0 text-muted-foreground transition hover:text-foreground"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1350,14 +1387,14 @@ function FruLayer({
                       key={d.id}
                       className={cn(
                         "rounded-md border border-l-2 bg-background px-2 py-1.5",
-                        SEVERITY_BORDER[d.severity]
+                        SEVERITY_BORDER[d.severity],
                       )}
                     >
                       <div className="flex items-center gap-1.5">
                         <span
                           className={cn(
                             "rounded px-1 py-0.5 text-[10px] font-medium",
-                            SEVERITY_BADGE[d.severity]
+                            SEVERITY_BADGE[d.severity],
                           )}
                         >
                           {t(`sev.${d.severity}`)}
@@ -1378,7 +1415,12 @@ function FruLayer({
                           {pickLocalized(d.suggestion, locale)}
                         </p>
                       )}
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2">
+                      <div
+                        className={cn(
+                          "mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2",
+                          noPdf && "hidden",
+                        )}
+                      >
                         {VERDICT_OPTIONS.map((opt) => {
                           const isActive = judgments.get(d.id) === opt.value;
                           const label = t(`verdict.${opt.value}`);
@@ -1390,7 +1432,7 @@ function FruLayer({
                                 handleJudge(
                                   d.id,
                                   d.rule_id,
-                                  isActive ? null : opt.value
+                                  isActive ? null : opt.value,
                                 )
                               }
                               title={
@@ -1402,7 +1444,7 @@ function FruLayer({
                                 "rounded px-2 py-0.5 text-[11px] font-medium transition-all hover:opacity-90",
                                 isActive
                                   ? opt.active
-                                  : "bg-muted text-muted-foreground"
+                                  : "bg-muted text-muted-foreground",
                               )}
                             >
                               {label}
@@ -1422,14 +1464,22 @@ function FruLayer({
   );
 }
 
-export function KGFlow({ result }: { result: AnalysisResult }) {
+export function KGFlow({
+  result,
+  noPdf = false,
+}: {
+  result: AnalysisResult;
+  // Draft mode: there's no source PDF (or human-as-judge), so hide locate-in-PDF
+  // buttons, page references and the judgment UI — everything else is identical.
+  noPdf?: boolean;
+}) {
   const t = useTranslations("kgFlow");
   const [layer, setLayer] = useState<"entity" | "fru">("entity");
   const [pdf, setPdf] = useState<PdfPreview | null>(null);
 
   const eduMap = useMemo(
     () => new Map(result.graph.edus.map((e) => [e.id, e])),
-    [result]
+    [result],
   );
 
   const openPdf = useCallback<OpenPdf>(
@@ -1451,7 +1501,7 @@ export function KGFlow({ result }: { result: AnalysisResult }) {
         page: focus?.page ?? 0,
       });
     },
-    [eduMap]
+    [eduMap],
   );
 
   const stats = {
@@ -1465,13 +1515,22 @@ export function KGFlow({ result }: { result: AnalysisResult }) {
   return (
     <div className="flex h-[calc(100vh-9rem)] flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Tabs value={layer} onValueChange={(v) => setLayer(v as "entity" | "fru")}>
+        <Tabs
+          value={layer}
+          onValueChange={(v) => setLayer(v as "entity" | "fru")}
+        >
           <TabsList>
             <TabsTrigger value="entity">
-              {t("entityLayer")} <Badge variant="secondary" className="ml-1.5">{stats.entity}</Badge>
+              {t("entityLayer")}{" "}
+              <Badge variant="secondary" className="ml-1.5">
+                {stats.entity}
+              </Badge>
             </TabsTrigger>
             <TabsTrigger value="fru">
-              {t("fruLayer")} <Badge variant="secondary" className="ml-1.5">{stats.fru}</Badge>
+              {t("fruLayer")}{" "}
+              <Badge variant="secondary" className="ml-1.5">
+                {stats.fru}
+              </Badge>
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -1482,12 +1541,16 @@ export function KGFlow({ result }: { result: AnalysisResult }) {
 
       <Card className="flex-1 overflow-hidden p-0">
         <CardContent className="h-full p-0">
-          <Tabs value={layer} onValueChange={(v) => setLayer(v as "entity" | "fru")} className="h-full">
+          <Tabs
+            value={layer}
+            onValueChange={(v) => setLayer(v as "entity" | "fru")}
+            className="h-full"
+          >
             <TabsContent value="entity" className="h-full m-0">
-              <EntityLayer result={result} onOpenPdf={openPdf} />
+              <EntityLayer result={result} onOpenPdf={openPdf} noPdf={noPdf} />
             </TabsContent>
             <TabsContent value="fru" className="h-full m-0">
-              <FruLayer result={result} onOpenPdf={openPdf} />
+              <FruLayer result={result} onOpenPdf={openPdf} noPdf={noPdf} />
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -1503,7 +1566,10 @@ export function KGFlow({ result }: { result: AnalysisResult }) {
             <SheetDescription>
               {pdf
                 ? pdf.section
-                  ? t("sectionPage", { section: pdf.section, page: pdf.page + 1 })
+                  ? t("sectionPage", {
+                      section: pdf.section,
+                      page: pdf.page + 1,
+                    })
                   : t("pageOnly", { page: pdf.page + 1 })
                 : ""}
             </SheetDescription>

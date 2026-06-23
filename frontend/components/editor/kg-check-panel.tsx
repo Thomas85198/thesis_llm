@@ -1,13 +1,15 @@
 "use client";
 // Knowledge-graph / deep-check panel. Opening it runs the whole-draft "full"
-// check (combined graph + cross-section rules) in the editor; this panel shows
-// the resulting concept graph. Cross-section defects flow to the defect panel.
-import nextDynamic from "next/dynamic";
+// check (combined graph + cross-section rules); this panel renders the SAME rich
+// KGFlow view as the paper-analysis page (section-grouped entities, ego graph,
+// relations) — minus the PDF/judgment bits a draft doesn't have. Cross-section
+// defects flow to the defect panel.
 import { Loader2, Network, RotateCw } from "lucide-react";
 import { useTranslations } from "next-intl";
 
-import type { DraftGraph } from "@/lib/api";
+import type { AnalysisResult } from "@/lib/api";
 import { useEditorStore } from "@/lib/editor-store";
+import { KGFlowLoader } from "@/components/kg-flow-loader";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -17,18 +19,13 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 
-// React Flow is client-only; load it lazily so it never runs during SSR.
-const KGGraph = nextDynamic(() => import("@/components/editor/kg-graph"), {
-  ssr: false,
-});
-
 export function KGCheckPanel({
-  graph,
+  result,
   loading,
   summary,
   onRerun,
 }: {
-  graph: DraftGraph | null;
+  result: AnalysisResult | null;
   loading: boolean;
   summary: { total: number; cross: number } | null;
   onRerun: () => void;
@@ -48,7 +45,10 @@ export function KGCheckPanel({
       <SheetContent
         side="right"
         overlay={false}
-        className="flex w-full flex-col gap-0 sm:max-w-2xl"
+        // KGFlow is a two-pane layout (entity list + ego-graph aside); it needs
+        // real width. Use the same data-side override the PDF sheet uses so it
+        // beats the base `data-[side=right]:sm:max-w-sm`.
+        className="flex w-full flex-col gap-0 data-[side=right]:w-[94vw] data-[side=right]:sm:max-w-[1000px]"
       >
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
@@ -61,10 +61,7 @@ export function KGCheckPanel({
         <div className="flex items-center justify-between gap-2 px-4 pb-2">
           <div className="text-xs text-muted-foreground">
             {summary && !loading
-              ? t("kg.summary", {
-                  total: summary.total,
-                  cross: summary.cross,
-                })
+              ? t("kg.summary", { total: summary.total, cross: summary.cross })
               : null}
             {summary && summary.total > 0 && !loading && (
               <button
@@ -89,14 +86,14 @@ export function KGCheckPanel({
           </Button>
         </div>
 
-        <div className="min-h-0 flex-1 border-t">
+        <div className="min-h-0 flex-1 overflow-auto border-t px-3 pt-2">
           {loading ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
               {t("kg.building")}
             </div>
-          ) : graph ? (
-            <KGGraph graph={graph} />
+          ) : result ? (
+            <KGFlowLoader result={result} noPdf />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               {t("kg.empty")}

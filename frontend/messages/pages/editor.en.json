@@ -388,7 +388,7 @@
     "clearGoal": "Clear"
   },
   "focus": {
-    "enter": "Focus mode",
+    "enter": "Focus mode (no autocomplete)",
     "exit": "Exit focus (Esc)"
   }
 }

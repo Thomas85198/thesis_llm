@@ -531,12 +531,18 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     if (!focusMode) return;
     // Hide the site header too (CSS targets body.editor-focus) for full immersion.
     document.body.classList.add("editor-focus");
+    // Pure self-writing: turn off autocomplete on enter, restore on exit. The
+    // select-to-rewrite/cite bubble menu is unaffected (it ignores aiMode), so
+    // AI is still available on demand — it just stops interrupting.
+    const prevAi = aiModeRef.current;
+    setAiMode("off");
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setFocusMode(false);
     };
     window.addEventListener("keydown", onKey);
     return () => {
       document.body.classList.remove("editor-focus");
+      setAiMode(prevAi);
       window.removeEventListener("keydown", onKey);
     };
   }, [focusMode]);

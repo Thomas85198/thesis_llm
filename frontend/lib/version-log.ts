@@ -38,6 +38,13 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.13.1",
+    date: "2026-06-23",
+    changes: [
+      { type: "fix" }, // 三格式一致性：DOCX 章節標題補上編號（1.1 置中／1.1.1 靠左、每章重置），對齊 LaTeX/PDF（原本 DOCX 的 h2/h3 完全沒編號）
+    ],
+  },
+  {
     version: "4.13.0",
     date: "2026-06-23",
     changes: [

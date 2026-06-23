@@ -522,10 +522,12 @@ def _render_block_docx(
             # Each chapter starts on a new page (mirrors LaTeX \chapter).
             page_break = tw and level == 1
         if numbered_chapter:
-            # New chapter: 「第N章　標題」, centered; reset figure/table counters.
+            # New chapter: 「第N章　標題」, centered; reset figure/table/section counters.
             ctx["chapter"] = ctx.get("chapter", 0) + 1
             ctx["fig"] = 0
             ctx["tab"] = 0
+            ctx["sec"] = 0
+            ctx["subsec"] = 0
             p = docx.add_heading("", level=1)
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             p.add_run(f"第{_cjk_num(ctx['chapter'])}章　")
@@ -534,6 +536,23 @@ def _render_block_docx(
             # Unnumbered chapter (參考文獻/附錄/誌謝…): centered, no 第N章.
             p = docx.add_heading("", level=1)
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _add_inline_docx(p, _children(block), style, order)
+        elif tw and level in (2, 3):
+            # Number sections to match the LaTeX/PDF: h2→\section (1.1, ctex
+            # centers it), h3→\subsection (1.1.1, flush left). Without this the
+            # DOCX showed bare unnumbered headings while the PDF was numbered.
+            chap = ctx.get("chapter", 0)
+            if level == 2:
+                ctx["sec"] = ctx.get("sec", 0) + 1
+                ctx["subsec"] = 0
+                num = f"{chap}.{ctx['sec']}"
+            else:
+                ctx["subsec"] = ctx.get("subsec", 0) + 1
+                num = f"{chap}.{ctx.get('sec', 0)}.{ctx['subsec']}"
+            p = docx.add_heading("", level=level)
+            if level == 2:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.add_run(f"{num}　")
             _add_inline_docx(p, _children(block), style, order)
         else:
             p = docx.add_heading("", level=min(max(level, 1), 4))

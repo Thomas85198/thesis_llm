@@ -29,6 +29,13 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_13_1": {
+      "title": "Three-format consistency: numbered section headings in Word",
+      "summary": "Fixes a Word (DOCX) vs LaTeX/PDF mismatch: the PDF numbered sub-section headings (1.1, 1.1.1) but the Word export left them unnumbered. Word now numbers them too — level 2 as 1.1 (centered) and level 3 as 1.1.1 (left), restarting at N.1 each chapter, exactly matching the PDF.",
+      "changes": {
+        "0": "Word export now numbers section headings to match LaTeX/PDF: h2→1.1 (centered), h3→1.1.1 (left), reset per chapter. Previously Word's h2/h3 were unnumbered, inconsistent with the PDF."
+      }
+    },
     "4_13_0": {
       "title": "Citation search language preference + relink folded into the panel",
       "summary": "Citation search gains a Language toggle (All / English / Chinese). The default 'All' interleaves Chinese journals with English literature so famous, highly-cited English papers are no longer crowded out by low-citation Chinese journal hits — more representative results. Switch to 'English' for the well-cited classics only, or 'Chinese' to put Chinese journals first. The 'Auto-link references' action also moves from the toolbar into the citation panel, so all citation features live in one place and the toolbar is cleaner.",

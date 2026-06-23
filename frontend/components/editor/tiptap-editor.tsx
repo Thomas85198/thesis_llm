@@ -27,6 +27,7 @@ import {
   Images,
   History,
   Italic,
+  Keyboard,
   Link2,
   List,
   ListOrdered,
@@ -36,6 +37,7 @@ import {
   Pilcrow,
   Quote,
   Redo2,
+  Replace,
   Search,
   ShieldAlert,
   Sigma,
@@ -64,9 +66,13 @@ import { ReferenceList } from "@/components/editor/reference-list-extension";
 import { TableOfContents } from "@/components/editor/toc-extension";
 import { MathBlock, MathInline } from "@/components/editor/math-extension";
 import { ConflictBanner } from "@/components/editor/conflict-banner";
+import { FindReplaceBar } from "@/components/editor/find-replace-bar";
 import { OutlinePanel } from "@/components/editor/outline-panel";
+import { SearchReplace } from "@/components/editor/search-replace-extension";
 import { RewritePanel } from "@/components/editor/rewrite-panel";
+import { ShortcutsHelp } from "@/components/editor/shortcuts-help";
 import { VersionHistoryPanel } from "@/components/editor/version-history";
+import { WordCount } from "@/components/editor/word-count";
 import {
   TableBlock,
   TableCaption,
@@ -240,6 +246,8 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
   const openOutline = useEditorStore((s) => s.openOutline);
   const openExport = useEditorStore((s) => s.openExport);
   const openVersions = useEditorStore((s) => s.openVersions);
+  const openShortcuts = useEditorStore((s) => s.openShortcuts);
+  const openFind = useEditorStore((s) => s.openFind);
   const openDefects = useEditorStore((s) => s.openDefects);
   const setDefects = useEditorStore((s) => s.setDefects);
   const setDefectLoading = useEditorStore((s) => s.setDefectLoading);
@@ -690,6 +698,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       // the ref-access heuristic misfires on the image item's file picker.
       // eslint-disable-next-line react-hooks/refs
       SlashCommand.configure({ items: slashItems }),
+      SearchReplace,
     ],
     content: doc.content_json,
     immediatelyRender: false,
@@ -699,13 +708,17 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
         "aria-label": t("editorAria"),
       },
       // ⌘/Ctrl+J manually requests a ghost-text suggestion (Jenni-style).
+      // ⌘/Ctrl+F opens the in-editor Find & Replace bar (not the browser's).
       handleKeyDown: (_view, event) => {
-        if (
-          event.key.toLowerCase() === "j" &&
-          (event.metaKey || event.ctrlKey)
-        ) {
+        const mod = event.metaKey || event.ctrlKey;
+        if (event.key.toLowerCase() === "j" && mod) {
           event.preventDefault();
           manualTriggerRef.current();
+          return true;
+        }
+        if (event.key.toLowerCase() === "f" && mod && !event.shiftKey) {
+          event.preventDefault();
+          useEditorStore.getState().openFind();
           return true;
         }
         return false;
@@ -820,7 +833,8 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       </aside>
 
       {/* Editor column */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col">
+        <FindReplaceBar editor={editor} />
         <ConflictBanner editor={editor} docId={doc.doc_id} />
         {/* Title + save status */}
         <div className="mb-4 flex items-center gap-3">
@@ -831,6 +845,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
             className="min-w-0 flex-1 bg-transparent text-2xl font-semibold outline-none placeholder:text-muted-foreground/50"
             aria-label={t("titleAria")}
           />
+          <WordCount editor={editor} />
           <SaveBadge state={saveState} />
         </div>
 
@@ -972,6 +987,12 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           <ToolbarButton label={t("defect.find")} onClick={handleCheckDefects}>
             <ShieldAlert className="h-4 w-4" />
           </ToolbarButton>
+          <ToolbarButton label={t("find.title")} onClick={openFind}>
+            <Replace className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton label={t("shortcuts.title")} onClick={openShortcuts}>
+            <Keyboard className="h-4 w-4" />
+          </ToolbarButton>
           <div className="mx-1 h-5 w-px bg-border" />
           <Button
             type="button"
@@ -1080,6 +1101,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       <OutlinePanel editor={editor} docId={doc.doc_id} />
       <ExportPanel editor={editor} />
       <VersionHistoryPanel editor={editor} docId={doc.doc_id} />
+      <ShortcutsHelp />
       <DefectPanel editor={editor} />
       <SlashMenu />
       <input

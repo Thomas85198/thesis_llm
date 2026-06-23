@@ -29,6 +29,15 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_9_0": {
+      "title": "Writing experience: Find & Replace, live word count, shortcuts help",
+      "summary": "Three writing-experience essentials land. ① Find & Replace (⌘F or toolbar) — live-highlights every match, marks the current one, shows position/total, toggles case sensitivity, jumps prev/next, and replaces the current match or all. ② The status row shows live character and word counts (correct on open, no typing needed). ③ A keyboard-shortcuts cheat sheet listing common shortcuts, with the modifier key shown per platform (⌘ vs Ctrl).",
+      "changes": {
+        "0": "Find & Replace: open with ⌘/Ctrl+F or the toolbar; typing a term highlights all matches live and marks the current one, shows '1/3' position and total, toggles case sensitivity, jumps prev/next (scrolling into view), and replaces the current match or all at once.",
+        "1": "Live word count: the status row shows current character and word counts, correct the moment a document opens (no need to edit first); it updates only when the number changes, so typing stays fast.",
+        "2": "Keyboard shortcuts help: a panel grouped into Text formatting / Blocks & lists / AI writing / Editing; the modifier key shows ⌘ on macOS and Ctrl elsewhere."
+      }
+    },
     "4_8_0": {
       "title": "Safety net: never lose your draft — auto-retry, version restore, conflict guard",
       "summary": "The writing editor gains a full data-safety net. A failed autosave now retries automatically with exponential backoff until it lands, and closing the tab with unsaved changes triggers a leave confirmation. Version history is new: a snapshot is taken periodically (latest 20 kept), you can save named versions, and preview + restore any of them (the current content is backed up first, so a restore is itself undoable). For editing the same document in multiple tabs/devices, conflict detection pauses autosave and lets you Load latest (your edits are saved as a version) or Keep mine & overwrite.",

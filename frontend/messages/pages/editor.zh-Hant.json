@@ -312,5 +312,42 @@
     "reloaded": "已載入最新版本（你剛才的內容已存為版本，可在版本歷史還原）",
     "overwritten": "已用你的版本覆蓋",
     "backupLabel": "衝突備份"
+  },
+  "wordCount": {
+    "summary": "{chars, number} 字 · {words, number} 詞"
+  },
+  "shortcuts": {
+    "title": "鍵盤快捷鍵",
+    "desc": "加快寫作的常用快速鍵。",
+    "groupFormat": "文字格式",
+    "groupBlocks": "區塊與清單",
+    "groupAI": "AI 寫作",
+    "groupEdit": "編輯",
+    "bold": "粗體",
+    "italic": "斜體",
+    "code": "行內程式碼",
+    "strike": "刪除線",
+    "heading": "標題 1／2／3",
+    "orderedList": "編號清單",
+    "bulletList": "項目清單",
+    "slash": "指令選單",
+    "aiSuggest": "叫出 AI 建議",
+    "acceptGhost": "接受建議",
+    "dismiss": "取消建議",
+    "undo": "復原",
+    "redo": "重做",
+    "find": "搜尋／取代"
+  },
+  "find": {
+    "searchPlaceholder": "搜尋",
+    "replacePlaceholder": "取代為",
+    "none": "無",
+    "prev": "上一個",
+    "next": "下一個",
+    "caseSensitive": "區分大小寫",
+    "replace": "取代",
+    "replaceAll": "全部取代",
+    "close": "關閉",
+    "title": "搜尋／取代"
   }
 }

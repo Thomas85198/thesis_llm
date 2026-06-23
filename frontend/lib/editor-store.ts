@@ -104,6 +104,16 @@ type EditorStore = {
   openVersions: () => void;
   closeVersions: () => void;
 
+  // ----- Keyboard shortcuts help -----
+  shortcutsOpen: boolean;
+  openShortcuts: () => void;
+  closeShortcuts: () => void;
+
+  // ----- Find & Replace -----
+  findOpen: boolean;
+  openFind: () => void;
+  closeFind: () => void;
+
   // ----- Defect check (Thesis Critic on the draft) -----
   defectOpen: boolean;
   defectLoading: boolean;
@@ -297,6 +307,8 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         outlineOpen: false,
         exportOpen: false,
         versionsOpen: false,
+        shortcutsOpen: false,
+        findOpen: false,
         defectOpen: false,
         defects: [],
         defectLoading: false,
@@ -352,6 +364,16 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     versionsOpen: false,
     openVersions: () => set({ versionsOpen: true }),
     closeVersions: () => set({ versionsOpen: false }),
+
+    // ----- Keyboard shortcuts help -----
+    shortcutsOpen: false,
+    openShortcuts: () => set({ shortcutsOpen: true }),
+    closeShortcuts: () => set({ shortcutsOpen: false }),
+
+    // ----- Find & Replace -----
+    findOpen: false,
+    openFind: () => set({ findOpen: true }),
+    closeFind: () => set({ findOpen: false }),
 
     // ----- Defect check -----
     defectOpen: false,

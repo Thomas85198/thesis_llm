@@ -312,5 +312,42 @@
     "reloaded": "Loaded the latest version (your edits were saved as a version you can restore)",
     "overwritten": "Overwritten with your version",
     "backupLabel": "Conflict backup"
+  },
+  "wordCount": {
+    "summary": "{chars, number} chars · {words, number} words"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "desc": "Handy shortcuts to write faster.",
+    "groupFormat": "Text formatting",
+    "groupBlocks": "Blocks & lists",
+    "groupAI": "AI writing",
+    "groupEdit": "Editing",
+    "bold": "Bold",
+    "italic": "Italic",
+    "code": "Inline code",
+    "strike": "Strikethrough",
+    "heading": "Heading 1/2/3",
+    "orderedList": "Ordered list",
+    "bulletList": "Bullet list",
+    "slash": "Command menu",
+    "aiSuggest": "Request AI suggestion",
+    "acceptGhost": "Accept suggestion",
+    "dismiss": "Dismiss suggestion",
+    "undo": "Undo",
+    "redo": "Redo",
+    "find": "Find / Replace"
+  },
+  "find": {
+    "searchPlaceholder": "Find",
+    "replacePlaceholder": "Replace with",
+    "none": "none",
+    "prev": "Previous",
+    "next": "Next",
+    "caseSensitive": "Match case",
+    "replace": "Replace",
+    "replaceAll": "Replace all",
+    "close": "Close",
+    "title": "Find & Replace"
   }
 }

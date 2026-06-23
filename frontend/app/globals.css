@@ -353,6 +353,24 @@
   text-decoration-color: #f59e0b;
 }
 
+/* Find & Replace highlights */
+.search-match {
+  background: #fde68a; /* amber-200 */
+  border-radius: 2px;
+}
+.search-match-current {
+  background: #f59e0b; /* amber-500 — the active match */
+  color: #1a1a1a;
+}
+.dark .search-match {
+  background: #78350f; /* amber-900 */
+  color: #fef3c7;
+}
+.dark .search-match-current {
+  background: #d97706; /* amber-600 */
+  color: #1a1a1a;
+}
+
 /* Tables (editable grid). The caption renders above via the tableCaption node. */
 .tiptap-content table {
   border-collapse: collapse;

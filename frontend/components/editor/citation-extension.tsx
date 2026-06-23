@@ -30,6 +30,8 @@ declare module "@tiptap/core" {
       /** Refresh every chip's attrs from a fresh-by-openalexId map (rotted links
        * etc.). Returns true if any chip changed. */
       refreshCitations: (byId: Record<string, CitationAttrs>) => ReturnType;
+      /** Set the claim-support verdict on the citation at `pos` (attrs-only). */
+      setCitationVerdict: (pos: number, verdict: string | null) => ReturnType;
     };
   }
 }
@@ -58,9 +60,21 @@ function citationNumber(editor: Editor, key: string): number {
   return map.get(key) ?? map.size + 1;
 }
 
-function CitationChip({ node, editor, getPos }: NodeViewProps) {
-  const attrs = node.attrs as CitationAttrs;
+// verdict → dot color + which label key to use for the tooltip.
+const VERDICT_DOT: Record<string, { color: string; key: string }> = {
+  supports: { color: "#16a34a", key: "supports" }, // green
+  partial: { color: "#d97706", key: "partial" }, // amber
+  unsupported: { color: "#dc2626", key: "unsupported" }, // red
+};
+
+function CitationChip({ node, editor, getPos, extension }: NodeViewProps) {
+  const attrs = node.attrs as CitationAttrs & { verdict?: string | null };
   const style = useEditorStore((s) => s.citationStyle);
+  const labels = (
+    extension.options as { verdictLabels?: Record<string, string> }
+  ).verdictLabels;
+  const dot = attrs.verdict ? VERDICT_DOT[attrs.verdict] : undefined;
+  const verdictTitle = dot && labels ? labels[dot.key] : "";
   const number = isNumberedStyle(style)
     ? citationNumber(editor, citeKey(attrs))
     : 0;
@@ -85,13 +99,16 @@ function CitationChip({ node, editor, getPos }: NodeViewProps) {
       return;
     }
     const href = referenceHref(attrs);
-    if (href) window.open(href, "_blank", "noopener,noreferrer");
+    // Only open absolute links — a relative href would resolve against the app
+    // origin and navigate the editor into a 404.
+    if (/^https?:\/\//i.test(href))
+      window.open(href, "_blank", "noopener,noreferrer");
   };
   return (
     <NodeViewWrapper
       as="span"
       className={`tiptap-citation${attrs.unlinked ? " tiptap-citation-unlinked" : ""}`}
-      title={tooltip}
+      title={verdictTitle ? `${tooltip}｜${verdictTitle}` : tooltip}
       data-doi={attrs.doi}
       role="button"
       tabIndex={0}
@@ -104,6 +121,13 @@ function CitationChip({ node, editor, getPos }: NodeViewProps) {
         }
       }}
     >
+      {dot && (
+        <span
+          className="tiptap-citation-verdict"
+          style={{ background: dot.color }}
+          aria-hidden
+        />
+      )}
       {label}
     </NodeViewWrapper>
   );
@@ -115,6 +139,12 @@ export const Citation = Node.create({
   inline: true,
   atom: true,
   selectable: true,
+
+  addOptions() {
+    // Verdict tooltip labels — passed in from the editor (the NodeView lives
+    // outside the i18n provider, so it can't call useTranslations itself).
+    return { verdictLabels: {} as Record<string, string> };
+  },
 
   addAttributes() {
     return {
@@ -130,6 +160,12 @@ export const Citation = Node.create({
       kind: { default: "academic" },
       raw: { default: "" },
       narrative: { default: false },
+      // Source abstract captured at insert time, so verification doesn't need an
+      // OpenAlex round-trip (rate-limited). "" for older / unlinked chips.
+      abstract: { default: "" },
+      // Claim-support verdict from the last "verify citations" run:
+      // supports / partial / unsupported / loading / null. Drives the chip dot.
+      verdict: { default: null },
     };
   },
 
@@ -176,6 +212,18 @@ export const Citation = Node.create({
           });
           if (changed && dispatch) dispatch(tr);
           return changed;
+        },
+
+      setCitationVerdict:
+        (pos, verdict) =>
+        ({ tr, state, dispatch }) => {
+          const node = state.doc.nodeAt(pos);
+          if (!node || node.type.name !== "citation") return false;
+          if (dispatch)
+            dispatch(
+              tr.setNodeMarkup(pos, undefined, { ...node.attrs, verdict }),
+            );
+          return true;
         },
     };
   },

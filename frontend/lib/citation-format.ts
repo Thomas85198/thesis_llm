@@ -55,6 +55,11 @@ export type CitationAttrs = {
   // Narrative citation ("Author (year) argued…") — the author stays prose, so the
   // chip renders "Author (year)" instead of the parenthetical "(Author, year)".
   narrative?: boolean;
+  // Source abstract, stored at insert time so "verify citations" can run without
+  // an OpenAlex round-trip (which is rate-limited). "" for older / unlinked chips.
+  abstract?: string;
+  // Claim-support verdict from the last verify run (supports/partial/unsupported).
+  verdict?: string | null;
 };
 
 /** Stable identity for numbering/dedup: the OpenAlex id when linked, else a
@@ -66,10 +71,21 @@ export function citeKey(a: CitationAttrs): string {
   );
 }
 
+/** A DOI as an absolute URL. A bare DOI ("10.5555/…") opened via window.open
+ * would resolve *relative* to the app (→ /editor/10.5555/… → 404), so always
+ * normalize it to https://doi.org/. Already-absolute links pass through. */
+export function doiUrl(doi: string): string {
+  const d = (doi || "").trim();
+  if (!d) return "";
+  if (/^https?:\/\//i.test(d)) return d;
+  return `https://doi.org/${d.replace(/^doi:\s*/i, "")}`;
+}
+
 /** Best clickable link for a citation: prefer the resolvable source URL, then
- * the DOI. Returns "" when neither is known (older chips saved before `url`). */
+ * the DOI (normalized to an absolute https://doi.org/ link). Returns "" when
+ * neither is known (older chips saved before `url`). */
 export function referenceHref(attrs: CitationAttrs): string {
-  return attrs.url || attrs.doi || "";
+  return attrs.url || doiUrl(attrs.doi);
 }
 
 export type CitationLink = {
@@ -84,7 +100,7 @@ export function referenceLinks(attrs: CitationAttrs): CitationLink[] {
   const links: CitationLink[] = [];
   if (attrs.oaUrl) links.push({ kind: "fulltext", href: attrs.oaUrl });
   if (attrs.doi && attrs.doi !== attrs.oaUrl)
-    links.push({ kind: "doi", href: attrs.doi });
+    links.push({ kind: "doi", href: doiUrl(attrs.doi) });
   if (links.length === 0 && attrs.url)
     links.push({ kind: "source", href: attrs.url });
   return links;

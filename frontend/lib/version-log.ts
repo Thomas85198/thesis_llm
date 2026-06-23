@@ -38,6 +38,14 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.10.0",
+    date: "2026-06-23",
+    changes: [
+      { type: "feat" }, // 引用驗證紅綠燈：一鍵驗證所有引用，chip 標 🟢支持/🟡部分/🔴未支持（用插入時存下的摘要，不靠限流的 OpenAlex）
+      { type: "fix" }, // 點引用 chip 裸 DOI 導致整頁 404：連結正規化為絕對 https://doi.org/
+    ],
+  },
+  {
     version: "4.9.0",
     date: "2026-06-23",
     changes: [

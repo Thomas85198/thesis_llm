@@ -349,5 +349,14 @@
     "replaceAll": "Replace all",
     "close": "Close",
     "title": "Find & Replace"
+  },
+  "verify": {
+    "find": "Verify citations (traffic light)",
+    "none": "No citations to verify (link a source first).",
+    "done": "Verified {count} citations, {problems} need attention.",
+    "rateLimited": "Too many verifications; paused. Try again shortly.",
+    "supports": "Source supports the claim",
+    "partial": "Source partially supports",
+    "unsupported": "Source does not support the claim"
   }
 }

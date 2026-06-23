@@ -65,6 +65,7 @@ function candidateToAttrs(c: CitationCandidate): CitationAttrs {
     doi: c.doi,
     oaUrl: c.oa_url,
     url: c.url,
+    abstract: c.abstract,
   };
 }
 

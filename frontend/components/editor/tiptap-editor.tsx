@@ -25,6 +25,7 @@ import {
   Heading3,
   Image as ImageIcon,
   Images,
+  BadgeCheck,
   History,
   Italic,
   Keyboard,
@@ -91,6 +92,7 @@ import {
   relinkCitations,
   streamAutocomplete,
   uploadImage,
+  verifyCitation,
   type EditorDoc,
   type ProseMirrorDoc,
 } from "@/lib/api";
@@ -229,6 +231,18 @@ function ToolbarButton({
     >
       {children}
     </Button>
+  );
+}
+
+// The sentence a citation at `pos` supports: the text of its paragraph up to the
+// chip, trimmed to the last sentence. Used as the claim for verification.
+function claimAtPos(editor: Editor, pos: number): string {
+  const $pos = editor.state.doc.resolve(pos);
+  const paraStart = pos - $pos.parentOffset;
+  const before = editor.state.doc.textBetween(paraStart, pos, " ", " ");
+  const parts = before.split(/(?<=[。！？!?.])\s*/).filter(Boolean);
+  return (
+    (parts[parts.length - 1] || before).trim() || $pos.parent.textContent.trim()
   );
 }
 
@@ -475,6 +489,75 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     }
   }, [doc.doc_id, locale, t, openDefects, setDefects, setDefectLoading]);
 
+  // Verify every linked citation's claim support (the "traffic light"): for each
+  // chip, take the sentence it supports + the source abstract and ask the model
+  // whether it actually backs the claim, then color the chip 🟢/🟡/🔴. On-demand
+  // (LLM cost), bounded concurrency, and bails out cleanly on a rate limit.
+  const [verifyingCites, setVerifyingCites] = useState(false);
+  const handleVerifyCitations = useCallback(async () => {
+    const ed = editorRef.current;
+    if (!ed || verifyingCites) return;
+    const targets: {
+      pos: number;
+      openalexId: string;
+      title: string;
+      abstract: string;
+    }[] = [];
+    ed.state.doc.descendants((node, pos) => {
+      if (
+        node.type.name === "citation" &&
+        node.attrs.openalexId &&
+        !node.attrs.unlinked
+      ) {
+        targets.push({
+          pos,
+          openalexId: node.attrs.openalexId,
+          title: node.attrs.title || "",
+          abstract: node.attrs.abstract || "",
+        });
+      }
+    });
+    if (!targets.length) {
+      toast.info(t("verify.none"));
+      return;
+    }
+    setVerifyingCites(true);
+    let done = 0;
+    let problems = 0;
+    let stopped = false;
+    let idx = 0;
+    const worker = async () => {
+      while (idx < targets.length && !stopped) {
+        const tg = targets[idx++];
+        try {
+          const v = await verifyCitation(
+            doc.doc_id,
+            claimAtPos(ed, tg.pos),
+            tg.title,
+            tg.abstract, // stored on the chip → no OpenAlex round-trip
+            locale,
+            tg.openalexId, // fallback re-fetch if the chip predates abstract storage
+          );
+          ed.commands.setCitationVerdict(tg.pos, v.verdict);
+          if (v.verdict === "unsupported" || v.verdict === "partial")
+            problems++;
+        } catch (e) {
+          if (e instanceof ChatRateLimitError) stopped = true;
+        }
+        done++;
+      }
+    };
+    try {
+      await Promise.all(
+        Array.from({ length: Math.min(4, targets.length) }, worker),
+      );
+      if (stopped) toast.error(t("verify.rateLimited"));
+      else toast.success(t("verify.done", { count: done, problems }));
+    } finally {
+      setVerifyingCites(false);
+    }
+  }, [doc.doc_id, locale, t, verifyingCites]);
+
   // Slash menu items. `command` deletes the "/query" range, then applies the
   // block change. Memoized per locale (useEditor captures it on mount).
   const slashItems = useMemo<SlashItem[]>(
@@ -638,7 +721,13 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       // (StarterKit already provides TrailingNode, which keeps a paragraph after
       // the last block so trailing atom blocks stay escapable/deletable.)
       Autocomplete,
-      Citation,
+      Citation.configure({
+        verdictLabels: {
+          supports: t("verify.supports"),
+          partial: t("verify.partial"),
+          unsupported: t("verify.unsupported"),
+        },
+      }),
       Figure.configure({
         labels: {
           figureWord: t("figure.word"),
@@ -986,6 +1075,17 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           </ToolbarButton>
           <ToolbarButton label={t("defect.find")} onClick={handleCheckDefects}>
             <ShieldAlert className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton
+            label={t("verify.find")}
+            disabled={verifyingCites}
+            onClick={handleVerifyCitations}
+          >
+            {verifyingCites ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <BadgeCheck className="h-4 w-4" />
+            )}
           </ToolbarButton>
           <ToolbarButton label={t("find.title")} onClick={openFind}>
             <Replace className="h-4 w-4" />

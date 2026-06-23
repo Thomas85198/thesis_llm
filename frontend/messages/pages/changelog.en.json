@@ -29,6 +29,14 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_10_0": {
+      "title": "Citation traffic-light verification + fix click-to-404",
+      "summary": "A new 'verify citations' one-click check: for each linked citation it takes the sentence it backs and the source abstract, asks the model whether the abstract supports the claim, and marks the chip 🟢 supports / 🟡 partial / 🔴 unsupported (hover for details). The abstract is stored when the citation is inserted, so verification no longer needs OpenAlex (which is rate-limited). Also fixes a bug where clicking some citations navigated the whole page to a 404.",
+      "changes": {
+        "0": "Citation traffic light: the toolbar 'verify citations' button checks every linked citation — claim (the preceding sentence) vs. the source abstract, judged by the model — and marks each chip 🟢/🟡/🔴 with a tooltip, then reports how many need attention. It compares the abstract only and is an AI aid (not ground truth); a source must be linked. The abstract is stored on the chip at insert time, so verification no longer depends on the rate-limited OpenAlex.",
+        "1": "Fix: some citations (bare DOI, no URL) navigated the whole page to a 404 when clicked; citation links are now always normalized to an absolute https://doi.org/ URL and open in a new tab as expected."
+      }
+    },
     "4_9_0": {
       "title": "Writing experience: Find & Replace, live word count, shortcuts help",
       "summary": "Three writing-experience essentials land. ① Find & Replace (⌘F or toolbar) — live-highlights every match, marks the current one, shows position/total, toggles case sensitivity, jumps prev/next, and replaces the current match or all. ② The status row shows live character and word counts (correct on open, no typing needed). ③ A keyboard-shortcuts cheat sheet listing common shortcuts, with the modifier key shown per platform (⌘ vs Ctrl).",

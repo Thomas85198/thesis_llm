@@ -349,5 +349,14 @@
     "replaceAll": "全部取代",
     "close": "關閉",
     "title": "搜尋／取代"
+  },
+  "verify": {
+    "find": "驗證引用（紅綠燈）",
+    "none": "沒有可驗證的引用（需先串接來源）。",
+    "done": "已驗證 {count} 筆引用，{problems} 筆需注意。",
+    "rateLimited": "驗證太頻繁，已暫停；請稍後再試。",
+    "supports": "來源支持此論點",
+    "partial": "來源部分支持",
+    "unsupported": "來源未支持此論點"
   }
 }

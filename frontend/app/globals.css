@@ -329,6 +329,15 @@
 .tiptap-citation:hover {
   background: color-mix(in oklab, var(--primary) 15%, transparent);
 }
+/* Claim-support verdict dot on a citation chip (🟢/🟡/🔴 from "verify citations"). */
+.tiptap-citation-verdict {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 9999px;
+  margin-right: 0.25em;
+  vertical-align: middle;
+}
 /* Auto-generated bibliography: APA-style hanging indent per entry. */
 .tiptap-reference-list-ol {
   list-style: none;

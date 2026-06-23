@@ -789,8 +789,8 @@ def _docx_refs_grouped(
         for c in g:
             p = docx.add_paragraph()
             pf = p.paragraph_format
-            pf.left_indent = Cm(0.85)
-            pf.first_line_indent = Cm(-0.85)  # hanging indent
+            pf.left_indent = Pt(28)  # 2 字寬, matches the LaTeX \hangindent=2em
+            pf.first_line_indent = Pt(-28)  # hanging indent
             _apply_run_font(p.add_run(_tw_reference(c)))
 
 

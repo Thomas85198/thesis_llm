@@ -1,4 +1,5 @@
 """FastAPI routes: upload paper → analyze → fetch graph, defects, PDF, EDU detail, cost."""
+
 from __future__ import annotations
 
 import hashlib
@@ -19,6 +20,7 @@ from . import autocomplete as autocomplete_mod
 from . import chat as chat_mod
 from . import citation as citation_mod
 from . import citation_relink as citation_relink_mod
+from . import crossref as crossref_mod
 from . import claim_verifier as claim_verifier_mod
 from . import draft_check as draft_check_mod
 from . import export_doc
@@ -63,8 +65,13 @@ class DocumentCreateIn(BaseModel):
 
 class DocumentUpdateIn(BaseModel):
     """Partial patch — autosave sends content only; rename sends title only."""
+
     title: str | None = Field(None, max_length=300)
     content_json: dict[str, Any] | None = None
+    # Optimistic-concurrency token: the updated_at the client last saw. When set
+    # and the server's value has moved on (another tab/device saved), the PUT is
+    # rejected with 409 instead of silently clobbering.
+    expected_updated_at: str | None = None
 
 
 class VersionCreateIn(BaseModel):
@@ -85,22 +92,32 @@ class CitationRecommendIn(BaseModel):
     claim: str = Field(..., max_length=2000)  # the selected sentence to cite
     locale: str | None = None  # reserved; OpenAlex search is language-agnostic
     year_from: int | None = Field(None, ge=1900, le=2100)  # optional recency filter
+    # Result-language preference: "all" interleaves zh+en, "en"/"zh" bias one side.
+    lang: str = "all"
 
 
 class CitationRefreshIn(BaseModel):
     openalex_ids: list[str] = Field(..., max_length=100)  # ids of the doc's citations
 
 
+class ResolveDoiIn(BaseModel):
+    doi: str = Field(..., max_length=500)  # a DOI, or a URL/string containing one
+
+
 class CitationRelinkIn(BaseModel):
     doc_id: str
-    content_json: dict[str, Any]  # the live doc; references parsed + in-text markers linked
+    content_json: dict[
+        str, Any
+    ]  # the live doc; references parsed + in-text markers linked
 
 
 class CitationVerifyIn(BaseModel):
     doc_id: str
     claim: str = Field(..., max_length=2000)  # the sentence to support
     title: str = Field("", max_length=500)  # candidate source title (context)
-    abstract: str = Field("", max_length=8000)  # candidate abstract (already on the client)
+    abstract: str = Field(
+        "", max_length=8000
+    )  # candidate abstract (already on the client)
     openalex_id: str | None = None  # references-tab path: re-fetch abstract by id
     locale: str | None = None
 
@@ -114,8 +131,14 @@ class CitationGroundIn(BaseModel):
 
 class DraftCheckIn(BaseModel):
     doc_id: str
-    text: str = Field(..., min_length=1, max_length=20000)  # the draft to check
+    # Either a single `text` blob (legacy) or `sections` (each section's text,
+    # heading included) for incremental per-section caching. Cap each section.
+    text: str | None = Field(None, max_length=20000)
+    sections: list[str] | None = Field(None, max_length=60)
     locale: str | None = None
+    # Whole-draft "deep" check: one combined graph (kept for the KG view) +
+    # cross-section rules (REL-04/08/12). Heavier; not per-section cached.
+    full: bool = False
 
 
 class RewriteIn(BaseModel):
@@ -133,7 +156,9 @@ class OutlineIn(BaseModel):
 
 class ExportIn(BaseModel):
     title: str = Field("", max_length=300)
-    content_json: dict[str, Any]  # the live TipTap doc (sent directly to avoid DB staleness)
+    content_json: dict[
+        str, Any
+    ]  # the live TipTap doc (sent directly to avoid DB staleness)
     style: str = Field("apa", pattern="^(apa|mla|chicago|harvard|ieee|numeric)$")
     locale: str = Field("zh-Hant", pattern="^(zh-Hant|en)$")
     # "latex" bundles a .zip when figures exist; "pdf" compiles the LaTeX
@@ -141,6 +166,10 @@ class ExportIn(BaseModel):
     format: str = Field("docx", pattern="^(docx|latex|pdf|md|txt|html)$")
     # Document layout — applies to latex/pdf renders.
     template: str = Field("article", pattern="^(article|twocolumn|ieee|twthesis)$")
+    # Optional Taiwan-thesis bilingual cover page (twthesis + pdf/latex only).
+    # A flat dict of string fields (university/department/degree/title/advisor/
+    # student/date, each zh + en); when present a titlepage replaces \maketitle.
+    cover: dict[str, str] | None = None
 
 
 router = APIRouter()
@@ -169,6 +198,7 @@ def _resolve_pdf_path(pdf_path: str | None) -> Path | None:
         return None
     p = Path(pdf_path)
     return p if p.is_absolute() else UPLOAD_DIR / p
+
 
 JobStatus = Literal["queued", "extracting", "checking", "done", "error"]
 
@@ -415,6 +445,7 @@ def job_status(job_id: str) -> dict[str, Any]:
 
 # ---------- admin: upload audit trail ----------
 
+
 def _require_admin(x_admin_token: str | None = Header(default=None)) -> None:
     """Gate admin endpoints behind ADMIN_TOKEN.
 
@@ -524,14 +555,16 @@ def list_papers() -> list[dict[str, Any]]:
         display_title = (
             user_title or filename or result.get("graph", {}).get("title", "")
         )
-        items.append({
-            "paper_id": p["paper_id"],
-            "title": display_title,
-            "filename": filename,
-            "defect_count": len(result.get("defects", [])),
-            "edu_count": len(result.get("graph", {}).get("edus", [])),
-            "finished_at": p.get("finished_at"),
-        })
+        items.append(
+            {
+                "paper_id": p["paper_id"],
+                "title": display_title,
+                "filename": filename,
+                "defect_count": len(result.get("defects", [])),
+                "edu_count": len(result.get("graph", {}).get("edus", [])),
+                "finished_at": p.get("finished_at"),
+            }
+        )
     return items
 
 
@@ -614,6 +647,7 @@ def paper_cost(paper_id: str) -> dict[str, Any]:
 
 # ---------- human-as-judge evaluation ----------
 
+
 @router.get("/api/papers/{paper_id}/judgments")
 def list_judgments(paper_id: str) -> list[dict[str, Any]]:
     return db.list_judgments(paper_id)
@@ -657,6 +691,7 @@ def eval_summary() -> dict[str, Any]:
 
 # ---------- paper-scoped chat assistant ----------
 
+
 @router.post("/api/papers/{paper_id}/chat")
 def paper_chat(paper_id: str, body: ChatIn) -> dict[str, Any]:
     paper = db.get_paper(paper_id)
@@ -690,6 +725,7 @@ def paper_chat(paper_id: str, body: ChatIn) -> dict[str, Any]:
 # writing editor (/[locale]/editor): create a doc, autosave its ProseMirror
 # JSON, and keep version snapshots. No account system yet — docs are global.
 
+
 @router.post("/api/editor/documents")
 def create_document(body: DocumentCreateIn) -> dict[str, Any]:
     doc_id = f"doc:{uuid.uuid4().hex[:8]}"
@@ -716,14 +752,34 @@ def update_document(doc_id: str, body: DocumentUpdateIn) -> dict[str, Any]:
     """Autosave / rename. Sends only the changed fields (see DocumentUpdateIn)."""
     if body.title is None and body.content_json is None:
         raise HTTPException(400, "nothing to update")
-    ok = db.update_document(
-        doc_id,
-        title=body.title.strip() if body.title is not None else None,
-        content_json=body.content_json,
-    )
+    try:
+        ok = db.update_document(
+            doc_id,
+            title=body.title.strip() if body.title is not None else None,
+            content_json=body.content_json,
+            expected_updated_at=body.expected_updated_at,
+        )
+    except ValueError as e:
+        raise HTTPException(413, str(e)) from e
     if not ok:
-        raise HTTPException(404, "document not found")
-    return {"status": "ok", "doc_id": doc_id}
+        # Disambiguate "gone" from "changed elsewhere" (only the latter is
+        # possible when the client sent an expected_updated_at token).
+        current = db.get_document(doc_id)
+        if current is None:
+            raise HTTPException(404, "document not found")
+        raise HTTPException(
+            409,
+            detail={
+                "message": "document changed elsewhere",
+                "updated_at": current["updated_at"],
+            },
+        )
+    saved = db.get_document(doc_id)
+    return {
+        "status": "ok",
+        "doc_id": doc_id,
+        "updated_at": saved["updated_at"] if saved else None,
+    }
 
 
 @router.delete("/api/editor/documents/{doc_id}")
@@ -732,6 +788,13 @@ def delete_document(doc_id: str) -> dict[str, str]:
         raise HTTPException(404, "document not found")
     db.delete_document(doc_id)
     return {"status": "deleted", "doc_id": doc_id}
+
+
+@router.get("/api/editor/documents/{doc_id}/graph")
+def get_draft_graph(doc_id: str) -> dict[str, Any]:
+    """The EDU/entity/relation graph from the document's last *full* defect check
+    (kept in Neo4j under a stable draft id). Empty if no full check has run yet."""
+    return kg.fetch_graph_for_viz(draft_check_mod.draft_paper_id(doc_id))
 
 
 @router.post("/api/editor/documents/{doc_id}/versions")
@@ -756,6 +819,26 @@ def get_document_version(doc_id: str, version_id: int) -> dict[str, Any]:
     if version is None:
         raise HTTPException(404, "version not found")
     return version
+
+
+@router.post("/api/editor/documents/{doc_id}/restore/{version_id}")
+def restore_document_version(doc_id: str, version_id: int) -> dict[str, Any]:
+    """Restore a document to a past version. The current content is first saved
+    as a 'restore-backup' snapshot (so the pre-restore state stays recoverable),
+    then the version's content is written back into the document."""
+    version = db.get_document_version(doc_id, version_id)
+    if version is None:
+        raise HTTPException(404, "version not found")
+    current = db.get_document(doc_id)
+    if current is None:
+        raise HTTPException(404, "document not found")
+    db.snapshot_document(doc_id, current["content_json"], label="restore-backup")
+    db.update_document(doc_id, content_json=version["content_json"])
+    return {
+        "status": "ok",
+        "doc_id": doc_id,
+        "content_json": version["content_json"],
+    }
 
 
 @router.post("/api/editor/autocomplete")
@@ -796,15 +879,33 @@ def recommend_citations(body: CitationRecommendIn) -> dict[str, Any]:
     """
     allowed, wait = citation_mod.check_rate_limit(body.doc_id)
     if not allowed:
-        raise HTTPException(429, f"citation search rate limit reached, retry in ~{wait}s")
+        raise HTTPException(
+            429, f"citation search rate limit reached, retry in ~{wait}s"
+        )
     claim = body.claim.strip()
     if not claim:
         return {"candidates": []}
+    lang = body.lang if body.lang in ("all", "en", "zh") else "all"
     try:
-        candidates = citation_mod.recommend(claim, year_from=body.year_from)
+        candidates = citation_mod.recommend(claim, year_from=body.year_from, lang=lang)
     except citation_mod.CitationSearchError as exc:
-        raise HTTPException(502, f"OpenAlex unavailable: {exc}") from exc
+        # Both sources failed (OpenAlex primary + Crossref fallback). Keep the
+        # toast clean — drop the raw URL dump.
+        raise HTTPException(502, "引用搜尋暫時無法使用，請稍候再試。") from exc
     return {"candidates": candidates}
+
+
+@router.post("/api/editor/citations/resolve-doi")
+def resolve_doi(body: ResolveDoiIn) -> dict[str, Any]:
+    """Resolve a DOI (or a URL containing one) to citation metadata via Crossref
+    — the free, no-credit-cap manual fallback for unlinked citations."""
+    try:
+        candidate = crossref_mod.lookup_doi(body.doi)
+    except Exception as exc:  # noqa: BLE001 — network/HTTP blip
+        raise HTTPException(502, "DOI 解析服務暫時無法使用，請稍候再試。") from exc
+    if not candidate:
+        raise HTTPException(404, "找不到這個 DOI，請確認，或改用手動填寫。")
+    return {"candidate": candidate}
 
 
 @router.post("/api/editor/citations/relink")
@@ -855,7 +956,11 @@ def verify_citation(body: CitationVerifyIn) -> dict[str, Any]:
         raise HTTPException(429, f"verify rate limit reached, retry in ~{wait}s")
     try:
         return claim_verifier_mod.verify(
-            body.claim, body.title, body.abstract, body.doc_id, body.locale,
+            body.claim,
+            body.title,
+            body.abstract,
+            body.doc_id,
+            body.locale,
             openalex_id=body.openalex_id,
         )
     except Exception as exc:  # noqa: BLE001 — LLM/quota failure → 502
@@ -873,7 +978,9 @@ def ground_citation(body: CitationGroundIn) -> dict[str, Any]:
     if not allowed:
         raise HTTPException(429, f"grounding rate limit reached, retry in ~{wait}s")
     try:
-        return grounding_mod.ground(body.openalex_id, body.oa_url, body.claim, body.doc_id)
+        return grounding_mod.ground(
+            body.openalex_id, body.oa_url, body.claim, body.doc_id
+        )
     except grounding_mod.GroundingError as exc:
         raise HTTPException(502, f"grounding failed: {exc}") from exc
 
@@ -886,11 +993,21 @@ def check_draft(body: DraftCheckIn) -> dict[str, Any]:
     {defects: [{rule_id, defect_type, severity, section, description,
     suggestion, confidence, evidence}]} for the editor to render inline.
     """
+    sections = body.sections
+    if sections is None:
+        sections = [body.text] if body.text else []
+    if not any((s or "").strip() for s in sections):
+        raise HTTPException(400, "nothing to check")
     allowed, wait = draft_check_mod.check_rate_limit(body.doc_id)
     if not allowed:
         raise HTTPException(429, f"defect check rate limit reached, retry in ~{wait}s")
     try:
-        defects = draft_check_mod.check_draft(body.text, body.doc_id, body.locale)
+        if body.full:
+            # {defects, result}: result is the AnalysisResult for the KG view.
+            return draft_check_mod.check_draft_full(sections, body.doc_id, body.locale)
+        defects = draft_check_mod.check_draft_sections(
+            sections, body.doc_id, body.locale
+        )
     except Exception as exc:  # noqa: BLE001 — pipeline/LLM failure → 502
         raise HTTPException(502, f"defect check failed: {exc}") from exc
     return {"defects": defects}
@@ -965,11 +1082,17 @@ def export_document(body: ExportIn) -> Response:
     document = {"title": body.title, "content_json": body.content_json}
     refs_label = "參考文獻" if body.locale == "zh-Hant" else "References"
     if body.format == "docx":
-        data = export_doc.to_docx(document, body.style, refs_label)
-        media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        data = export_doc.to_docx(
+            document, body.style, refs_label, body.template, body.locale, body.cover
+        )
+        media = (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
         ext = "docx"
     elif body.format == "pdf":
-        tex, images = export_doc.to_latex(document, body.style, refs_label, body.template, body.locale)
+        tex, images = export_doc.to_latex(
+            document, body.style, refs_label, body.template, body.locale, body.cover
+        )
         try:
             data = latex_compile.compile_pdf(tex, images)
         except latex_compile.LatexNotInstalled as e:
@@ -979,7 +1102,9 @@ def export_document(body: ExportIn) -> Response:
         media = "application/pdf"
         ext = "pdf"
     elif body.format == "latex":
-        tex, images = export_doc.to_latex(document, body.style, refs_label, body.template, body.locale)
+        tex, images = export_doc.to_latex(
+            document, body.style, refs_label, body.template, body.locale, body.cover
+        )
         if images:
             # Bundle .tex + referenced images so the export compiles as-is.
             data = _latex_zip(tex, images)
@@ -998,7 +1123,9 @@ def export_document(body: ExportIn) -> Response:
         media = "text/plain; charset=utf-8"
         ext = "txt"
     else:  # html (for online preview / browser print-to-PDF)
-        data = export_doc.to_html(document, body.style, refs_label).encode("utf-8")
+        data = export_doc.to_html(
+            document, body.style, refs_label, body.template, body.locale, body.cover
+        ).encode("utf-8")
         media = "text/html; charset=utf-8"
         ext = "html"
     # RFC 5987 filename* carries the (possibly CJK) title; ascii filename is a fallback.

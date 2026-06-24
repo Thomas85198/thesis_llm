@@ -16,7 +16,12 @@ import {
 import type { Editor } from "@tiptap/core";
 
 type CaptionLabels = { tableWord: string };
-type TableListLabels = { tableWord: string; title: string; empty: string; untitled: string };
+type TableListLabels = {
+  tableWord: string;
+  title: string;
+  empty: string;
+  untitled: string;
+};
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -27,28 +32,45 @@ declare module "@tiptap/core" {
   }
 }
 
-/** 1-based number of the tableBlock that owns the caption at `captionPos`. */
-function tableNumberAt(editor: Editor, captionPos: number | undefined): number {
-  const order: number[] = [];
-  editor.state.doc.descendants((node, p) => {
-    if (node.type.name === "tableBlock") order.push(p);
-    return true;
+/** Caption text of a tableBlock node. */
+function tableCaptionOf(node: {
+  forEach: (
+    f: (c: { type: { name: string }; textContent: string }) => void,
+  ) => void;
+}): string {
+  let caption = "";
+  node.forEach((child) => {
+    if (child.type.name === "tableCaption") caption = child.textContent;
   });
-  // The caption is the tableBlock's first child, so block pos = captionPos - 1.
-  const idx = order.indexOf((captionPos ?? 0) - 1);
-  return idx >= 0 ? idx + 1 : order.length + 1;
+  return caption;
 }
 
-/** Every table's caption text, in document order. */
+/** 1-based number of the tableBlock that owns the caption at `captionPos`,
+ * counting only captioned tables. Returns 0 for an uncaptioned table. */
+function tableNumberAt(editor: Editor, captionPos: number | undefined): number {
+  // The caption is the tableBlock's first child, so block pos = captionPos - 1.
+  const blockPos = (captionPos ?? 0) - 1;
+  let count = 0;
+  let found = 0;
+  editor.state.doc.descendants((node, p) => {
+    if (node.type.name === "tableBlock") {
+      const captioned = !!tableCaptionOf(node).trim();
+      if (captioned) count += 1;
+      if (p === blockPos) found = captioned ? count : 0;
+    }
+    return true;
+  });
+  return found;
+}
+
+/** Captioned tables in document order (uncaptioned ones are excluded from the
+ * list of tables). */
 function collectTables(editor: Editor): { caption: string }[] {
   const out: { caption: string }[] = [];
   editor.state.doc.descendants((node) => {
     if (node.type.name === "tableBlock") {
-      let caption = "";
-      node.forEach((child) => {
-        if (child.type.name === "tableCaption") caption = child.textContent;
-      });
-      out.push({ caption });
+      const caption = tableCaptionOf(node).trim();
+      if (caption) out.push({ caption });
     }
     return true;
   });
@@ -64,9 +86,14 @@ function TableCaptionView(props: NodeViewProps) {
   });
   return (
     <NodeViewWrapper as="div" className="tiptap-table-caption mb-1 text-sm">
-      <span contentEditable={false} className="mr-1 font-medium text-foreground">
-        {labels.tableWord} {number}.
-      </span>
+      {number > 0 && (
+        <span
+          contentEditable={false}
+          className="mr-1 font-medium text-foreground"
+        >
+          {labels.tableWord} {number}.
+        </span>
+      )}
       <NodeViewContent as={"span" as "div"} className="text-muted-foreground" />
     </NodeViewWrapper>
   );
@@ -86,7 +113,11 @@ export const TableCaption = Node.create<{ labels: CaptionLabels }>({
   },
 
   renderHTML({ HTMLAttributes }) {
-    return ["figcaption", mergeAttributes(HTMLAttributes, { "data-table-caption": "" }), 0];
+    return [
+      "figcaption",
+      mergeAttributes(HTMLAttributes, { "data-table-caption": "" }),
+      0,
+    ];
   },
 
   addNodeView() {
@@ -107,7 +138,10 @@ export const TableBlock = Node.create({
   renderHTML({ HTMLAttributes }) {
     return [
       "div",
-      mergeAttributes(HTMLAttributes, { "data-table-block": "", class: "tiptap-table-block" }),
+      mergeAttributes(HTMLAttributes, {
+        "data-table-block": "",
+        class: "tiptap-table-block",
+      }),
       0,
     ];
   },
@@ -125,7 +159,9 @@ export const TableBlock = Node.create({
             type: "tableRow",
             content: Array.from({ length: cols }, () => cell(header)),
           });
-          const body = Array.from({ length: Math.max(1, rows - 1) }, () => row(false));
+          const body = Array.from({ length: Math.max(1, rows - 1) }, () =>
+            row(false),
+          );
           return chain()
             .focus()
             .insertContent({
@@ -169,7 +205,9 @@ function TableListView(props: NodeViewProps) {
               <span className="font-medium">
                 {labels.tableWord} {i + 1}.
               </span>{" "}
-              <span className={tbl.caption ? "" : "text-muted-foreground italic"}>
+              <span
+                className={tbl.caption ? "" : "text-muted-foreground italic"}
+              >
                 {tbl.caption || labels.untitled}
               </span>
             </li>
@@ -188,7 +226,12 @@ export const TableList = Node.create<{ labels: TableListLabels }>({
 
   addOptions() {
     return {
-      labels: { tableWord: "Table", title: "List of Tables", empty: "No tables yet.", untitled: "(untitled)" },
+      labels: {
+        tableWord: "Table",
+        title: "List of Tables",
+        empty: "No tables yet.",
+        untitled: "(untitled)",
+      },
     };
   },
 

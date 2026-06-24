@@ -29,6 +29,152 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_17_0": {
+      "title": "One-click defect fix (AI fix)",
+      "summary": "The defect-check panel gains an \"AI fix\": for a defect tied to a problem sentence, one click locates that sentence, generates a rewrite from the defect's description and suggestion, and lets you preview it before deciding — it only replaces the text once you accept, never editing your draft on its own.",
+      "changes": {
+        "0": "One-click defect fix: an \"AI fix\" button on defect cards → locates the problem sentence → rewrites it from the defect description + suggestion → replaces only after you preview and accept (reuses the AI rewrite panel; never edits the draft silently)."
+      }
+    },
+    "4_16_0": {
+      "title": "Grammar / style check (rule-based, no token)",
+      "summary": "A new rule-based grammar/style check runs entirely locally with zero token cost, catching common objective issues in a Chinese thesis: half-width punctuation that should be full-width (e.g. '結果,' → '結果，'), missing spaces between CJK and Latin ('使用LLM' → '使用 LLM'), and stray spaces before Chinese punctuation. Issues are underlined inline in real time, and the side panel lists each with a one-click Fix, plus Fix all.",
+      "changes": {
+        "0": "Grammar/style check (spell-check toolbar icon): rule-based detection of half→full-width punctuation, CJK–Latin spacing, and space-before-punctuation; live dotted underlines + per-issue or fix-all in the panel. Local, no token cost."
+      }
+    },
+    "4_15_0": {
+      "title": "Focus mode: distraction-free writing",
+      "summary": "A new Focus mode hides the outline sidebar, toolbar and top navigation, centers the editor at a comfortable width, and turns off autocomplete so it's purely your own writing (select-to-rewrite/cite is still available on demand, just non-intrusive). Exit with Esc or the bottom-right button; your AI setting is restored on exit. Pure layout, no token cost.",
+      "changes": {
+        "0": "Toolbar 'Focus mode': hides sidebar/toolbar/top nav, centers a narrow column, and disables autocomplete (pure self-writing, restored on exit); select-to-rewrite stays on demand; exit with Esc or the bottom-right button; with a one-click browser-fullscreen toggle (hides the URL bar/tabs too)。"
+      }
+    },
+    "4_14_0": {
+      "title": "Writing progress: word goal + bar + per-chapter counts",
+      "summary": "The status-row word count becomes a writing-progress widget: click it to set a word goal and instantly see a progress bar and completion percentage, plus a per-chapter (each level-1 heading) word breakdown to track overall progress and chapter balance. The goal is remembered per document; all counting is local with no token cost.",
+      "changes": {
+        "0": "The word count opens a writing-progress popover: set a per-document word goal with a progress bar and percentage, and see per-chapter word counts. Local-only, no token cost."
+      }
+    },
+    "4_13_2": {
+      "title": "Three-format consistency: paragraph indent + Taiwan default",
+      "summary": "Continues aligning Word with PDF: the PDF indents the first line of each body paragraph by two characters (Chinese-thesis convention) but Word sat flush-left. Word now indents too. Also, the export panel now defaults to the Taiwan-thesis layout instead of a bare article — this is a thesis tool, so the thesis format (cover, 第N章, numbered sections) is the sensible default.",
+      "changes": {
+        "0": "Word body paragraphs now get a 2-character first-line indent (mirrors ctex \\parindent), matching the PDF.",
+        "1": "Export now defaults to the Taiwan-thesis template (was article). Docs you already chose a template for keep their choice."
+      }
+    },
+    "4_13_1": {
+      "title": "Three-format consistency: numbered section headings in Word",
+      "summary": "Fixes a Word (DOCX) vs LaTeX/PDF mismatch: the PDF numbered sub-section headings (1.1, 1.1.1) but the Word export left them unnumbered. Word now numbers them too — level 2 as 1.1 (centered) and level 3 as 1.1.1 (left), restarting at N.1 each chapter, exactly matching the PDF.",
+      "changes": {
+        "0": "Word export now numbers section headings to match LaTeX/PDF: h2→1.1 (centered), h3→1.1.1 (left), reset per chapter. Previously Word's h2/h3 were unnumbered, inconsistent with the PDF."
+      }
+    },
+    "4_13_0": {
+      "title": "Citation search language preference + relink folded into the panel",
+      "summary": "Citation search gains a Language toggle (All / English / Chinese). The default 'All' interleaves Chinese journals with English literature so famous, highly-cited English papers are no longer crowded out by low-citation Chinese journal hits — more representative results. Switch to 'English' for the well-cited classics only, or 'Chinese' to put Chinese journals first. The 'Auto-link references' action also moves from the toolbar into the citation panel, so all citation features live in one place and the toolbar is cleaner.",
+      "changes": {
+        "0": "Citation search Language preference (All / English / Chinese): the default 'All' interleaves Chinese + English so famous highly-cited English papers are no longer crowded out by low-citation Chinese hits; switch to 'English' for the classics only, or 'Chinese' to put Chinese journals first.",
+        "1": "'Auto-link references' moves from the toolbar into the citation panel (same row as year/language) — citation features consolidated, toolbar slimmed."
+      }
+    },
+    "4_12_1": {
+      "title": "Knowledge graph now matches the paper-analysis view",
+      "summary": "The editor's 'Knowledge graph (deep check)' now uses the exact same interface as the paper-analysis page instead of a hard-to-read node blob: concept chips grouped by section and colored by type, with search, sort (default / A–Z / most relations) and type filters; click any concept to see its 1-hop relation subgraph and evidence sentences on the right. Drafts have no source PDF, so locate-in-PDF buttons, page numbers and the human-as-judge controls are hidden — everything else is identical.",
+      "changes": {
+        "0": "The deep-check knowledge graph now reuses the paper-analysis KGFlow UI: section-grouped, type-colored concept chips, search/sort/type filters, and a 1-hop relation subgraph with evidence on entity selection — replacing the previous unreadable node graph. Gracefully degrades for drafts (no PDF locate / page refs / judgments)."
+      }
+    },
+    "4_12_0": {
+      "title": "Deep check: cross-section rules + knowledge graph",
+      "summary": "Defect checking gains a 'deep check (knowledge graph)'. It combines the whole draft into one graph and, on top of the single-section rules, runs cross-section rules (REL-04/08/12) — catching mismatches like 'the intro frames a research question the method never addresses / the conclusion doesn't align', which a single paragraph can't reveal. It also draws the draft's concepts and relations as a pannable, zoomable knowledge graph so you can see the whole picture. Cross-section defects flow into the defect panel.",
+      "changes": {
+        "0": "Cross-section rule checks: the toolbar 'Knowledge graph (deep check)' combines the whole draft into one graph and runs single-section + cross-section rules (REL-04/08/12), catching intro↔method↔conclusion misalignment (e.g. a research question framed in the intro that the method never addresses). Cross-section defects appear alongside the rest in the defect panel. Heavier (not per-section cached), ~tens of seconds.",
+        "1": "Knowledge-graph panel: draws the draft's extracted concepts (entities) and their relations (ER) as a pannable, zoomable graph, for a whole-draft overview of what concepts appear and how they connect. The panel is non-modal so you can keep editing while viewing it."
+      }
+    },
+    "4_11_0": {
+      "title": "Defect check: incremental cache (save LLM) + redesigned locate",
+      "summary": "Defect checking now splits the draft by headings and caches per section: re-checking only re-runs the sections whose text changed — unchanged sections come straight from cache (zero LLM, near-instant). Locating is redesigned too — clicking a defect card persistently highlights its sentence in the text (it stays, instead of vanishing on click-away), and hovering a card lights up its sentence live (two-way link). The panel is now non-modal so you can keep editing while reviewing; cancelling a check keeps the previous results, and a slower check never clobbers a newer one.",
+      "changes": {
+        "0": "Incremental cache: the check splits the doc by H1/H2 headings and caches each section's result by content hash; re-checking only re-runs changed sections (unchanged sections cost 0 LLM, near-instant), saving time and money on repeat checks.",
+        "1": "Redesigned locating: clicking a defect card persistently highlights its sentence and scrolls to it (stays until you pick another or close — no longer a selection that vanishes on click-away); hovering a card lights its sentence live so you can see which card maps to which sentence; the whole card is clickable (and keyboard-accessible).",
+        "2": "Panel & check logic: the defect panel is now non-modal so you can keep editing while it's open; starting a new check no longer blanks the panel (previous results stay until new ones arrive); you can Cancel a running check and keep prior results; a slower check no longer overwrites a newer one. The cursor over a flagged sentence is back to a normal text cursor."
+      }
+    },
+    "4_10_0": {
+      "title": "Citation traffic-light verification + fix click-to-404",
+      "summary": "A new 'verify citations' one-click check: for each linked citation it takes the sentence it backs and the source abstract, asks the model whether the abstract supports the claim, and marks the chip 🟢 supports / 🟡 partial / 🔴 unsupported (hover for details). The abstract is stored when the citation is inserted, so verification no longer needs OpenAlex (which is rate-limited). Also fixes a bug where clicking some citations navigated the whole page to a 404.",
+      "changes": {
+        "0": "Citation traffic light: the toolbar 'verify citations' button checks every linked citation — claim (the preceding sentence) vs. the source abstract, judged by the model — and marks each chip 🟢/🟡/🔴 with a tooltip, then reports how many need attention. It compares the abstract only and is an AI aid (not ground truth); a source must be linked. The abstract is stored on the chip at insert time, so verification no longer depends on the rate-limited OpenAlex.",
+        "1": "Fix: some citations (bare DOI, no URL) navigated the whole page to a 404 when clicked; citation links are now always normalized to an absolute https://doi.org/ URL and open in a new tab as expected."
+      }
+    },
+    "4_9_0": {
+      "title": "Writing experience: Find & Replace, live word count, shortcuts help",
+      "summary": "Three writing-experience essentials land. ① Find & Replace (⌘F or toolbar) — live-highlights every match, marks the current one, shows position/total, toggles case sensitivity, jumps prev/next, and replaces the current match or all. ② The status row shows live character and word counts (correct on open, no typing needed). ③ A keyboard-shortcuts cheat sheet listing common shortcuts, with the modifier key shown per platform (⌘ vs Ctrl).",
+      "changes": {
+        "0": "Find & Replace: open with ⌘/Ctrl+F or the toolbar; typing a term highlights all matches live and marks the current one, shows '1/3' position and total, toggles case sensitivity, jumps prev/next (scrolling into view), and replaces the current match or all at once.",
+        "1": "Live word count: the status row shows current character and word counts, correct the moment a document opens (no need to edit first); it updates only when the number changes, so typing stays fast.",
+        "2": "Keyboard shortcuts help: a panel grouped into Text formatting / Blocks & lists / AI writing / Editing; the modifier key shows ⌘ on macOS and Ctrl elsewhere."
+      }
+    },
+    "4_8_0": {
+      "title": "Safety net: never lose your draft — auto-retry, version restore, conflict guard",
+      "summary": "The writing editor gains a full data-safety net. A failed autosave now retries automatically with exponential backoff until it lands, and closing the tab with unsaved changes triggers a leave confirmation. Version history is new: a snapshot is taken periodically (latest 20 kept), you can save named versions, and preview + restore any of them (the current content is backed up first, so a restore is itself undoable). For editing the same document in multiple tabs/devices, conflict detection pauses autosave and lets you Load latest (your edits are saved as a version) or Keep mine & overwrite.",
+      "changes": {
+        "0": "No lost work: a failed autosave retries with exponential backoff (2→5→15→30 s) until it succeeds; the status shows 'retrying…' and is click-to-retry. Closing/leaving the tab with unsaved changes raises the browser's leave confirmation.",
+        "1": "Version history & restore: snapshots are created periodically while you edit (latest 20 kept), and you can save permanent named versions. Preview any version and restore it with one click; the current content is first saved as a 'pre-restore backup', so a restore is itself undoable.",
+        "2": "Multi-tab/device conflict guard: when the document was changed elsewhere, autosave pauses and a banner appears to avoid silent overwrites. Choose 'Load latest' (your current content is saved as a 'conflict backup' you can restore) or 'Keep mine & overwrite'.",
+        "3": "Stability: cap per-document content size (prevents DB bloat); fix the editor sidebar 'Outline' heading showing a raw key."
+      }
+    },
+    "4_7_0": {
+      "title": "One-click Taiwan thesis: consistent PDF / Word / LaTeX + bilingual cover + live preview",
+      "summary": "The Taiwan graduate-thesis layout is now complete and consistent across all three outputs: 標楷體 (Kai) + Times New Roman + 14pt, centered 第X章 chapter titles, chapter-scoped figure/table numbers (圖 2-1), Roman front-matter → Arabic body page numbers, 3cm margins, 1.5 line spacing, and a reference list grouped into Web / Chinese / English with hanging indents (Chinese entries in full-width style). A bilingual cover page (university, department, degree, titles, advisor, student, date) is filled in the export panel and remembered. Word and LaTeX/PDF share one rule set; the online preview now reflects the chosen layout — the Taiwan-thesis preview is the on-screen twin of the PDF.",
+      "changes": {
+        "0": "Taiwan-thesis PDF/LaTeX format: 標楷體 body (Times New Roman for Latin), 14pt, centered chapter titles (第一章 緒論), chapter-scoped figure/table numbers (圖 2-1 / 表 2-1), Roman page numbers for front matter then Arabic from chapter one, A4 with 3cm margins and 1.5 line spacing.",
+        "1": "Bilingual cover page: university, department, degree, Chinese/English titles, advisor, student and ROC date; empty fields are skipped, saved per document so the next export needs no retyping (Chinese title defaults to the document title).",
+        "2": "Word (.docx) matches the same Taiwan format: cover, section-split page numbers (cover unnumbered → Arabic body), 第X章, figure/table numbers, grouped & hanging-indent references, run-level 標楷體/Times/14pt — fully editable.",
+        "3": "Online preview follows the layout: choosing Taiwan-thesis shows the on-screen twin of the PDF (cover, chapters, figure/table numbers, grouped references).",
+        "4": "References grouped into Web / Chinese / English with hanging indents, full-width Chinese style, and long DOIs/URLs that wrap; citation numbering now uses citeKey (Crossref / Chinese / unlinked sources all number correctly), narrative citations render as 'Author (year)', and duplicate references are de-duplicated."
+      }
+    },
+    "4_6_0": {
+      "title": "Citation search adds Crossref: free, rate-limit-proof, finds Chinese journals",
+      "summary": "With OpenAlex now metered and easily rate-limited, this release wires free Crossref into citation search: OpenAlex stays primary (fast, semantic), and search automatically falls back to Crossref when OpenAlex is rate-limited or returns nothing — so a 429 no longer breaks search. Chinese claims also query Crossref in the original Chinese, surfacing Taiwan and Chinese journals (mostly with DOIs, one-click linkable).",
+      "changes": {
+        "0": "Crossref added as a search source: OpenAlex stays primary (fast, semantic, abstracts for rerank); when OpenAlex is rate-limited (429) or returns nothing, search falls back to free, uncapped Crossref so it no longer breaks when OpenAlex's quota runs out (the fallback is slower, a few seconds).",
+        "1": "Chinese claims now find Chinese / Taiwan journals: previously a Chinese claim was translated to English before searching (so Chinese works never surfaced); now Chinese claims also query Crossref in the original Chinese (most Taiwan journals register DOIs), with Chinese results shown first. Theses (Taiwan's NDLTD) aren't in Crossref and will be covered later via search links.",
+        "2": "Result quality: Crossref's multiple duplicate registrations of one classic paper (different DOIs) are merged by title + first author, keeping the most-cited copy; title-less stub records are filtered out so they no longer clutter results."
+      }
+    },
+    "4_5_0": {
+      "title": "Smart Citation overhaul: plain-text detection, source backfill, auto bibliography",
+      "summary": "Closes the gap between writing a citation in your text and actually linking it to a source — auto-detect the citation forms you type, add free source-resolution paths beyond OpenAlex, and generate a self-updating reference list. With OpenAlex moving to usage-based rate limits, this release adds free Crossref and manual fallbacks so it keeps working.",
+      "changes": {
+        "0": "Plain-text citation detection: parenthetical (Author, year), multi-work (A, 2016; B, 2014), narrative \"Author (year)\", et al. and Chinese separators, plus web/Wikipedia citations are all recognized as citation markers. When no source is found they become amber dashed \"pending source\" chips you can resolve later.",
+        "1": "Backfill a source without OpenAlex: paste a DOI or paper link on an unlinked citation and Crossref (free) fills in the full reference; with no DOI, fill author/title/venue/URL by hand. Every entry in the References tab can be edited or deleted (delete removes all of that citation's occurrences in the text).",
+        "2": "Auto bibliography: insert a self-updating, style-aware reference list with /reference list (web sources include their URL; pending-source citations are excluded). Need to hand-tweak order or wording? \"Convert to text\" freezes it into normal editable paragraphs.",
+        "3": "OpenAlex moved to usage-based pricing and now rate-limits easily (429); this release adds a friendly message and automatic retry/backoff instead of a raw error dump, and hides the no-op \"Refresh links\" button when a document has no OpenAlex-sourced citations.",
+        "4": "Editor fixes: clipboard guard on code copy, block-handle positioning, accidental table drag triggers; Smart Citation panel scrollbar and long-URL wrapping; keyboard-operable citation chips and other a11y/stability fixes.",
+        "5": "Performance: citation numbering is now cached once per document (was an O(n²) full-document scan per chip → O(n)); outline and toolbar recomputation throttled for smoother editing of long documents."
+      }
+    },
+    "4_4_0": {
+      "title": "Editor experience overhaul: Notion-style code blocks, block dragging, equation editing",
+      "summary": "A round of polish across the writing editor — code blocks, math equations, block manipulation, the slash menu, and the side panels are all brought in line with Notion / mainstream note apps, plus a batch of fixes for everyday editing annoyances.",
+      "changes": {
+        "0": "Notion-style code blocks: automatic syntax highlighting (37 common languages, with light/dark token palettes), a searchable language picker, and one-click copy; inside a block Tab indents and Shift+Tab outdents (multi-line aware) instead of escaping the block.",
+        "1": "Block drag handle (⠿): hovering a block reveals a handle on the left to reorder by dragging, or open a menu to duplicate / delete the whole block — also fixing the long-standing trouble of deleting code, math, and table blocks.",
+        "2": "Revamped equation editing: a larger rendered preview with the input box docked right beneath it (Notion-style); pressing Enter renders and the caret continues naturally; LaTeX pasted with outer delimiters (\\[ \\], $$, $) such as matrices now renders instead of erroring.",
+        "3": "Slash command fixes: the menu now appears the instant you type / (no need to nudge the caret); choosing any command no longer leaves the keyword you typed behind (e.g. /heading → H3 yields an empty heading, not stray text).",
+        "4": "Cleaner figure/table lists: figures or tables without a caption (e.g. a scanned approval page) are no longer numbered or added to the list of figures/tables — no more skipped numbers or blank entries; this matches the final PDF / LaTeX export.",
+        "5": "Side panels & interaction details: long text in the AI rewrite original, the smart-citation search box, and export format descriptions now wraps/scrolls instead of overflowing; the drop indicator line clears immediately after a drag; moving a sentence or block no longer pops the rewrite/cite toolbar by mistake."
+      }
+    },
     "4_3_0": {
       "title": "Upload tracking dashboard: failures no longer vanish",
       "summary": "Adds an upload audit system that fixes the blind spot where a failed paper upload left no trace of which file or what error. Every upload (success/failure/cache hit) now leaves a persistent record; on failure the maintainer is emailed automatically and the original file is kept for download to reproduce the problem locally; a daily upload summary email is also sent. The /admin page is token-protected.",

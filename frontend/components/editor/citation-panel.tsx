@@ -13,12 +13,14 @@ import {
   FileText,
   Link2,
   Loader2,
+  Pencil,
   Plus,
   Quote,
   RefreshCw,
   Search,
   ShieldCheck,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,12 +31,16 @@ import {
   groundCitation,
   recommendCitations,
   refreshCitations,
+  relinkCitations,
+  resolveDoi,
   verifyCitation,
   type CitationCandidate,
+  type CitationLang,
   type CitationVerdict,
   type GroundResult,
 } from "@/lib/api";
 import {
+  citeKey,
   fullReference,
   referenceLinks,
   type CitationAttrs,
@@ -42,8 +48,6 @@ import {
 import { useEditorStore } from "@/lib/editor-store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
   SheetContent,
@@ -63,18 +67,21 @@ function candidateToAttrs(c: CitationCandidate): CitationAttrs {
     doi: c.doi,
     oaUrl: c.oa_url,
     url: c.url,
+    abstract: c.abstract,
   };
 }
 
-/** Distinct citations in the doc, by first appearance — for the references tab. */
+/** Distinct citations in the doc, by first appearance — for the references tab.
+ * Dedup by citeKey so unlinked (pending-source) citations are listed too. */
 function collectCitations(editor: Editor): CitationAttrs[] {
   const seen = new Set<string>();
   const out: CitationAttrs[] = [];
   editor.state.doc.descendants((node) => {
     if (node.type.name === "citation") {
       const a = node.attrs as CitationAttrs;
-      if (a.openalexId && !seen.has(a.openalexId)) {
-        seen.add(a.openalexId);
+      const k = citeKey(a);
+      if (k && !seen.has(k)) {
+        seen.add(k);
         out.push(a);
       }
     }
@@ -94,7 +101,9 @@ function claimForCitation(editor: Editor, openalexId: string): string {
       const paraStart = pos - $pos.parentOffset;
       const before = editor.state.doc.textBetween(paraStart, pos, " ", " ");
       const parts = before.split(/(?<=[。！？!?.])\s*/).filter(Boolean);
-      claim = (parts[parts.length - 1] || before).trim() || $pos.parent.textContent.trim();
+      claim =
+        (parts[parts.length - 1] || before).trim() ||
+        $pos.parent.textContent.trim();
       return false;
     }
     return true;
@@ -103,7 +112,13 @@ function claimForCitation(editor: Editor, openalexId: string): string {
 }
 
 /** Shell: the Sheet + header. Body remounts (keyed on nonce) on every open. */
-export function CitationPanel({ editor, docId }: { editor: Editor; docId: string }) {
+export function CitationPanel({
+  editor,
+  docId,
+}: {
+  editor: Editor;
+  docId: string;
+}) {
   const t = useTranslations("editor");
   const open = useEditorStore((s) => s.citePanelOpen);
   const claim = useEditorStore((s) => s.citeClaim);
@@ -112,7 +127,10 @@ export function CitationPanel({ editor, docId }: { editor: Editor; docId: string
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && closeCitePanel()}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-md">
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 sm:max-w-md"
+      >
         <SheetHeader>
           <SheetTitle>{t("citation.panelTitle")}</SheetTitle>
           <SheetDescription>{t("citation.panelDesc")}</SheetDescription>
@@ -143,21 +161,44 @@ function CitationPanelBody({
   const locale = useLocale();
   const closeCitePanel = useEditorStore((s) => s.closeCitePanel);
   const citationStyle = useEditorStore((s) => s.citationStyle);
+  // Set when the panel was opened to resolve an unlinked chip → show the manual
+  // "paste DOI / fill in" fallback so a source can always be attached.
+  const resolving = useEditorStore((s) => s.citeReplaceKey) !== null;
 
   const [query, setQuery] = useState(initialQuery);
+  // Manual-source fallback state.
+  const [doiInput, setDoiInput] = useState("");
+  const [doiBusy, setDoiBusy] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manual, setManual] = useState({
+    authors: "",
+    year: "",
+    title: "",
+    venue: "",
+    url: "",
+  });
   const [loading, setLoading] = useState(false);
   const [candidates, setCandidates] = useState<CitationCandidate[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [yearFrom, setYearFrom] = useState<number | undefined>(undefined);
+  // Result-language preference: interleave both (all) vs bias English / Chinese.
+  const [lang, setLang] = useState<CitationLang>("all");
+  const [relinking, setRelinking] = useState(false);
   // openalex_id → verdict, or "loading" while a verify is in flight. Separate
   // maps: recommend cards verify against the search box; references verify
   // against the claim sentence around the inserted chip.
-  const [verdicts, setVerdicts] = useState<Record<string, CitationVerdict | "loading">>({});
-  const [refVerdicts, setRefVerdicts] = useState<Record<string, CitationVerdict | "loading">>({});
+  const [verdicts, setVerdicts] = useState<
+    Record<string, CitationVerdict | "loading">
+  >({});
+  const [refVerdicts, setRefVerdicts] = useState<
+    Record<string, CitationVerdict | "loading">
+  >({});
   // openalexId → full-text grounding result (top supporting sentences), or "loading".
-  const [grounds, setGrounds] = useState<Record<string, GroundResult | "loading">>({});
+  const [grounds, setGrounds] = useState<
+    Record<string, GroundResult | "loading">
+  >({});
   const abortRef = useRef<AbortController | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // References list — recomputed when the doc's citations change.
   const refs = useEditorState({
@@ -167,7 +208,7 @@ function CitationPanelBody({
   });
 
   const doSearch = useCallback(
-    (raw: string, yf?: number) => {
+    (raw: string, yf?: number, lg: CitationLang = "all") => {
       const q = raw.trim();
       if (!q) return;
       abortRef.current?.abort();
@@ -181,6 +222,7 @@ function CitationPanelBody({
           const list = await recommendCitations(docId, q, {
             signal: controller.signal,
             yearFrom: yf,
+            lang: lg,
           });
           if (!controller.signal.aborted) setCandidates(list);
         } catch (e) {
@@ -196,27 +238,204 @@ function CitationPanelBody({
       };
       void run();
     },
-    [docId, t]
+    [docId, t],
   );
 
-  // On open: auto-search a prefilled claim (from BubbleMenu), else focus the box.
+  // Auto-link plaintext citations across the whole doc to sources (folded in here
+  // from the toolbar so all citation actions live in one panel).
+  const handleRelink = useCallback(async () => {
+    setRelinking(true);
+    const tid = toast.loading(t("citation.relinking"));
+    try {
+      const { content_json, stats } = await relinkCitations(
+        docId,
+        editor.getJSON(),
+      );
+      editor.commands.setContent(content_json);
+      toast.success(
+        t("citation.relinkDone", {
+          linked: stats.intext_linked,
+          matched: stats.matched,
+        }),
+        { id: tid },
+      );
+    } catch (e) {
+      toast.error(String(e), { id: tid });
+    } finally {
+      setRelinking(false);
+    }
+  }, [docId, editor, t]);
+
+  // On open: auto-search a prefilled claim (from the BubbleMenu). But when
+  // resolving an unlinked chip (citeReplaceKey set), the seed is just the
+  // marker text ("Author, year") — a poor OpenAlex query that also hammers the
+  // API — so only prefill + focus and let the user add keywords, then search.
   useEffect(() => {
-    if (initialQuery.trim()) doSearch(initialQuery, undefined);
-    else inputRef.current?.focus();
+    const resolving = !!useEditorStore.getState().citeReplaceKey;
+    if (initialQuery.trim() && !resolving) {
+      doSearch(initialQuery, undefined, "all");
+    } else {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
     return () => abortRef.current?.abort();
   }, [initialQuery, doSearch]);
 
+  // Auto-grow the search box to fit the (possibly long) claim — works in every
+  // browser (CSS field-sizing is Chrome-only); max-height + overflow caps it.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [query]);
+
   const [refreshing, setRefreshing] = useState(false);
 
+  // Apply a chosen source. If the panel was opened to resolve an unlinked
+  // citation (citeReplaceKey set), relink every matching unlinked chip in place;
+  // otherwise insert a new chip at the cursor.
+  function applyPick(attrs: CitationAttrs) {
+    const { citeReplaceKey, citeAnchor } = useEditorStore.getState();
+    if (citeReplaceKey) {
+      editor
+        .chain()
+        .focus()
+        .command(({ tr, state }) => {
+          state.doc.descendants((node, pos) => {
+            if (
+              node.type.name === "citation" &&
+              citeKey(node.attrs as CitationAttrs) === citeReplaceKey
+            ) {
+              tr.setNodeMarkup(pos, undefined, {
+                ...node.attrs,
+                ...attrs,
+                unlinked: false,
+                kind: "academic",
+                raw: "",
+              });
+            }
+            return true;
+          });
+          return true;
+        })
+        .run();
+    } else {
+      editor
+        .chain()
+        .focus()
+        .insertCitation(attrs, citeAnchor ?? undefined)
+        .run();
+    }
+    toast.success(t("citation.inserted"));
+    closeCitePanel();
+  }
+
   function handleInsert(c: CitationCandidate) {
-    const anchor = useEditorStore.getState().citeAnchor;
+    applyPick(candidateToAttrs(c));
+  }
+
+  // Manual fallback #1 — paste a DOI (or a URL containing one): resolve metadata
+  // via Crossref (free) and link the chip. A bare URL with no DOI prefills the
+  // manual form instead.
+  async function handleResolveDoi() {
+    const raw = doiInput.trim();
+    if (!raw) return;
+    setDoiBusy(true);
+    try {
+      const cand = await resolveDoi(raw);
+      if (cand) {
+        applyPick(candidateToAttrs(cand));
+      } else {
+        // No DOI found — keep the URL and open the manual form to fill the rest.
+        setManual((m) => ({
+          ...m,
+          url: /^https?:\/\//.test(raw) ? raw : m.url,
+        }));
+        setManualOpen(true);
+        toast.info(t("citation.doiNotFound"));
+      }
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setDoiBusy(false);
+    }
+  }
+
+  // Manual fallback #2 — type the reference fields; we format it per the chosen
+  // citation style. At least a title or an author is required.
+  function handleApplyManual() {
+    if (!manual.title.trim() && !manual.authors.trim()) {
+      toast.error(t("citation.manualNeedsFields"));
+      return;
+    }
+    applyPick({
+      openalexId: "",
+      authors: manual.authors.trim(),
+      year: manual.year.trim() ? Number(manual.year.trim()) : null,
+      title: manual.title.trim(),
+      venue: manual.venue.trim(),
+      doi: "",
+      oaUrl: "",
+      url: manual.url.trim(),
+    });
+  }
+
+  // From the References tab: resolve an unlinked citation — reopen the search
+  // seeded with its marker text, flagged to relink every matching chip on pick.
+  function handleFindSource(r: CitationAttrs) {
+    const { citeAnchor, openCitePanel } = useEditorStore.getState();
+    const query = (r.raw || `${r.authors} ${r.year ?? ""}`).trim();
+    openCitePanel(query, citeAnchor ?? 0, citeKey(r));
+  }
+
+  // Re-cite a work already in the document (from the References tab) without
+  // re-searching — re-running the LLM search may not return the same paper. The
+  // chip reuses the existing openalexId, so numbered styles share its number.
+  function handleInsertRef(r: CitationAttrs) {
+    applyPick(r);
+  }
+
+  // Delete a reference: remove every matching citation chip from the document.
+  // The list is a live view of in-text chips, so it then disappears here too.
+  function handleDeleteRef(r: CitationAttrs) {
+    const key = citeKey(r);
     editor
       .chain()
       .focus()
-      .insertCitation(candidateToAttrs(c), anchor ?? undefined)
+      .command(({ tr, state }) => {
+        const spans: { from: number; to: number }[] = [];
+        state.doc.descendants((node, pos) => {
+          if (
+            node.type.name === "citation" &&
+            citeKey(node.attrs as CitationAttrs) === key
+          ) {
+            spans.push({ from: pos, to: pos + node.nodeSize });
+          }
+          return true;
+        });
+        // Delete bottom-up so earlier positions stay valid.
+        for (let i = spans.length - 1; i >= 0; i--) {
+          tr.delete(spans[i].from, spans[i].to);
+        }
+        return true;
+      })
       .run();
-    toast.success(t("citation.inserted"));
-    closeCitePanel();
+  }
+
+  // Edit a reference: prefill the manual form with its fields and retarget it at
+  // this citation (citeReplaceKey) so saving updates every matching chip.
+  function handleEditRef(r: CitationAttrs) {
+    setManual({
+      authors: r.authors || "",
+      year: r.year != null ? String(r.year) : "",
+      title: r.title || "",
+      venue: r.venue || "",
+      url: r.url || "",
+    });
+    setDoiInput("");
+    setManualOpen(true);
+    useEditorStore.getState().setCiteReplaceKey(citeKey(r));
   }
 
   // Claim–evidence "traffic light": does this candidate actually support the
@@ -229,7 +448,13 @@ function CitationPanelBody({
     }
     setVerdicts((v) => ({ ...v, [c.openalex_id]: "loading" }));
     try {
-      const verdict = await verifyCitation(docId, claim, c.title, c.abstract, locale);
+      const verdict = await verifyCitation(
+        docId,
+        claim,
+        c.title,
+        c.abstract,
+        locale,
+      );
       setVerdicts((v) => ({ ...v, [c.openalex_id]: verdict }));
     } catch (e) {
       setVerdicts((v) => {
@@ -253,7 +478,14 @@ function CitationPanelBody({
     }
     setRefVerdicts((v) => ({ ...v, [r.openalexId]: "loading" }));
     try {
-      const verdict = await verifyCitation(docId, claim, r.title, "", locale, r.openalexId);
+      const verdict = await verifyCitation(
+        docId,
+        claim,
+        r.title,
+        "",
+        locale,
+        r.openalexId,
+      );
       setRefVerdicts((v) => ({ ...v, [r.openalexId]: verdict }));
     } catch (e) {
       setRefVerdicts((v) => {
@@ -277,7 +509,12 @@ function CitationPanelBody({
     }
     setGrounds((g) => ({ ...g, [r.openalexId]: "loading" }));
     try {
-      const result = await groundCitation(docId, r.openalexId, r.oaUrl || r.url, claim);
+      const result = await groundCitation(
+        docId,
+        r.openalexId,
+        r.oaUrl || r.url,
+        claim,
+      );
       setGrounds((g) => ({ ...g, [r.openalexId]: result }));
     } catch (e) {
       setGrounds((g) => {
@@ -300,10 +537,11 @@ function CitationPanelBody({
     try {
       const fresh = await refreshCitations(ids);
       const byId: Record<string, CitationAttrs> = {};
-      for (const [id, c] of Object.entries(fresh)) byId[id] = candidateToAttrs(c);
+      for (const [id, c] of Object.entries(fresh))
+        byId[id] = candidateToAttrs(c);
       const changed = editor.commands.refreshCitations(byId);
       toast.success(
-        changed ? t("citation.refreshed") : t("citation.refreshedNoChange")
+        changed ? t("citation.refreshed") : t("citation.refreshedNoChange"),
       );
     } catch (e) {
       toast.error(String(e));
@@ -319,20 +557,31 @@ function CitationPanelBody({
         className="mb-3 flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          doSearch(query, yearFrom);
+          doSearch(query, yearFrom, lang);
         }}
       >
-        <Input
+        {/* Multi-line, auto-growing search box: long selected claims wrap and
+            scroll (max-h) instead of being truncated to one line. Enter submits,
+            Shift+Enter inserts a newline. */}
+        <textarea
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              doSearch(query, yearFrom, lang);
+            }
+          }}
+          rows={1}
           placeholder={t("citation.searchPlaceholder")}
+          className="max-h-28 min-h-9 w-full resize-none overflow-y-auto rounded-md border bg-transparent px-3 py-1.5 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
         />
         <Button
           type="submit"
           size="icon"
           variant="secondary"
-          className="shrink-0"
+          className="shrink-0 self-start"
           aria-label={t("citation.search")}
           title={t("citation.search")}
         >
@@ -340,27 +589,154 @@ function CitationPanelBody({
         </Button>
       </form>
 
-      <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
-        <span>{t("citation.yearLabel")}</span>
-        <select
-          value={yearFrom ?? ""}
-          onChange={(e) => {
-            const v = e.target.value ? Number(e.target.value) : undefined;
-            setYearFrom(v);
-            if (query.trim()) doSearch(query, v);
-          }}
-          className="rounded-md border bg-background px-2 py-1 text-xs text-foreground"
+      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <span>{t("citation.yearLabel")}</span>
+          <select
+            value={yearFrom ?? ""}
+            onChange={(e) => {
+              const v = e.target.value ? Number(e.target.value) : undefined;
+              setYearFrom(v);
+              if (query.trim()) doSearch(query, v, lang);
+            }}
+            className="rounded-md border bg-background px-2 py-1 text-xs text-foreground"
+          >
+            <option value="">{t("citation.yearAll")}</option>
+            <option value="2020">
+              {t("citation.yearFrom", { year: 2020 })}
+            </option>
+            <option value="2015">
+              {t("citation.yearFrom", { year: 2015 })}
+            </option>
+            <option value="2010">
+              {t("citation.yearFrom", { year: 2010 })}
+            </option>
+          </select>
+        </div>
+
+        {/* Result-language preference: interleave both / English-first / Chinese-first.
+            Fixes famous English papers being crowded out by low-citation Chinese hits. */}
+        <div className="flex items-center gap-1">
+          <span>{t("citation.langLabel")}</span>
+          <div className="inline-flex overflow-hidden rounded-md border">
+            {(["all", "en", "zh"] as const).map((lg) => (
+              <button
+                key={lg}
+                type="button"
+                onClick={() => {
+                  setLang(lg);
+                  if (query.trim()) doSearch(query, yearFrom, lg);
+                }}
+                className={`px-2 py-1 text-xs transition ${
+                  lang === lg
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-muted-foreground hover:bg-accent"
+                }`}
+              >
+                {t(`citation.lang_${lg}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Auto-link plaintext citations across the doc (moved here from the toolbar). */}
+        <button
+          type="button"
+          onClick={handleRelink}
+          disabled={relinking}
+          className="ml-auto inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium text-foreground transition hover:bg-accent disabled:opacity-60"
         >
-          <option value="">{t("citation.yearAll")}</option>
-          <option value="2020">{t("citation.yearFrom", { year: 2020 })}</option>
-          <option value="2015">{t("citation.yearFrom", { year: 2015 })}</option>
-          <option value="2010">{t("citation.yearFrom", { year: 2010 })}</option>
-        </select>
+          {relinking ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Link2 className="h-3.5 w-3.5" />
+          )}
+          {t("citation.relink")}
+        </button>
       </div>
+
+      {/* Manual fallback — only when resolving an unlinked chip. Paste a DOI/URL
+          (resolved free via Crossref) or fill the fields by hand, so a source can
+          always be attached even when search is rate-limited / not indexed. */}
+      {resolving && (
+        <div className="mb-3 rounded-md border bg-muted/30 p-2">
+          <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+            {t("citation.manualTitle")}
+          </p>
+          <div className="flex gap-2">
+            <input
+              value={doiInput}
+              onChange={(e) => setDoiInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleResolveDoi();
+                }
+              }}
+              placeholder={t("citation.doiPlaceholder")}
+              className="w-full rounded-md border bg-background px-2.5 py-1.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="shrink-0"
+              disabled={doiBusy || !doiInput.trim()}
+              onClick={() => void handleResolveDoi()}
+            >
+              {doiBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                t("citation.apply")
+              )}
+            </Button>
+          </div>
+          <button
+            type="button"
+            className="mt-1.5 text-xs text-muted-foreground underline-offset-2 hover:underline"
+            onClick={() => setManualOpen((o) => !o)}
+          >
+            {t("citation.manualToggle")}
+          </button>
+          {manualOpen && (
+            <div className="mt-2 flex flex-col gap-1.5">
+              {(
+                [
+                  ["authors", t("citation.manualAuthors")],
+                  ["title", t("citation.manualPaperTitle")],
+                  ["venue", t("citation.manualVenue")],
+                  ["year", t("citation.manualYear")],
+                  ["url", t("citation.manualUrl")],
+                ] as const
+              ).map(([k, ph]) => (
+                <input
+                  key={k}
+                  value={manual[k]}
+                  onChange={(e) =>
+                    setManual((m) => ({ ...m, [k]: e.target.value }))
+                  }
+                  placeholder={ph}
+                  className="w-full rounded-md border bg-background px-2.5 py-1 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+              ))}
+              <Button
+                type="button"
+                size="sm"
+                className="self-end"
+                onClick={handleApplyManual}
+              >
+                {t("citation.apply")}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       <Tabs defaultValue="recommend" className="flex min-h-0 flex-1 flex-col">
         <TabsList className="mb-3">
-          <TabsTrigger value="recommend">{t("citation.tabRecommend")}</TabsTrigger>
+          <TabsTrigger value="recommend">
+            {t("citation.tabRecommend")}
+          </TabsTrigger>
           <TabsTrigger value="references">
             {t("citation.tabReferences")}
             {refs.length > 0 && (
@@ -372,7 +748,7 @@ function CitationPanelBody({
         </TabsList>
 
         {/* Recommendations */}
-        <TabsContent value="recommend" className="min-h-0 flex-1">
+        <TabsContent value="recommend" className="flex min-h-0 flex-1 flex-col">
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -387,7 +763,7 @@ function CitationPanelBody({
               {t("citation.noResults")}
             </p>
           ) : (
-            <ScrollArea className="h-full pr-3">
+            <div className="min-h-0 flex-1 overflow-y-auto pr-3">
               <ul className="flex flex-col gap-2">
                 {candidates.map((c) => (
                   <li
@@ -395,7 +771,9 @@ function CitationPanelBody({
                     className="rounded-lg border bg-card p-3 transition-colors hover:border-primary/40"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-medium leading-snug">{c.title}</p>
+                      <p className="break-words text-sm font-medium leading-snug">
+                        {c.title}
+                      </p>
                       <Button
                         size="icon"
                         variant="ghost"
@@ -453,7 +831,9 @@ function CitationPanelBody({
                           {t("citation.verifying")}
                         </span>
                       ) : verdicts[c.openalex_id] ? (
-                        <VerdictBadge verdict={verdicts[c.openalex_id] as CitationVerdict} />
+                        <VerdictBadge
+                          verdict={verdicts[c.openalex_id] as CitationVerdict}
+                        />
                       ) : (
                         <button
                           type="button"
@@ -468,12 +848,15 @@ function CitationPanelBody({
                   </li>
                 ))}
               </ul>
-            </ScrollArea>
+            </div>
           )}
         </TabsContent>
 
         {/* References built from the doc's citation chips */}
-        <TabsContent value="references" className="min-h-0 flex-1">
+        <TabsContent
+          value="references"
+          className="flex min-h-0 flex-1 flex-col"
+        >
           {refs.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
               <BookText className="h-5 w-5 opacity-60" />
@@ -481,99 +864,194 @@ function CitationPanelBody({
             </div>
           ) : (
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="mb-2 flex justify-end">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
-                  onClick={handleRefreshLinks}
-                  disabled={refreshing}
-                  title={t("citation.refreshHint")}
-                >
-                  <RefreshCw
-                    className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
-                  />
-                  {t("citation.refreshLinks")}
-                </Button>
-              </div>
-              <ScrollArea className="h-full pr-3">
+              {/* "Refresh links" only re-pulls OpenAlex-sourced citations; hide it
+                  when none exist (DOI/manual/web have nothing to refresh). */}
+              {refs.some((r) => r.openalexId) && (
+                <div className="mb-2 flex justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                    onClick={handleRefreshLinks}
+                    disabled={refreshing}
+                    title={t("citation.refreshHint")}
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
+                    />
+                    {t("citation.refreshLinks")}
+                  </Button>
+                </div>
+              )}
+              <div className="min-h-0 flex-1 overflow-y-auto pr-3">
                 <ol className="flex flex-col gap-3 text-sm">
                   {refs.map((r, i) => {
-                  const text = fullReference(r, citationStyle, i + 1);
-                  const links = referenceLinks(r);
-                  return (
-                    <li key={r.openalexId} className="flex flex-col gap-1">
-                      <span className="leading-snug text-foreground/90">{text}</span>
-                      {links.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          {links.map((link) => {
-                            const meta = {
-                              // OA full text — most useful, may rot.
-                              fulltext: { icon: FileText, label: t("citation.linkFulltext") },
-                              // DOI — stable anchor that (almost) never 404s.
-                              doi: { icon: Link2, label: t("citation.linkDoi") },
-                              // Fallback when neither OA nor DOI is known.
-                              source: { icon: ExternalLink, label: t("citation.viewSource") },
-                            }[link.kind];
-                            const Icon = meta.icon;
-                            return (
-                              <a
-                                key={link.kind}
-                                href={link.href}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                              >
-                                <Icon className="h-3 w-3" />
-                                {meta.label}
-                              </a>
-                            );
-                          })}
+                    if (r.unlinked) {
+                      return (
+                        <li
+                          key={citeKey(r)}
+                          className="flex items-start justify-between gap-2"
+                        >
+                          <span className="min-w-0 break-words leading-snug text-muted-foreground">
+                            {r.raw ||
+                              `${r.authors}${r.year ? ` (${r.year})` : ""}`}
+                            <span className="ml-1.5 whitespace-nowrap rounded border border-amber-300/50 px-1 py-0.5 text-[10px] text-amber-600 dark:text-amber-300">
+                              {t("citation.pendingSource")}
+                            </span>
+                          </span>
+                          <div className="flex shrink-0 items-start gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 gap-1 px-2 text-xs"
+                              onClick={() => handleFindSource(r)}
+                              title={t("citation.findSource")}
+                            >
+                              <Search className="h-3.5 w-3.5" />
+                              {t("citation.findSource")}
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              aria-label={t("citation.deleteRef")}
+                              title={t("citation.deleteRef")}
+                              onClick={() => handleDeleteRef(r)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </li>
+                      );
+                    }
+                    const text = fullReference(r, citationStyle, i + 1);
+                    const links = referenceLinks(r);
+                    return (
+                      <li key={citeKey(r)} className="flex flex-col gap-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="min-w-0 break-all leading-snug text-foreground/90">
+                            {text}
+                          </span>
+                          <div className="flex shrink-0 items-start">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              aria-label={t("citation.editRef")}
+                              title={t("citation.editRef")}
+                              onClick={() => handleEditRef(r)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              aria-label={t("citation.insert")}
+                              title={t("citation.insert")}
+                              onClick={() => handleInsertRef(r)}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              aria-label={t("citation.deleteRef")}
+                              title={t("citation.deleteRef")}
+                              onClick={() => handleDeleteRef(r)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </div>
-                      )}
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                        {refVerdicts[r.openalexId] === "loading" ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                            {t("citation.verifying")}
-                          </span>
-                        ) : refVerdicts[r.openalexId] ? (
-                          <VerdictBadge verdict={refVerdicts[r.openalexId] as CitationVerdict} />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleVerifyRef(r)}
-                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                          >
-                            <ShieldCheck className="h-3 w-3" />
-                            {t("citation.verify")}
-                          </button>
+                        {links.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            {links.map((link) => {
+                              const meta = {
+                                // OA full text — most useful, may rot.
+                                fulltext: {
+                                  icon: FileText,
+                                  label: t("citation.linkFulltext"),
+                                },
+                                // DOI — stable anchor that (almost) never 404s.
+                                doi: {
+                                  icon: Link2,
+                                  label: t("citation.linkDoi"),
+                                },
+                                // Fallback when neither OA nor DOI is known.
+                                source: {
+                                  icon: ExternalLink,
+                                  label: t("citation.viewSource"),
+                                },
+                              }[link.kind];
+                              const Icon = meta.icon;
+                              return (
+                                <a
+                                  key={link.kind}
+                                  href={link.href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                >
+                                  <Icon className="h-3 w-3" />
+                                  {meta.label}
+                                </a>
+                              );
+                            })}
+                          </div>
                         )}
-                        {grounds[r.openalexId] === "loading" ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                            {t("citation.grounding")}
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleGround(r)}
-                            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                          >
-                            <Quote className="h-3 w-3" />
-                            {t("citation.ground")}
-                          </button>
-                        )}
-                      </div>
-                      {grounds[r.openalexId] && grounds[r.openalexId] !== "loading" && (
-                        <GroundView result={grounds[r.openalexId] as GroundResult} />
-                      )}
-                    </li>
-                  );
-                })}
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                          {refVerdicts[r.openalexId] === "loading" ? (
+                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              {t("citation.verifying")}
+                            </span>
+                          ) : refVerdicts[r.openalexId] ? (
+                            <VerdictBadge
+                              verdict={
+                                refVerdicts[r.openalexId] as CitationVerdict
+                              }
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleVerifyRef(r)}
+                              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                            >
+                              <ShieldCheck className="h-3 w-3" />
+                              {t("citation.verify")}
+                            </button>
+                          )}
+                          {grounds[r.openalexId] === "loading" ? (
+                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              {t("citation.grounding")}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleGround(r)}
+                              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                            >
+                              <Quote className="h-3 w-3" />
+                              {t("citation.ground")}
+                            </button>
+                          )}
+                        </div>
+                        {grounds[r.openalexId] &&
+                          grounds[r.openalexId] !== "loading" && (
+                            <GroundView
+                              result={grounds[r.openalexId] as GroundResult}
+                            />
+                          )}
+                      </li>
+                    );
+                  })}
                 </ol>
-              </ScrollArea>
+              </div>
             </div>
           )}
         </TabsContent>
@@ -587,10 +1065,22 @@ function CitationPanelBody({
 function VerdictBadge({ verdict }: { verdict: CitationVerdict }) {
   const t = useTranslations("editor");
   const meta = {
-    supports: { dot: "bg-emerald-500", cls: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" },
-    partial: { dot: "bg-amber-500", cls: "border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" },
-    unsupported: { dot: "bg-red-500", cls: "border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300" },
-    unknown: { dot: "bg-slate-400", cls: "border-slate-300 bg-slate-50 text-slate-600 dark:bg-slate-900 dark:text-slate-300" },
+    supports: {
+      dot: "bg-emerald-500",
+      cls: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+    },
+    partial: {
+      dot: "bg-amber-500",
+      cls: "border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+    },
+    unsupported: {
+      dot: "bg-red-500",
+      cls: "border-red-300 bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
+    },
+    unknown: {
+      dot: "bg-slate-400",
+      cls: "border-slate-300 bg-slate-50 text-slate-600 dark:bg-slate-900 dark:text-slate-300",
+    },
   }[verdict.verdict];
   const tip = [verdict.reason, verdict.evidence && `「${verdict.evidence}」`]
     .filter(Boolean)
@@ -612,13 +1102,19 @@ function GroundView({ result }: { result: GroundResult }) {
   const t = useTranslations("editor");
   if (result.source === "none" || result.supporting.length === 0) {
     return (
-      <p className="mt-1.5 text-xs text-muted-foreground">{t("citation.groundNone")}</p>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        {t("citation.groundNone")}
+      </p>
     );
   }
   return (
     <div className="mt-1.5 rounded-md border bg-muted/30 p-2">
       <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
-        {t(result.source === "fulltext" ? "citation.groundFulltext" : "citation.groundAbstract")}
+        {t(
+          result.source === "fulltext"
+            ? "citation.groundFulltext"
+            : "citation.groundAbstract",
+        )}
       </p>
       <ul className="flex flex-col gap-1">
         {result.supporting.map((s, i) => (

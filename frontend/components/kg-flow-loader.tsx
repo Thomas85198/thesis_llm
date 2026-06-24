@@ -15,9 +15,15 @@ const KGFlow = nextDynamic(
         <Skeleton className="h-[600px] w-full" />
       </div>
     ),
-  }
+  },
 );
 
-export function KGFlowLoader({ result }: { result: AnalysisResult }) {
-  return <KGFlow result={result} />;
+export function KGFlowLoader({
+  result,
+  noPdf,
+}: {
+  result: AnalysisResult;
+  noPdf?: boolean;
+}) {
+  return <KGFlow result={result} noPdf={noPdf} />;
 }

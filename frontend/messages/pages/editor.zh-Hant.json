@@ -12,7 +12,30 @@
   "deleted": "已刪除文件",
   "notFound": "找不到這份文件",
   "backToList": "回到文件列表",
-  "outline": "大綱",
+  "outline": {
+    "find": "大綱",
+    "panelTitle": "大綱生成",
+    "panelDesc": "套用 IMRaD 標準結構，或輸入主題讓 AI 生成量身的標題樹。",
+    "imradTitle": "IMRaD 標準結構",
+    "imradDesc": "緒論・文獻探討・方法・結果・討論・結論",
+    "smartTitle": "AI 生成大綱",
+    "topicPlaceholder": "輸入論文主題，例如「心流對線上學習動機的影響」",
+    "generate": "生成",
+    "working": "生成大綱中…",
+    "prompt": "輸入主題並生成，會在這裡預覽標題樹。",
+    "insert": "插入",
+    "insertGenerated": "插入此大綱",
+    "inserted": "已插入大綱",
+    "rateLimited": "生成太頻繁，請 {seconds} 秒後再試。",
+    "imrad": {
+      "intro": "緒論",
+      "litReview": "文獻探討",
+      "methods": "研究方法",
+      "results": "研究結果",
+      "discussion": "討論",
+      "conclusion": "結論"
+    }
+  },
   "outlineEmpty": "加入標題後，大綱會出現在這裡。",
   "titlePlaceholder": "未命名文件",
   "titleAria": "文件標題",
@@ -21,7 +44,9 @@
     "idle": "編輯中…",
     "saving": "儲存中…",
     "saved": "已儲存",
-    "error": "儲存失敗"
+    "error": "儲存失敗",
+    "retrying": "未儲存，重試中…",
+    "retryNow": "點擊立即重試"
   },
   "ai": {
     "cycleHint": "AI 補全模式（點擊切換：自動／手動／關）",
@@ -49,11 +74,26 @@
   },
   "citation": {
     "find": "找引用",
+    "pendingSource": "待補來源",
+    "findSource": "找來源",
+    "manualTitle": "補來源（貼 DOI 或手動填寫）",
+    "doiPlaceholder": "貼上 DOI 或論文連結",
+    "apply": "套用",
+    "manualToggle": "改用手動填寫參考文獻",
+    "manualAuthors": "作者（逗號分隔，例：Lin, C., Wang, A.）",
+    "manualPaperTitle": "論文標題",
+    "manualVenue": "期刊／會議／出版單位",
+    "manualYear": "年份",
+    "manualUrl": "連結（選填）",
+    "doiNotFound": "找不到 DOI，已切換為手動填寫",
+    "manualNeedsFields": "至少要填標題或作者",
+    "editRef": "編輯",
+    "deleteRef": "從文中刪除這筆引用",
     "relink": "自動串接參考文獻（匯入論文用）",
     "relinking": "解析參考文獻、比對 OpenAlex 中…（約一分鐘）",
     "relinkDone": "已串接 {linked} 處內文引用（高信心比中 {matched} 篇文獻），可在引用面板查看",
     "panelTitle": "智慧引用",
-    "panelDesc": "輸入關鍵字搜尋學術文獻（OpenAlex），或在文中反白一句話。",
+    "panelDesc": "輸入關鍵字或一句話搜尋學術文獻（中英文皆可），或在文中反白一句話自動帶入。",
     "searchPlaceholder": "輸入關鍵字或一句話搜尋文獻…",
     "search": "搜尋",
     "searchPrompt": "在上方輸入關鍵字搜尋學術文獻，或在文中反白一句話。",
@@ -93,7 +133,11 @@
     "refreshed": "已更新引用連結",
     "refreshedNoChange": "連結已是最新",
     "rateLimited": "搜尋太頻繁，請 {seconds} 秒後再試。",
-    "styleLabel": "引用格式"
+    "styleLabel": "引用格式",
+    "langLabel": "語言",
+    "lang_all": "全部",
+    "lang_en": "英文",
+    "lang_zh": "中文"
   },
   "rewrite": {
     "find": "AI 改寫",
@@ -120,30 +164,6 @@
       "fix_grammar": "修正文法"
     }
   },
-  "outline": {
-    "find": "大綱",
-    "panelTitle": "大綱生成",
-    "panelDesc": "套用 IMRaD 標準結構，或輸入主題讓 AI 生成量身的標題樹。",
-    "imradTitle": "IMRaD 標準結構",
-    "imradDesc": "緒論・文獻探討・方法・結果・討論・結論",
-    "smartTitle": "AI 生成大綱",
-    "topicPlaceholder": "輸入論文主題，例如「心流對線上學習動機的影響」",
-    "generate": "生成",
-    "working": "生成大綱中…",
-    "prompt": "輸入主題並生成，會在這裡預覽標題樹。",
-    "insert": "插入",
-    "insertGenerated": "插入此大綱",
-    "inserted": "已插入大綱",
-    "rateLimited": "生成太頻繁，請 {seconds} 秒後再試。",
-    "imrad": {
-      "intro": "緒論",
-      "litReview": "文獻探討",
-      "methods": "研究方法",
-      "results": "研究結果",
-      "discussion": "討論",
-      "conclusion": "結論"
-    }
-  },
   "slash": {
     "text": "內文",
     "textHint": "純文字段落",
@@ -159,6 +179,7 @@
     "imageHint": "上傳圖片並加標題",
     "toc": "目錄",
     "figureList": "圖目錄",
+    "referenceList": "參考文獻清單",
     "mathInline": "行內數學",
     "mathBlock": "數學區塊",
     "table": "表格",
@@ -166,7 +187,18 @@
   },
   "math": {
     "inlinePlaceholder": "LaTeX，例如 E=mc^2",
-    "blockPlaceholder": "LaTeX，例如 \\int_0^1 x\\,dx"
+    "blockPlaceholder": "LaTeX，例如 \\int_0^1 x\\,dx",
+    "done": "完成"
+  },
+  "blockHandle": {
+    "label": "拖曳移動，點擊開啟選單",
+    "duplicate": "複製區塊",
+    "delete": "刪除區塊"
+  },
+  "code": {
+    "searchPlaceholder": "搜尋語言…",
+    "copy": "複製",
+    "copied": "已複製"
   },
   "table": {
     "word": "表"
@@ -194,6 +226,11 @@
     "title": "圖目錄",
     "empty": "文件中還沒有任何圖片。"
   },
+  "refList": {
+    "title": "參考文獻",
+    "empty": "文件中還沒有已串接來源的引用。",
+    "toText": "轉成文字（手動編輯）"
+  },
   "toc": {
     "title": "目錄",
     "empty": "文件中還沒有任何標題。"
@@ -210,11 +247,16 @@
     "rateLimited": "檢查太頻繁，請 {seconds} 秒後再試。",
     "suggestionLabel": "建議：",
     "locate": "定位",
+    "applyFix": "AI 修正",
+    "fixNotFound": "找不到對應句子（內容可能已修改過），無法自動修正。",
+    "fixInstruction": "這段文字有以下缺陷：{description}。修改建議：{suggestion}。請改寫這段文字以修正該缺陷，只輸出修改後的文字本身，不要加任何說明。",
     "severity": {
       "high": "高",
       "medium": "中",
       "low": "低"
-    }
+    },
+    "located": "作用中",
+    "cancel": "取消"
   },
   "export": {
     "find": "匯出",
@@ -242,6 +284,131 @@
     "tplIeee": "IEEE 會議（IEEEtran）",
     "ieeeStyleHint": "IEEE 版型通常搭配 IEEE 編號式引用格式（[1]）",
     "ieeeStyleSwitch": "切換為 IEEE",
-    "done": "已開始下載"
+    "done": "已開始下載",
+    "cover": {
+      "toggle": "加入封面頁（台灣論文）",
+      "hint": "每列上為中文、下為英文；留空的欄位不會出現。資料會記在此文件。",
+      "university": "校名",
+      "department": "系所",
+      "degree": "學位",
+      "title": "論文題目",
+      "advisor": "指導教授",
+      "student": "研究生",
+      "date": "日期"
+    }
+  },
+  "versions": {
+    "find": "版本歷史",
+    "panelTitle": "版本歷史",
+    "panelDesc": "每隔一段時間自動存檔（保留最近 20 份），也可手動儲存命名版本。可預覽並還原。",
+    "namePlaceholder": "版本名稱（選填）",
+    "save": "儲存版本",
+    "saved": "已儲存版本",
+    "defaultName": "手動版本",
+    "none": "尚無版本紀錄，編輯一段時間後會自動建立。",
+    "preview": "預覽",
+    "restore": "還原",
+    "confirmRestore": "還原到這個版本？目前內容會先自動備份，可再還原回來。",
+    "restored": "已還原",
+    "empty": "（此版本沒有文字內容）",
+    "labelAutosave": "自動存檔",
+    "labelRestoreBackup": "還原前備份"
+  },
+  "conflict": {
+    "message": "這份文件在其他分頁或裝置被修改了。為避免覆蓋，已暫停自動儲存。",
+    "reload": "載入最新版本",
+    "overwrite": "保留我的版本並覆蓋",
+    "reloaded": "已載入最新版本（你剛才的內容已存為版本，可在版本歷史還原）",
+    "overwritten": "已用你的版本覆蓋",
+    "backupLabel": "衝突備份"
+  },
+  "wordCount": {
+    "summary": "{chars, number} 字 · {words, number} 詞"
+  },
+  "shortcuts": {
+    "title": "鍵盤快捷鍵",
+    "desc": "加快寫作的常用快速鍵。",
+    "groupFormat": "文字格式",
+    "groupBlocks": "區塊與清單",
+    "groupAI": "AI 寫作",
+    "groupEdit": "編輯",
+    "bold": "粗體",
+    "italic": "斜體",
+    "code": "行內程式碼",
+    "strike": "刪除線",
+    "heading": "標題 1／2／3",
+    "orderedList": "編號清單",
+    "bulletList": "項目清單",
+    "slash": "指令選單",
+    "aiSuggest": "叫出 AI 建議",
+    "acceptGhost": "接受建議",
+    "dismiss": "取消建議",
+    "undo": "復原",
+    "redo": "重做",
+    "find": "搜尋／取代"
+  },
+  "find": {
+    "searchPlaceholder": "搜尋",
+    "replacePlaceholder": "取代為",
+    "none": "無",
+    "prev": "上一個",
+    "next": "下一個",
+    "caseSensitive": "區分大小寫",
+    "replace": "取代",
+    "replaceAll": "全部取代",
+    "close": "關閉",
+    "title": "搜尋／取代"
+  },
+  "verify": {
+    "find": "驗證引用（紅綠燈）",
+    "none": "沒有可驗證的引用（需先串接來源）。",
+    "done": "已驗證 {count} 筆引用，{problems} 筆需注意。",
+    "rateLimited": "驗證太頻繁，已暫停；請稍後再試。",
+    "supports": "來源支持此論點",
+    "partial": "來源部分支持",
+    "unsupported": "來源未支持此論點"
+  },
+  "kg": {
+    "find": "知識圖譜（深度檢查）",
+    "panelTitle": "知識圖譜",
+    "panelDesc": "整篇深度分析：概念關係圖＋跨章節規則檢查（較久）。",
+    "summary": "本次發現 {total} 個缺陷（含 {cross} 個跨章節）。",
+    "seeDefects": "看缺陷",
+    "rerun": "重新分析",
+    "building": "深度分析中…（建圖＋跨章節檢查，約數十秒）",
+    "empty": "尚未分析。"
+  },
+  "progress": {
+    "label": "寫作進度",
+    "words": "{chars} 字",
+    "goalLabel": "目標字數",
+    "goalPlaceholder": "設定目標字數…",
+    "ofGoal": "{current} / {goal} 字",
+    "byChapter": "各章字數",
+    "preface": "（前言）",
+    "untitled": "（未命名章）",
+    "noGoal": "設定目標後顯示進度條",
+    "clearGoal": "清除"
+  },
+  "focus": {
+    "enter": "專注模式（純寫作，關閉自動提示）",
+    "exit": "離開專注（Esc）",
+    "fullscreen": "全螢幕",
+    "exitFullscreen": "離開全螢幕"
+  },
+  "lint": {
+    "find": "文法／風格檢查",
+    "panelTitle": "文法／風格檢查",
+    "panelDesc": "規則式檢查（不耗 token）：半形標點、中英文空格、標點前空格。",
+    "count": "{n} 個問題",
+    "clean": "沒發現問題 👍",
+    "fixAll": "全部修正",
+    "fix": "修正",
+    "locate": "定位",
+    "type": {
+      "halfPunct": "半形標點",
+      "pangu": "中英空格",
+      "spaceBeforePunct": "標點前空格"
+    }
   }
 }

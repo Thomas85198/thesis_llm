@@ -48,15 +48,50 @@ export type CitationAttrs = {
   doi: string;
   oaUrl: string; // open-access full text — most useful, but can rot ("" if none)
   url: string; // always-resolvable source link (OA full text → DOI → … )
+  // Recognized-but-unresolved citation (detected in text, no source linked yet).
+  unlinked?: boolean;
+  kind?: "academic" | "web";
+  raw?: string; // the original in-text marker text, for re-search / display
+  // Narrative citation ("Author (year) argued…") — the author stays prose, so the
+  // chip renders "Author (year)" instead of the parenthetical "(Author, year)".
+  narrative?: boolean;
+  // Source abstract, stored at insert time so "verify citations" can run without
+  // an OpenAlex round-trip (which is rate-limited). "" for older / unlinked chips.
+  abstract?: string;
+  // Claim-support verdict from the last verify run (supports/partial/unsupported).
+  verdict?: string | null;
 };
 
-/** Best clickable link for a citation: prefer the resolvable source URL, then
- * the DOI. Returns "" when neither is known (older chips saved before `url`). */
-export function referenceHref(attrs: CitationAttrs): string {
-  return attrs.url || attrs.doi || "";
+/** Stable identity for numbering/dedup: the OpenAlex id when linked, else a
+ * normalized authors|year key so unlinked chips still group + number correctly. */
+export function citeKey(a: CitationAttrs): string {
+  return (
+    a.openalexId ||
+    `${(a.authors || "").toLowerCase().replace(/\s+/g, " ").trim()}|${a.year ?? ""}`
+  );
 }
 
-export type CitationLink = { kind: "fulltext" | "doi" | "source"; href: string };
+/** A DOI as an absolute URL. A bare DOI ("10.5555/…") opened via window.open
+ * would resolve *relative* to the app (→ /editor/10.5555/… → 404), so always
+ * normalize it to https://doi.org/. Already-absolute links pass through. */
+export function doiUrl(doi: string): string {
+  const d = (doi || "").trim();
+  if (!d) return "";
+  if (/^https?:\/\//i.test(d)) return d;
+  return `https://doi.org/${d.replace(/^doi:\s*/i, "")}`;
+}
+
+/** Best clickable link for a citation: prefer the resolvable source URL, then
+ * the DOI (normalized to an absolute https://doi.org/ link). Returns "" when
+ * neither is known (older chips saved before `url`). */
+export function referenceHref(attrs: CitationAttrs): string {
+  return attrs.url || doiUrl(attrs.doi);
+}
+
+export type CitationLink = {
+  kind: "fulltext" | "doi" | "source";
+  href: string;
+};
 
 /** Links to offer for a reference. The OA full text is the most useful but can
  * rot, so we pair it with the DOI as a stable anchor. When neither exists, fall
@@ -65,7 +100,7 @@ export function referenceLinks(attrs: CitationAttrs): CitationLink[] {
   const links: CitationLink[] = [];
   if (attrs.oaUrl) links.push({ kind: "fulltext", href: attrs.oaUrl });
   if (attrs.doi && attrs.doi !== attrs.oaUrl)
-    links.push({ kind: "doi", href: attrs.doi });
+    links.push({ kind: "doi", href: doiUrl(attrs.doi) });
   if (links.length === 0 && attrs.url)
     links.push({ kind: "source", href: attrs.url });
   return links;
@@ -97,8 +132,15 @@ function authorsShort(authors: string): string {
 export function inTextLabel(
   attrs: CitationAttrs,
   style: CitationStyle,
-  number: number
+  number: number,
 ): string {
+  // Narrative: author named in the sentence, only the year (or [n]) parenthesized.
+  if (attrs.narrative) {
+    const short = authorsShort(attrs.authors);
+    if (isNumberedStyle(style)) return `${short} [${number}]`;
+    if (style === "mla") return short;
+    return `${short} (${attrs.year ?? "n.d."})`;
+  }
   if (isNumberedStyle(style)) return `[${number}]`;
   const short = authorsShort(attrs.authors);
   const y = attrs.year ?? "n.d.";
@@ -116,23 +158,25 @@ export function inTextLabel(
 export function fullReference(
   attrs: CitationAttrs,
   style: CitationStyle,
-  number: number
+  number: number,
 ): string {
   const authors = attrs.authors || "Anon.";
   const year = attrs.year ?? "n.d.";
   const title = attrs.title || "(untitled)";
   const venue = attrs.venue;
+  // Web sources (a URL but no DOI) append the link, per APA web style.
+  const web = attrs.url && !attrs.doi ? ` ${attrs.url}` : "";
   switch (style) {
     case "mla":
-      return `${authors}. “${title}.”${venue ? ` ${venue},` : ""} ${year}.`;
+      return `${authors}. “${title}.”${venue ? ` ${venue},` : ""} ${year}.${web}`;
     case "chicago":
-      return `${authors}. “${title}.”${venue ? ` ${venue}` : ""} (${year}).`;
+      return `${authors}. “${title}.”${venue ? ` ${venue}` : ""} (${year}).${web}`;
     case "harvard":
-      return `${authors} (${year}) ‘${title}’${venue ? `, ${venue}` : ""}.`;
+      return `${authors} (${year}) ‘${title}’${venue ? `, ${venue}` : ""}.${web}`;
     case "ieee":
     case "numeric":
-      return `[${number}] ${authors}, “${title},”${venue ? ` ${venue},` : ""} ${year}.`;
+      return `[${number}] ${authors}, “${title},”${venue ? ` ${venue},` : ""} ${year}.${web}`;
     default: // apa
-      return `${authors} (${year}). ${title}${venue ? `. ${venue}` : ""}.`;
+      return `${authors} (${year}). ${title}${venue ? `. ${venue}` : ""}.${web}`;
   }
 }

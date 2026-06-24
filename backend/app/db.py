@@ -7,6 +7,7 @@ Single-file DB. Path is env-controlled for Docker / lab server deployment:
 WAL journal mode is enabled in connect() so multiple FastAPI workers can read
 while one writes without blocking each other.
 """
+
 from __future__ import annotations
 
 import json
@@ -199,6 +200,20 @@ CREATE TABLE IF NOT EXISTS upload_events (
 CREATE INDEX IF NOT EXISTS idx_upload_events_status ON upload_events(status);
 CREATE INDEX IF NOT EXISTS idx_upload_events_created ON upload_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_upload_events_job ON upload_events(job_id);
+
+-- ============================================================
+-- 表 9: draft_check_cache — 編輯器缺陷檢查的「段落級」結果快取
+-- ----------------------------------------------------------------
+-- 缺陷檢查每段要跑數次 LLM (建圖 + 規則)。把每個段落 (含標題行) 的文字
+-- 連同 locale 與規則版本雜湊成 cache_key，存該段算出的 defects。重檢查時
+-- 未改動的段落直接命中、0 LLM；只有改動段才重跑 (增量)。規則改版時
+-- 改 RULES_VERSION 即整體失效。內容定址 → 與 doc_id 無關、跨文件可共用。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS draft_check_cache (
+    cache_key    TEXT PRIMARY KEY,    -- sha256(section_text | locale | rules_version)
+    defects_json TEXT NOT NULL,       -- 該段 defects 的 JSON 陣列
+    created_at   TEXT NOT NULL
+);
 """
 
 
@@ -271,6 +286,7 @@ def connect() -> Iterator[sqlite3.Connection]:
 
 # ---------- papers ----------
 
+
 def upsert_paper(
     paper_id: str,
     title: str,
@@ -302,9 +318,7 @@ def update_paper_title(paper_id: str, title: str) -> None:
 
 def get_paper(paper_id: str) -> dict[str, Any] | None:
     with connect() as c:
-        row = c.execute(
-            "SELECT * FROM papers WHERE paper_id=?", (paper_id,)
-        ).fetchone()
+        row = c.execute("SELECT * FROM papers WHERE paper_id=?", (paper_id,)).fetchone()
     return dict(row) if row else None
 
 
@@ -355,6 +369,7 @@ def delete_paper(paper_id: str) -> None:
 
 # ---------- results ----------
 
+
 def upsert_result(paper_id: str, result: dict[str, Any]) -> None:
     with connect() as c:
         c.execute(
@@ -380,6 +395,7 @@ def get_result(paper_id: str) -> dict[str, Any] | None:
 
 
 # ---------- LLM call log ----------
+
 
 def log_llm_call(
     *,
@@ -415,6 +431,7 @@ def log_llm_call(
 
 
 # ---------- upload events (persistent upload audit trail) ----------
+
 
 def log_upload_start(
     *,
@@ -617,16 +634,16 @@ def judgment_summary() -> dict[str, Any]:
         d = dict(r)
         # Precision = correct / total (partial counted as 0.5 for soft precision)
         total = d["total"] or 0
-        d["precision"] = (
-            (d["correct"] + 0.5 * d["partial"]) / total if total else None
-        )
+        d["precision"] = (d["correct"] + 0.5 * d["partial"]) / total if total else None
         by_rule.append(d)
 
-    g = dict(global_row) if global_row else {"total": 0, "correct": 0, "wrong": 0, "partial": 0}
-    g_total = g["total"] or 0
-    g["precision"] = (
-        (g["correct"] + 0.5 * g["partial"]) / g_total if g_total else None
+    g = (
+        dict(global_row)
+        if global_row
+        else {"total": 0, "correct": 0, "wrong": 0, "partial": 0}
     )
+    g_total = g["total"] or 0
+    g["precision"] = (g["correct"] + 0.5 * g["partial"]) / g_total if g_total else None
     return {"by_rule": by_rule, "total": g}
 
 
@@ -667,8 +684,7 @@ def export_judgments_with_defects() -> dict[str, Any]:
             continue
         # Resolve evidence EDU text for self-contained export.
         edu_map = {
-            e["id"]: e.get("text", "")
-            for e in result.get("graph", {}).get("edus", [])
+            e["id"]: e.get("text", "") for e in result.get("graph", {}).get("edus", [])
         }
         evidence_texts = [
             edu_map.get(eid, "") for eid in defect.get("evidence_edu_ids", [])
@@ -769,9 +785,7 @@ def evaluation_summary() -> dict[str, Any]:
         correct = sum(1 for x in rows if x["verdict"] == "correct")
         wrong = sum(1 for x in rows if x["verdict"] == "wrong")
         partial = sum(1 for x in rows if x["verdict"] == "partial")
-        precision = (
-            round((correct + 0.5 * partial) / total, 4) if total > 0 else None
-        )
+        precision = round((correct + 0.5 * partial) / total, 4) if total > 0 else None
         return {
             "total": total,
             "correct": correct,
@@ -912,6 +926,18 @@ def cost_summary(paper_id: str | None = None) -> dict[str, Any]:
 # the version table from growing unbounded under frequent debounced autosaves.
 MAX_AUTOSAVE_VERSIONS = 20
 
+# Reject absurdly large content_json before it bloats SQLite / autosave churn.
+# A book-length thesis is well under 25 MB of ProseMirror JSON.
+MAX_DOC_BYTES = 25 * 1024 * 1024
+
+
+def _doc_blob(content_json: dict[str, Any]) -> str:
+    """Serialize + size-guard a document body. Raises ValueError if too large."""
+    blob = json.dumps(content_json, ensure_ascii=False)
+    if len(blob.encode("utf-8")) > MAX_DOC_BYTES:
+        raise ValueError("document content too large")
+    return blob
+
 
 def create_document(
     doc_id: str, title: str, content_json: dict[str, Any], locale: str
@@ -924,7 +950,14 @@ def create_document(
             INSERT INTO documents (doc_id, title, content_json, locale, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (doc_id, title, json.dumps(content_json, ensure_ascii=False), locale, now, now),
+            (
+                doc_id,
+                title,
+                json.dumps(content_json, ensure_ascii=False),
+                locale,
+                now,
+                now,
+            ),
         )
     return {
         "doc_id": doc_id,
@@ -938,9 +971,7 @@ def create_document(
 
 def get_document(doc_id: str) -> dict[str, Any] | None:
     with connect() as c:
-        row = c.execute(
-            "SELECT * FROM documents WHERE doc_id=?", (doc_id,)
-        ).fetchone()
+        row = c.execute("SELECT * FROM documents WHERE doc_id=?", (doc_id,)).fetchone()
     if not row:
         return None
     d = dict(row)
@@ -965,11 +996,15 @@ def update_document(
     doc_id: str,
     title: str | None = None,
     content_json: dict[str, Any] | None = None,
+    expected_updated_at: str | None = None,
 ) -> bool:
-    """Patch title and/or content; bumps updated_at. Returns False if doc absent.
+    """Patch title and/or content; bumps updated_at. Returns False if the doc is
+    absent OR (when expected_updated_at is given) it was modified elsewhere since
+    — an atomic optimistic-concurrency guard against multi-tab clobbering.
 
     Only the provided fields are written, so an autosave (content only) won't
-    clobber a title the user just renamed, and vice versa.
+    clobber a title the user just renamed, and vice versa. Raises ValueError if
+    the content exceeds MAX_DOC_BYTES.
     """
     sets: list[str] = []
     vals: list[Any] = []
@@ -978,16 +1013,18 @@ def update_document(
         vals.append(title)
     if content_json is not None:
         sets.append("content_json=?")
-        vals.append(json.dumps(content_json, ensure_ascii=False))
+        vals.append(_doc_blob(content_json))
     if not sets:
         return get_document(doc_id) is not None
     sets.append("updated_at=?")
     vals.append(_now())
+    where = "doc_id=?"
     vals.append(doc_id)
+    if expected_updated_at is not None:
+        where += " AND updated_at=?"
+        vals.append(expected_updated_at)
     with connect() as c:
-        cur = c.execute(
-            f"UPDATE documents SET {', '.join(sets)} WHERE doc_id=?", vals
-        )
+        cur = c.execute(f"UPDATE documents SET {', '.join(sets)} WHERE {where}", vals)
         return cur.rowcount > 0
 
 
@@ -1008,7 +1045,7 @@ def snapshot_document(
             INSERT INTO document_versions (doc_id, content_json, label, created_at)
             VALUES (?, ?, ?, ?)
             """,
-            (doc_id, json.dumps(content_json, ensure_ascii=False), label, _now()),
+            (doc_id, _doc_blob(content_json), label, _now()),
         )
         new_id = cur.lastrowid
         if label == "autosave":
@@ -1056,7 +1093,30 @@ def get_document_version(doc_id: str, version_id: int) -> dict[str, Any] | None:
     return d
 
 
+# ---------- draft_check_cache (per-section defect-check cache) ----------
+
+
+def get_draft_cache(cache_key: str) -> list[dict[str, Any]] | None:
+    """Cached defects for a section's content hash, or None on a miss."""
+    with connect() as c:
+        row = c.execute(
+            "SELECT defects_json FROM draft_check_cache WHERE cache_key=?",
+            (cache_key,),
+        ).fetchone()
+    return json.loads(row["defects_json"]) if row else None
+
+
+def set_draft_cache(cache_key: str, defects: list[dict[str, Any]]) -> None:
+    with connect() as c:
+        c.execute(
+            "INSERT OR REPLACE INTO draft_check_cache (cache_key, defects_json, created_at) "
+            "VALUES (?, ?, ?)",
+            (cache_key, json.dumps(defects, ensure_ascii=False), _now()),
+        )
+
+
 # ---------- paper_chunks (full-text grounding cache) ----------
+
 
 def get_paper_chunks(openalex_id: str) -> list[dict[str, Any]]:
     """Cached sentence chunks + embeddings for a paper, in order. [] if none."""
@@ -1067,8 +1127,12 @@ def get_paper_chunks(openalex_id: str) -> list[dict[str, Any]]:
             (openalex_id,),
         ).fetchall()
     return [
-        {"idx": r["idx"], "text": r["text"],
-         "embedding": json.loads(r["embedding"]), "source": r["source"]}
+        {
+            "idx": r["idx"],
+            "text": r["text"],
+            "embedding": json.loads(r["embedding"]),
+            "source": r["source"],
+        }
         for r in rows
     ]
 

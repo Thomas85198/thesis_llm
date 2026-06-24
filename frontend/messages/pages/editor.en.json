@@ -12,7 +12,30 @@
   "deleted": "Document deleted",
   "notFound": "Document not found",
   "backToList": "Back to documents",
-  "outline": "Outline",
+  "outline": {
+    "find": "Outline",
+    "panelTitle": "Outline generator",
+    "panelDesc": "Apply the standard IMRaD structure, or type a topic and let AI generate a tailored heading tree.",
+    "imradTitle": "IMRaD standard structure",
+    "imradDesc": "Intro · Literature · Methods · Results · Discussion · Conclusion",
+    "smartTitle": "AI-generated outline",
+    "topicPlaceholder": "Enter a topic, e.g. “the effect of flow on online learning motivation”",
+    "generate": "Generate",
+    "working": "Generating outline…",
+    "prompt": "Enter a topic and generate to preview the heading tree here.",
+    "insert": "Insert",
+    "insertGenerated": "Insert this outline",
+    "inserted": "Outline inserted",
+    "rateLimited": "Too many requests, retry in {seconds}s.",
+    "imrad": {
+      "intro": "Introduction",
+      "litReview": "Literature Review",
+      "methods": "Methodology",
+      "results": "Results",
+      "discussion": "Discussion",
+      "conclusion": "Conclusion"
+    }
+  },
   "outlineEmpty": "Add headings and they'll show up here.",
   "titlePlaceholder": "Untitled document",
   "titleAria": "Document title",
@@ -21,7 +44,9 @@
     "idle": "Editing…",
     "saving": "Saving…",
     "saved": "Saved",
-    "error": "Save failed"
+    "error": "Save failed",
+    "retrying": "Unsaved, retrying…",
+    "retryNow": "Click to retry now"
   },
   "ai": {
     "cycleHint": "AI autocomplete mode (click to cycle: auto / manual / off)",
@@ -49,11 +74,26 @@
   },
   "citation": {
     "find": "Find citation",
+    "pendingSource": "Pending source",
+    "findSource": "Find source",
+    "manualTitle": "Attach a source (paste a DOI or fill in)",
+    "doiPlaceholder": "Paste a DOI or paper link",
+    "apply": "Apply",
+    "manualToggle": "Fill in the reference manually",
+    "manualAuthors": "Authors (comma-separated, e.g. Lin, C., Wang, A.)",
+    "manualPaperTitle": "Paper title",
+    "manualVenue": "Journal / conference / publisher",
+    "manualYear": "Year",
+    "manualUrl": "Link (optional)",
+    "doiNotFound": "No DOI found — switched to manual entry",
+    "manualNeedsFields": "Enter at least a title or an author",
+    "editRef": "Edit",
+    "deleteRef": "Delete this citation from the text",
     "relink": "Auto-link references (for imported papers)",
     "relinking": "Parsing references, matching on OpenAlex… (~a minute)",
     "relinkDone": "Linked {linked} in-text citations ({matched} works matched with high confidence) — see the citation panel",
     "panelTitle": "Smart Citation",
-    "panelDesc": "Search scholarly works (OpenAlex) by keyword, or select a sentence in your text.",
+    "panelDesc": "Search scholarly works by keyword or a sentence (English & Chinese), or select a sentence in your text.",
     "searchPlaceholder": "Search by keyword or a sentence…",
     "search": "Search",
     "searchPrompt": "Type a query above to search scholarly works, or select a sentence in your text.",
@@ -93,7 +133,11 @@
     "refreshed": "Citation links updated",
     "refreshedNoChange": "Links already up to date",
     "rateLimited": "Too many searches — retry in {seconds}s.",
-    "styleLabel": "Citation style"
+    "styleLabel": "Citation style",
+    "langLabel": "Language",
+    "lang_all": "All",
+    "lang_en": "English",
+    "lang_zh": "Chinese"
   },
   "rewrite": {
     "find": "AI rewrite",
@@ -120,30 +164,6 @@
       "fix_grammar": "Fix grammar"
     }
   },
-  "outline": {
-    "find": "Outline",
-    "panelTitle": "Outline generator",
-    "panelDesc": "Apply the standard IMRaD structure, or type a topic and let AI generate a tailored heading tree.",
-    "imradTitle": "IMRaD standard structure",
-    "imradDesc": "Intro · Literature · Methods · Results · Discussion · Conclusion",
-    "smartTitle": "AI-generated outline",
-    "topicPlaceholder": "Enter a topic, e.g. “the effect of flow on online learning motivation”",
-    "generate": "Generate",
-    "working": "Generating outline…",
-    "prompt": "Enter a topic and generate to preview the heading tree here.",
-    "insert": "Insert",
-    "insertGenerated": "Insert this outline",
-    "inserted": "Outline inserted",
-    "rateLimited": "Too many requests, retry in {seconds}s.",
-    "imrad": {
-      "intro": "Introduction",
-      "litReview": "Literature Review",
-      "methods": "Methodology",
-      "results": "Results",
-      "discussion": "Discussion",
-      "conclusion": "Conclusion"
-    }
-  },
   "slash": {
     "text": "Text",
     "textHint": "Plain paragraph",
@@ -159,6 +179,7 @@
     "imageHint": "Upload an image with a caption",
     "toc": "Table of contents",
     "figureList": "List of figures",
+    "referenceList": "Reference list",
     "mathInline": "Inline math",
     "mathBlock": "Math block",
     "table": "Table",
@@ -166,7 +187,18 @@
   },
   "math": {
     "inlinePlaceholder": "LaTeX, e.g. E=mc^2",
-    "blockPlaceholder": "LaTeX, e.g. \\int_0^1 x\\,dx"
+    "blockPlaceholder": "LaTeX, e.g. \\int_0^1 x\\,dx",
+    "done": "Done"
+  },
+  "blockHandle": {
+    "label": "Drag to move, click for menu",
+    "duplicate": "Duplicate block",
+    "delete": "Delete block"
+  },
+  "code": {
+    "searchPlaceholder": "Search language…",
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "table": {
     "word": "Table"
@@ -194,6 +226,11 @@
     "title": "List of Figures",
     "empty": "No figures in the document yet."
   },
+  "refList": {
+    "title": "References",
+    "empty": "No citations with a linked source yet.",
+    "toText": "Convert to text (edit manually)"
+  },
   "toc": {
     "title": "Contents",
     "empty": "No headings in the document yet."
@@ -210,11 +247,16 @@
     "rateLimited": "Too many checks, retry in {seconds}s.",
     "suggestionLabel": "Suggestion: ",
     "locate": "Locate",
+    "applyFix": "AI fix",
+    "fixNotFound": "Couldn't find the sentence (the text may have changed); can't auto-fix.",
+    "fixInstruction": "This passage has the following defect: {description}. Suggested change: {suggestion}. Rewrite the passage to fix the defect; output only the revised text itself, with no explanation.",
     "severity": {
       "high": "High",
       "medium": "Medium",
       "low": "Low"
-    }
+    },
+    "located": "Located",
+    "cancel": "Cancel"
   },
   "export": {
     "find": "Export",
@@ -242,6 +284,131 @@
     "tplIeee": "IEEE conference (IEEEtran)",
     "ieeeStyleHint": "IEEE layouts usually pair with the bracketed IEEE citation style ([1])",
     "ieeeStyleSwitch": "Switch to IEEE",
-    "done": "Download started"
+    "done": "Download started",
+    "cover": {
+      "toggle": "Add cover page (Taiwan thesis)",
+      "hint": "Top line Chinese, bottom line English per row; empty fields are omitted. Saved with this document.",
+      "university": "University",
+      "department": "Department",
+      "degree": "Degree",
+      "title": "Thesis title",
+      "advisor": "Advisor",
+      "student": "Graduate student",
+      "date": "Date"
+    }
+  },
+  "versions": {
+    "find": "Version history",
+    "panelTitle": "Version history",
+    "panelDesc": "Auto-snapshots periodically (keeps the latest 20); you can also save named versions. Preview and restore any of them.",
+    "namePlaceholder": "Version name (optional)",
+    "save": "Save version",
+    "saved": "Version saved",
+    "defaultName": "Manual version",
+    "none": "No versions yet — one is created automatically after you edit for a while.",
+    "preview": "Preview",
+    "restore": "Restore",
+    "confirmRestore": "Restore this version? The current content is backed up first, so you can undo.",
+    "restored": "Restored",
+    "empty": "(this version has no text)",
+    "labelAutosave": "Autosave",
+    "labelRestoreBackup": "Pre-restore backup"
+  },
+  "conflict": {
+    "message": "This document was changed in another tab or device. Autosave is paused to avoid overwriting.",
+    "reload": "Load latest",
+    "overwrite": "Keep mine & overwrite",
+    "reloaded": "Loaded the latest version (your edits were saved as a version you can restore)",
+    "overwritten": "Overwritten with your version",
+    "backupLabel": "Conflict backup"
+  },
+  "wordCount": {
+    "summary": "{chars, number} chars · {words, number} words"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "desc": "Handy shortcuts to write faster.",
+    "groupFormat": "Text formatting",
+    "groupBlocks": "Blocks & lists",
+    "groupAI": "AI writing",
+    "groupEdit": "Editing",
+    "bold": "Bold",
+    "italic": "Italic",
+    "code": "Inline code",
+    "strike": "Strikethrough",
+    "heading": "Heading 1/2/3",
+    "orderedList": "Ordered list",
+    "bulletList": "Bullet list",
+    "slash": "Command menu",
+    "aiSuggest": "Request AI suggestion",
+    "acceptGhost": "Accept suggestion",
+    "dismiss": "Dismiss suggestion",
+    "undo": "Undo",
+    "redo": "Redo",
+    "find": "Find / Replace"
+  },
+  "find": {
+    "searchPlaceholder": "Find",
+    "replacePlaceholder": "Replace with",
+    "none": "none",
+    "prev": "Previous",
+    "next": "Next",
+    "caseSensitive": "Match case",
+    "replace": "Replace",
+    "replaceAll": "Replace all",
+    "close": "Close",
+    "title": "Find & Replace"
+  },
+  "verify": {
+    "find": "Verify citations (traffic light)",
+    "none": "No citations to verify (link a source first).",
+    "done": "Verified {count} citations, {problems} need attention.",
+    "rateLimited": "Too many verifications; paused. Try again shortly.",
+    "supports": "Source supports the claim",
+    "partial": "Source partially supports",
+    "unsupported": "Source does not support the claim"
+  },
+  "kg": {
+    "find": "Knowledge graph (deep check)",
+    "panelTitle": "Knowledge graph",
+    "panelDesc": "Whole-draft deep analysis: concept graph + cross-section rule checks (slower).",
+    "summary": "Found {total} defects ({cross} cross-section).",
+    "seeDefects": "See defects",
+    "rerun": "Re-analyze",
+    "building": "Analyzing… (building graph + cross-section checks, ~tens of seconds)",
+    "empty": "Not analyzed yet."
+  },
+  "progress": {
+    "label": "Writing progress",
+    "words": "{chars} chars",
+    "goalLabel": "Word goal",
+    "goalPlaceholder": "Set a target…",
+    "ofGoal": "{current} / {goal} chars",
+    "byChapter": "By chapter",
+    "preface": "(Front matter)",
+    "untitled": "(Untitled chapter)",
+    "noGoal": "Set a goal to see the progress bar",
+    "clearGoal": "Clear"
+  },
+  "focus": {
+    "enter": "Focus mode (no autocomplete)",
+    "exit": "Exit focus (Esc)",
+    "fullscreen": "Fullscreen",
+    "exitFullscreen": "Exit fullscreen"
+  },
+  "lint": {
+    "find": "Grammar / style check",
+    "panelTitle": "Grammar / style check",
+    "panelDesc": "Rule-based (no token): half-width punctuation, CJK–Latin spacing, space before punctuation.",
+    "count": "{n} issues",
+    "clean": "No issues 👍",
+    "fixAll": "Fix all",
+    "fix": "Fix",
+    "locate": "Locate",
+    "type": {
+      "halfPunct": "Half-width punct.",
+      "pangu": "CJK–Latin spacing",
+      "spaceBeforePunct": "Space before punct."
+    }
   }
 }

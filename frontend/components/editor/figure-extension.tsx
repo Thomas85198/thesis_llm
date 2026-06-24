@@ -25,7 +25,12 @@ function resolveSrc(src: string): string {
 }
 
 type FigureLabels = { figureWord: string; captionPlaceholder: string };
-type FigureListLabels = { figureWord: string; title: string; empty: string; untitled: string };
+type FigureListLabels = {
+  figureWord: string;
+  title: string;
+  empty: string;
+  untitled: string;
+};
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -36,25 +41,32 @@ declare module "@tiptap/core" {
   }
 }
 
-/** 1-based number of the figure at `pos` by document order. */
+/** 1-based number of the figure at `pos`, counting only captioned figures (an
+ * uncaptioned image — e.g. a scanned cover/consent page — is not a numbered
+ * figure). Returns 0 when the figure at `pos` has no caption. */
 function figureNumberAt(editor: Editor, pos: number | undefined): number {
   let count = 0;
   let found = 0;
   editor.state.doc.descendants((node, p) => {
     if (node.type.name === "figure") {
-      count += 1;
-      if (p === pos) found = count;
+      const captioned = !!(node.attrs.caption as string)?.trim();
+      if (captioned) count += 1;
+      if (p === pos) found = captioned ? count : 0;
     }
     return true;
   });
-  return found || count + 1;
+  return found;
 }
 
-/** All figures in document order, with their captions. */
+/** Captioned figures in document order (uncaptioned ones are excluded from the
+ * list of figures so they don't leave blank, mis-numbered entries). */
 function collectFigures(editor: Editor): { caption: string }[] {
   const out: { caption: string }[] = [];
   editor.state.doc.descendants((node) => {
-    if (node.type.name === "figure") out.push({ caption: node.attrs.caption || "" });
+    if (node.type.name === "figure") {
+      const caption = ((node.attrs.caption as string) || "").trim();
+      if (caption) out.push({ caption });
+    }
     return true;
   });
   return out;
@@ -85,9 +97,11 @@ function FigureView(props: NodeViewProps) {
         contentEditable={false}
         className="flex w-full items-baseline justify-center gap-1.5 text-sm text-muted-foreground"
       >
-        <span className="shrink-0 font-medium text-foreground">
-          {labels.figureWord} {number}.
-        </span>
+        {number > 0 && (
+          <span className="shrink-0 font-medium text-foreground">
+            {labels.figureWord} {number}.
+          </span>
+        )}
         <input
           value={node.attrs.caption}
           onChange={(e) => updateAttributes({ caption: e.target.value })}
@@ -108,7 +122,9 @@ export const Figure = Node.create<{ labels: FigureLabels }>({
   selectable: true,
 
   addOptions() {
-    return { labels: { figureWord: "Figure", captionPlaceholder: "Add a caption…" } };
+    return {
+      labels: { figureWord: "Figure", captionPlaceholder: "Add a caption…" },
+    };
   },
 
   addAttributes() {
@@ -195,7 +211,12 @@ export const FigureList = Node.create<{ labels: FigureListLabels }>({
 
   addOptions() {
     return {
-      labels: { figureWord: "Figure", title: "List of Figures", empty: "No figures yet.", untitled: "(untitled)" },
+      labels: {
+        figureWord: "Figure",
+        title: "List of Figures",
+        empty: "No figures yet.",
+        untitled: "(untitled)",
+      },
     };
   },
 

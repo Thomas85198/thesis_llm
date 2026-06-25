@@ -29,6 +29,13 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_17_1": {
+      "title": "Cross-section check stability fix",
+      "summary": "Fixes a case where the cross-section defect check (abstract⇄conclusion, introduction⇄method, etc.) would occasionally run away on a single candidate — bloating output, dragging out analysis, or even aborting the whole run. Output is now capped, and on truncation the pass is skipped gracefully instead of failing the entire analysis. Invisible in normal use; just more stable.",
+      "changes": {
+        "0": "cross_section_pass now caps output (max_tokens) and degrades gracefully on truncation, so a single runaway candidate can't bloat or abort the whole analysis."
+      }
+    },
     "4_17_0": {
       "title": "One-click defect fix (AI fix)",
       "summary": "The defect-check panel gains an \"AI fix\": for a defect tied to a problem sentence, one click locates that sentence, generates a rewrite from the defect's description and suggestion, and lets you preview it before deciding — it only replaces the text once you accept, never editing your draft on its own.",

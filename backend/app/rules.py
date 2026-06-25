@@ -1,4 +1,5 @@
 """Load 13 REL rules and run them against a Paper KG to detect defects."""
+
 from __future__ import annotations
 
 import json
@@ -13,6 +14,7 @@ import yaml
 from .i18n import LANG_NAME, PRIMARY_LOCALE, SUPPORTED_LOCALES
 from .kg import resolve_evidence_to_edus, run_cypher
 from .llm import (
+    LLMOutputTruncatedError,
     call_with_tool,
     llm_max_workers,
     model_cross_section,
@@ -209,9 +211,7 @@ def check_all_rules(
     # order, so metas/defects stay in a stable, reproducible order.
     if rules:
         with ThreadPoolExecutor(max_workers=llm_max_workers()) as pool:
-            results = pool.map(
-                lambda r: check_rule(r, paper_id, paper_title), rules
-            )
+            results = pool.map(lambda r: check_rule(r, paper_id, paper_title), rules)
             for rule_defects, meta in results:
                 defects.extend(rule_defects)
                 metas.append(meta)
@@ -341,19 +341,31 @@ def cross_section_pass(
     # lab key only has access to GPT-4o (128K) — papers >100K tokens may then truncate.
     # Setting ENABLE_CROSS_SECTION_PASS=0 in env skips this stage entirely.
     model = model_cross_section()
-    out = call_with_tool(
-        model=model,
-        system=load_prompt("cross_section").format(
-            rules_block=rules_block,
-            language=LANG_NAME[PRIMARY_LOCALE],
-        ),
-        user_content=user_content,
-        tool_name="emit_cross_section_defects",
-        tool_description="Emit cross-section defects for the listed rules.",
-        tool_input_schema=CROSS_SECTION_SCHEMA,
-        paper_id=paper_id,
-        stage="cross_section_pass",
-    )
+    # A single candidate (e.g. REL-12 abstract-vs-conclusion) over the whole-paper
+    # dump occasionally makes the model run away and emit thousands of tokens. Cap
+    # output well above the ~561-token norm to stop the blow-up, and degrade
+    # gracefully on truncation: a missed cross-section pass beats killing the whole
+    # analysis (consistent with the no-rule/no-EDU early returns above).
+    try:
+        out = call_with_tool(
+            model=model,
+            system=load_prompt("cross_section").format(
+                rules_block=rules_block,
+                language=LANG_NAME[PRIMARY_LOCALE],
+            ),
+            user_content=user_content,
+            tool_name="emit_cross_section_defects",
+            tool_description="Emit cross-section defects for the listed rules.",
+            tool_input_schema=CROSS_SECTION_SCHEMA,
+            max_tokens=8000,
+            paper_id=paper_id,
+            stage="cross_section_pass",
+        )
+    except LLMOutputTruncatedError as exc:
+        print(
+            f"[rules] cross_section_pass output truncated for paper={paper_id} — skipping: {exc}"
+        )
+        return [], meta
 
     defects: list[Defect] = []
     for v in out.get("defects", []):

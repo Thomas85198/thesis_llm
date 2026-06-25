@@ -32,3 +32,4 @@ neo4j_data/
 
 # 本機 SQLite 快照（DBeaver 用，勿 commit）
 thesis-data.db
+論文確定版.pdf

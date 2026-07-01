@@ -78,7 +78,9 @@ function RewritePanelBody({
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
   const [lastInstruction, setLastInstruction] = useState<string | null>(null);
-  const [custom, setCustom] = useState("");
+  // Defect "AI fix" seeds an instruction; surface it in the editable box so the
+  // user sees what was asked and can tweak + re-send (via retry / submit).
+  const [custom, setCustom] = useState(preset ?? "");
   const abortRef = useRef<AbortController | null>(null);
 
   const run = useCallback(

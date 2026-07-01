@@ -943,6 +943,16 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
     editorRef.current = editor;
   }, [editor]);
 
+  // Citation chips + the references list are NodeViews whose label/numbering is
+  // derived from the global citation style. Flipping APA⇄IEEE only mutates the
+  // store, which won't always re-run the NodeViews' decorations — so dispatch a
+  // no-op transaction to force every chip + the reference list to recompute.
+  // addToHistory:false keeps it out of undo.
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(editor.state.tr.setMeta("addToHistory", false));
+  }, [editor, citationStyle]);
+
   // Block-drag plumbing. The ⠿ grip is portaled outside the editor DOM, so the
   // native dragend never reaches prosemirror-dropcursor (its listeners live on
   // editor.dom) — the drop line then lingers on the plugin's 5s fallback timer.

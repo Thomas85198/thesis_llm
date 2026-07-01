@@ -805,7 +805,7 @@ function CitationPanelBody({
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
                       {typeof c.similarity === "number" && (
                         <span
-                          className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-xs text-primary"
+                          className="inline-flex cursor-help items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-xs text-primary"
                           title={t("citation.semanticHint")}
                         >
                           <Sparkles className="h-3 w-3" />
@@ -1119,7 +1119,10 @@ function GroundView({ result }: { result: GroundResult }) {
       <ul className="flex flex-col gap-1">
         {result.supporting.map((s, i) => (
           <li key={i} className="text-xs leading-snug">
-            <span className="mr-1 font-mono text-[10px] text-primary">
+            <span
+              className="mr-1 cursor-help font-mono text-[10px] text-primary"
+              title={t("citation.groundScoreHint")}
+            >
               {Math.round(s.score * 100)}%
             </span>
             「{s.sentence}」

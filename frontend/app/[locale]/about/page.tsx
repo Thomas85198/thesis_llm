@@ -1,49 +1,48 @@
 "use client";
 
 import { ArrowDownIcon, Check, X } from "lucide-react";
-import { useTranslations } from "next-intl";
 
 import { MermaidDiagram } from "@/components/mermaid-diagram";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-const SECTION_IDS = [
-  "intro",
-  "arch",
-  "pipeline",
-  "kg",
-  "rds",
-  "rules",
-  "example",
-  "phase2",
-  "guards",
-  "literature",
-  "perf",
-  "editor",
-] as const;
+// 本頁為「系統介紹 / 功能全貌」簡報素材，自含繁中（不走 next-intl t()）。
+// 整體偏功能面；流程、寫作功能、上雲為使用者指定的加深主題。
+// 更深的工程細節（schema、逐條規則、效能數據、API）留在 docs/SYSTEM.md。
 
-const EDITOR_MODULES = ["writing", "citation", "block", "export"] as const;
+const TOC: { id: string; title: string }[] = [
+  { id: "intro", title: "這是什麼" },
+  { id: "why", title: "為何不只是 ChatGPT" },
+  { id: "how", title: "它怎麼運作" },
+  { id: "analysis", title: "功能：論文審稿" },
+  { id: "flow-analysis", title: "流程：上傳分析 + 例外處理" },
+  { id: "editor", title: "功能：寫作編輯器" },
+  { id: "flow-writing", title: "流程：寫作 → 匯出 PDF" },
+  { id: "tech", title: "技術一覽" },
+  { id: "ai", title: "AI 採用一覽" },
+  { id: "cloud", title: "上雲規劃" },
+  { id: "trust", title: "為什麼可信" },
+  { id: "future", title: "未來展望" },
+];
 
 export default function AboutPage() {
-  const t = useTranslations("about");
-
   return (
-    <div className="mx-auto w-full max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:flex">
+    <div className="mx-auto w-full max-w-6xl gap-8 px-4 py-8 sm:px-6 lg:flex">
       {/* Sticky TOC */}
       <aside className="lg:sticky lg:top-20 lg:h-[calc(100vh-6rem)] lg:w-56 lg:shrink-0 lg:overflow-y-auto">
         <nav className="mb-6 rounded-md border bg-card p-3 lg:mb-0">
           <p className="mb-2 text-[11px] font-semibold uppercase text-muted-foreground">
-            {t("toc")}
+            目錄
           </p>
-          <ul className="space-y-1">
-            {SECTION_IDS.map((id) => (
-              <li key={id}>
+          <ul className="space-y-0.5">
+            {TOC.map((it) => (
+              <li key={it.id}>
                 <a
-                  href={`#${id}`}
+                  href={`#${it.id}`}
                   className="block rounded px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 >
-                  {t(`nav.${id}`)}
+                  {it.title}
                 </a>
               </li>
             ))}
@@ -55,50 +54,78 @@ export default function AboutPage() {
         {/* HERO */}
         <header className="space-y-4 border-b pb-8">
           <Badge variant="secondary" className="font-mono">
-            {t("hero.badge")}
+            系統介紹 · 功能全貌
           </Badge>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            {t("hero.title")}
+            學術論文結構性缺陷檢核系統
           </h1>
-          <p className="text-lg text-muted-foreground">{t("hero.subtitle")}</p>
-          <p className="max-w-3xl text-base leading-relaxed">{t("hero.lead")}</p>
+          <p className="text-lg text-muted-foreground">
+            幫研究者把論文「論證結構」的問題抓出來，並協助改好
+          </p>
+          <p className="max-w-3xl text-base leading-relaxed">
+            上傳一篇論文，系統會自動找出「主張沒證據、缺乏動機、跨章節對不上」這類
+            <strong>讀完整篇才看得出來</strong>
+            的結構問題，並指回原文、給修改建議；
+            另外附一套學術寫作編輯器，從寫作到投稿格式一條龍。
+          </p>
           <a
             href="#intro"
             className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
           >
-            {t("hero.startReading")} <ArrowDownIcon className="h-3 w-3" />
+            開始閱讀 <ArrowDownIcon className="h-3 w-3" />
           </a>
         </header>
 
-        {/* 1. 系統定位 */}
-        <Section id="intro" title={t("sections.intro.title")}>
-          <p>{t("intro.p1")}</p>
+        {/* 1. 這是什麼 */}
+        <Section id="intro" title="這是什麼">
+          <p>
+            一套<strong>論文審稿 + 學術寫作</strong>
+            的平台。核心解決三類「結構性」問題—— 這些問題傳統靠人工
+            review，慢又主觀：
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <PainCard
+              title="主張無證據"
+              desc="寫了「我們的方法最好」，卻沒附數據或對照。"
+            />
+            <PainCard
+              title="缺乏動機"
+              desc="直接給方法，沒說為什麼這個問題重要、為何這樣設計。"
+            />
+            <PainCard
+              title="跨章節失聯"
+              desc="結論講的東西前言沒鋪陳；方法沒對應到問題。"
+            />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            只專注「論證結構與邏輯」——不做文法（已有
+            Grammarly）、不做引用格式（已有 Zotero）。
+          </p>
+        </Section>
 
-          <h3>{t("intro.compareHeading")}</h3>
+        {/* 2. 為何不只是 ChatGPT */}
+        <Section id="why" title="為何不只是「叫 ChatGPT 幫我看論文」">
+          <p>
+            技術上把全文丟給 LLM 也能得到一些意見，但有三個硬傷：
+            <strong>每次答案不同、講不清在哪一句、沒有可維護的標準</strong>。
+            本系統的差異：
+          </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-xs">
                 <tr>
-                  <th className="p-2 text-left">{t("intro.compareColDim")}</th>
-                  <th className="p-2 text-left">{t("intro.compareColLlm")}</th>
-                  <th className="p-2 text-left">{t("intro.compareColOurs")}</th>
+                  <th className="p-2 text-left">面向</th>
+                  <th className="p-2 text-left">純 LLM 對話</th>
+                  <th className="p-2 text-left">本系統</th>
                 </tr>
               </thead>
               <tbody>
-                {(
-                  [
-                    "reproducible",
-                    "trace",
-                    "maintainable",
-                    "crossPaper",
-                    "methodology",
-                  ] as const
-                ).map((key) => (
+                {COMPARE.map((r) => (
                   <ComparisonRow
-                    key={key}
-                    dim={t(`intro.compare.${key}.dim`)}
-                    llm={t(`intro.compare.${key}.llm`)}
-                    ours={t(`intro.compare.${key}.ours`)}
+                    key={r.dim}
+                    dim={r.dim}
+                    llm={r.llm}
+                    ours={r.ours}
                   />
                 ))}
               </tbody>
@@ -106,756 +133,544 @@ export default function AboutPage() {
           </div>
         </Section>
 
-        {/* 2. 系統架構 */}
-        <Section id="arch" title={t("sections.arch.title")}>
-          <p>{t("arch.p1")}</p>
-          <MermaidDiagram
-            caption={t("arch.diagramCaption")}
-            code={`flowchart LR
-    User([${t("arch.diagram.user")}])
-    FE["${t("arch.diagram.fe")}"]
-    BE["${t("arch.diagram.be")}"]
-    Claude[(Anthropic Claude API<br/>Sonnet 4.6 / Opus 4.7)]
-    Neo[(${t("arch.diagram.neo")})]
-    SQL[(${t("arch.diagram.sql")})]
-    Disk[(${t("arch.diagram.disk")})]
-
-    User -- ${t("arch.diagram.edgeUpload")} --> FE
-    FE -- ${t("arch.diagram.edgeHttp")} --> BE
-    BE -- ${t("arch.diagram.edgeExtract")} --> Claude
-    BE -- ${t("arch.diagram.edgeWrite")} --> Neo
-    BE -- ${t("arch.diagram.edgeMeta")} --> SQL
-    BE -- ${t("arch.diagram.edgeStore")} --> Disk
-    FE -- ${t("arch.diagram.edgePull")} --> BE`}
-          />
-        </Section>
-
-        {/* 3. Pipeline 時序圖 */}
-        <Section id="pipeline" title={t("sections.pipeline.title")}>
+        {/* 3. 它怎麼運作 */}
+        <Section id="how" title="它怎麼運作（概念）">
           <p>
-            {t.rich("pipeline.p1", {
-              maxWorkers: () => <code>OPENAI_MAX_WORKERS</code>,
-              jobId: () => <code>job_id</code>,
-            })}
+            關鍵是<strong>「先把論文拆成結構，再用固定規則檢查」</strong>
+            ，而不是讓 LLM 自由發揮。分三步：
           </p>
           <MermaidDiagram
-            caption={t("pipeline.diagramCaption")}
-            code={`sequenceDiagram
-    autonumber
-    participant U as ${t("pipeline.diagram.user")}
-    participant F as ${t("pipeline.diagram.fe")}
-    participant B as ${t("pipeline.diagram.be")}
-    participant O as ${t("pipeline.diagram.openai")}
-    participant N as ${t("pipeline.diagram.neo")}
-    participant S as ${t("pipeline.diagram.sql")}
-
-    U->>F: ${t("pipeline.diagram.upload")}
-    F->>B: POST /api/upload
-    B->>B: ${t("pipeline.diagram.dedupe")}
-    alt ${t("pipeline.diagram.hitAlt")}
-        B-->>F: ${t("pipeline.diagram.hitReturn")}
-    else ${t("pipeline.diagram.newFile")}
-        B-->>F: ${t("pipeline.diagram.newReturn")}
-        Note over B: ${t("pipeline.diagram.bgNote")}
-        B->>B: ${t("pipeline.diagram.extractSpans")}
-        alt ${t("pipeline.diagram.garbledAlt")}
-            B->>B: ${t("pipeline.diagram.ocr")}
-        end
-        B->>B: ${t("pipeline.diagram.splitSections")}
-        par ${t("pipeline.diagram.parSections")}
-            B->>O: ${t("pipeline.diagram.sectionA")}
-        and
-            B->>O: ${t("pipeline.diagram.sectionB")}
-        and
-            B->>O: ${t("pipeline.diagram.sectionEtc")}
-        end
-        B->>N: ${t("pipeline.diagram.writeKg")}
-        par ${t("pipeline.diagram.parRules")}
-            B->>N: ${t("pipeline.diagram.cypherCand")}
-            B->>O: ${t("pipeline.diagram.llmJudge")}
-        end
-        B->>O: ${t("pipeline.diagram.crossSection")}
-        B->>S: ${t("pipeline.diagram.writeResult")}
-        B-->>F: ${t("pipeline.diagram.jobDone")}
-    end
-    F->>B: ${t("pipeline.diagram.pullResult")}
-    F-->>U: ${t("pipeline.diagram.resultPage")}`}
+            caption="三步：LLM 把文字拆成結構 → 規則找問題 → LLM 給建議"
+            code={`flowchart LR
+    A["① 拆解<br/>LLM 把整篇論文<br/>拆成「論述結構」"]
+    B["② 檢查<br/>用固定規則<br/>找出結構上的問題"]
+    C["③ 建議<br/>對每個問題<br/>給原文位置 + 修改方向"]
+    A --> B --> C`}
           />
-        </Section>
-
-        {/* 4. KG 資料結構 */}
-        <Section id="kg" title={t("sections.kg.title")}>
-          <p>{t("kg.p1")}</p>
-
-          <h3>{t("kg.nodesHeading")}</h3>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <NodeCard
-              name="Paper"
-              color="bg-rose-100 dark:bg-rose-950"
-              attrs={["id", "title"]}
-              meaning={t("kg.nodes.paper")}
-            />
-            <NodeCard
-              name="EDU"
-              color="bg-violet-100 dark:bg-violet-950"
-              attrs={["id", "text", "section", "order", "page", "bbox", "paper_id"]}
-              meaning={t("kg.nodes.edu")}
-            />
-            <NodeCard
-              name="Entity"
-              color="bg-emerald-100 dark:bg-emerald-950"
-              attrs={["id", "name", "type", "paper_id"]}
-              meaning={t("kg.nodes.entity")}
-            />
-            <NodeCard
-              name="FRU"
-              color="bg-cyan-100 dark:bg-cyan-950"
-              attrs={["id", "function", "summary", "paper_id"]}
-              meaning={t("kg.nodes.fru")}
-            />
-            <NodeCard
-              name="RST"
-              color="bg-amber-100 dark:bg-amber-950"
-              attrs={["id", "rst_type", "paper_id"]}
-              meaning={t("kg.nodes.rst")}
-            />
-          </div>
-
-          <h3>{t("kg.edgesHeading")}</h3>
-          <MermaidDiagram
-            caption={t("kg.edgesDiagramCaption")}
-            code={`flowchart TB
-    Paper([Paper<br/>id, title]):::paper
-    EDU[EDU<br/>id, text, section,<br/>order, page, bbox]:::edu
-    Entity1[Entity<br/>name, type]:::entity
-    Entity2[Entity<br/>name, type]:::entity
-    FRU{{FRU<br/>function, summary}}:::fru
-    RST[/RST<br/>rst_type/]:::rst
-
-    Paper -- HAS_EDU --> EDU
-    FRU -- COVERS --> EDU
-    RST -- NUCLEUS --> EDU
-    RST -- SATELLITE --> EDU
-    Entity1 -- "ER {predicate, evidence_edu_id}" --> Entity2
-    Entity1 -- MENTIONED_IN --> EDU
-
-    classDef paper fill:#fecdd3,stroke:#be123c
-    classDef edu fill:#ede9fe,stroke:#7c3aed
-    classDef entity fill:#d1fae5,stroke:#059669
-    classDef fru fill:#cffafe,stroke:#0891b2
-    classDef rst fill:#fef3c7,stroke:#d97706`}
-          />
-
-          <h4 className="mt-4 mb-2 text-base font-semibold">
-            {t("kg.edgesTableHeading")}
-          </h4>
+          <p>
+            因為「哪裡有問題」是由<strong>可重現的規則</strong>決定、LLM
+            只負責拆解與給建議，
+            所以結果穩定、可追溯、規則也能由人維護調整。系統內建{" "}
+            <strong>13 類結構規則</strong>，涵蓋上面三大痛點：
+          </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-xs">
                 <tr>
-                  <th className="p-2 text-left">{t("kg.edgesColEdge")}</th>
-                  <th className="p-2 text-left">{t("kg.edgesColDir")}</th>
-                  <th className="p-2 text-left">{t("kg.edgesColMeaning")}</th>
-                  <th className="p-2 text-left">{t("kg.edgesColExample")}</th>
+                  <th className="p-2 text-left">會抓出的問題</th>
+                  <th className="p-2 text-left">例子</th>
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-t">
-                  <td className="p-2 font-mono text-xs">HAS_EDU</td>
-                  <td className="p-2 text-xs">Paper → EDU</td>
-                  <td className="p-2">{t("kg.edges.hasEdu.meaning")}</td>
-                  <td className="p-2 text-xs">
-                    {t("kg.edges.hasEdu.examplePrefix")}
-                    <em>{t("kg.edges.hasEdu.examplePaper")}</em>
-                    {t("kg.edges.hasEdu.exampleSuffix")}
-                  </td>
+                {RULE_SUMMARY.map((r) => (
+                  <tr key={r.name} className="border-t align-top">
+                    <td className="p-2 font-medium whitespace-nowrap">
+                      {r.name}
+                    </td>
+                    <td className="p-2 text-muted-foreground">{r.example}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            規則寫在可編輯的設定檔，研究團隊能自行增修；完整 13 條與技術細節見{" "}
+            <code>docs/SYSTEM.md</code>。
+          </p>
+        </Section>
+
+        {/* 4. 功能：論文審稿 */}
+        <Section id="analysis" title="功能：論文審稿">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {ANALYSIS_FEATURES.map((f) => (
+              <FeatureCard key={f.title} title={f.title} desc={f.desc} />
+            ))}
+          </div>
+        </Section>
+
+        {/* 5. 流程：上傳分析 + 例外處理 */}
+        <Section id="flow-analysis" title="流程：上傳分析（含例外處理）">
+          <p>
+            上傳後先用<strong>內容雜湊去重</strong>
+            （同檔秒回、不重花錢）；全新檔案開背景任務跑， 前端輪詢進度（
+            <code>queued → extracting → checking → done</code>）。
+          </p>
+          <MermaidDiagram
+            caption="上傳 → 分析 主流程"
+            code={`flowchart TD
+    U[上傳 PDF] --> H{內容雜湊<br/>分析過?}
+    H -- 是 --> Cache["直接回傳快取結果<br/>(秒回)"]
+    H -- 否 --> Q["建立背景任務<br/>queued"]
+    Q --> E["抽取文字<br/>extracting"]
+    E --> OCR{字型亂碼?}
+    OCR -- 是 --> T[tesseract OCR fallback]
+    OCR -- 否 --> S
+    T --> S["切章節 → 抽 EDU / 實體 / 修辭"]
+    S --> KG[寫入知識圖譜 Neo4j]
+    KG --> R["13 條規則檢核<br/>checking"]
+    R --> CS["跨章節 second pass<br/>REL-04 / 08 / 12"]
+    CS --> D["完成 done<br/>PDF 高亮 + 缺陷面板"]`}
+          />
+          <h3>例外與容錯</h3>
+          <p>
+            系統把「可自動救」與「真的失敗」分開處理——大多數抖動會自動吞掉，只有致命錯誤才標{" "}
+            <code>error</code>。
+          </p>
+          <MermaidDiagram
+            caption="左：自動容錯（使用者無感）／右：致命失敗的善後"
+            code={`flowchart TB
+    subgraph AUTO["自動容錯（使用者無感）"]
+        A1["LLM 限流 / 5xx"] --> A2["指數退避重試<br/>最多 5 次"]
+        B1["PDF 字型亂碼"] --> B2["改走 OCR"]
+        C1["跨章節 pass 失敗"] --> C2["記 warning<br/>保留 13 條規則結果"]
+    end
+    subgraph FATAL["致命失敗的善後"]
+        F1["抽取 / 建圖出錯"] --> F2["任務狀態 → error"]
+        F2 --> F3["失敗事件寫入 DB"]
+        F3 --> F4["寄信通知管理者"]
+        F4 --> F5["清掉半成品 KG / 紀錄<br/>但保留 PDF 供下載重試"]
+    end`}
+          />
+          <p className="text-sm text-muted-foreground">
+            另：全新部署後第一篇上傳偶爾因 Neo4j 暖機出現 transient
+            錯誤，重傳即成功；LLM 額度用罄等永久性錯誤會立即停止、不空轉重試。
+          </p>
+
+          <h3>系統通知信件（維運）</h3>
+          <p>
+            系統會主動寄出<strong>兩種</strong>維運信件。皆走純 stdlib
+            SMTP（STARTTLS）， 只在有設定 SMTP
+            帳密時才真的寄、否則自動略過；寄信永不拋例外，不會蓋掉原始錯誤。
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {MAILS.map((m) => (
+              <Card key={m.title}>
+                <CardContent className="space-y-1.5 p-4 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                        m.badgeCls,
+                      )}
+                    >
+                      {m.kind}
+                    </span>
+                    <span className="font-semibold">{m.title}</span>
+                  </div>
+                  <p className="text-muted-foreground">
+                    <strong>時機：</strong>
+                    {m.when}
+                  </p>
+                  <p className="text-muted-foreground">
+                    <strong>內容：</strong>
+                    {m.content}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            收件者預設寄給管理者本人；信中皆附後台連結，可直接查看或下載原檔重現。
+          </p>
+        </Section>
+
+        {/* 6. 功能：寫作編輯器 */}
+        <Section id="editor" title="功能：學術寫作編輯器">
+          <p>
+            獨立於審稿端的寫作環境（所見即所得，文件以結構化 JSON
+            儲存）。從打草稿、引用、結構檢查到輸出投稿格式一站搞定。
+          </p>
+
+          <h3>寫作輔助（AI）</h3>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {EDITOR_AI.map((f) => (
+              <FeatureCard key={f.title} title={f.title} desc={f.desc} />
+            ))}
+          </div>
+
+          <h3>結構檢查（把審稿帶進寫作）</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {EDITOR_CHECK.map((f) => (
+              <FeatureCard key={f.title} title={f.title} desc={f.desc} />
+            ))}
+          </div>
+
+          <h3>引用工具鏈（可驗證）</h3>
+          <p className="text-sm text-muted-foreground">
+            引用不只是「插一條
+            reference」，而是一條可查核的鏈——從找文獻、補書目，到把句子主張對回原文證據。
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {EDITOR_CITE.map((f) => (
+              <FeatureCard key={f.title} title={f.title} desc={f.desc} />
+            ))}
+          </div>
+
+          <h3>編輯體驗</h3>
+          <ul>
+            <li>
+              <strong>Slash 指令：</strong>打 <code>/</code>{" "}
+              快速插入標題、表格、圖片、程式碼、數學式等區塊。
+            </li>
+            <li>
+              <strong>區塊操作：</strong>每段左側 ⋮
+              把手可上下插入區塊、拖曳搬移。
+            </li>
+            <li>
+              <strong>富內容：</strong>表格工具列、程式碼語法高亮、KaTeX
+              數學式、圖片 + 圖說、自動目錄。
+            </li>
+            <li>
+              <strong>找替換：</strong>Cmd/Ctrl+F、Cmd/Ctrl+H 支援搜尋與取代。
+            </li>
+            <li>
+              <strong>寫作狀態：</strong>即時字數 /
+              閱讀時間估計、快捷鍵說明（Cmd+?）。
+            </li>
+          </ul>
+
+          <h3>版本控制（git-like）</h3>
+          <p>
+            自動存檔快照 + 可手動命名版本；隨時瀏覽、還原到過去版本，
+            <strong>還原前會先把目前內容存成備份</strong>，不怕回不去。
+          </p>
+
+          <h3>多格式匯出</h3>
+          <ul>
+            <li>
+              <strong>版型：</strong>
+              台灣論文（twthesis）、一般文章、雙欄、IEEE。
+            </li>
+            <li>
+              <strong>引用樣式：</strong>APA · MLA · Chicago · Harvard · IEEE ·
+              Numeric。
+            </li>
+            <li>
+              <strong>台灣論文雙語封面：</strong>校 / 系 / 學位 / 題目 /
+              指導教授 / 學生 / 日期 七對中英欄位。
+            </li>
+            <li>
+              <strong>格式：</strong>Word · LaTeX（.tex，含圖則打包 .zip）·
+              PDF（伺服器 XeLaTeX 編譯）· Markdown · HTML · 純文字。
+            </li>
+          </ul>
+        </Section>
+
+        {/* 7. 流程：寫作 → 匯出 PDF */}
+        <Section id="flow-writing" title="流程：寫作 → LaTeX / PDF">
+          <p>
+            可從既有檔案<strong>匯入</strong>（Word / Markdown / LaTeX /
+            純文字）開始編輯；輸出時，
+            <strong>PDF 與 LaTeX 同源</strong>——先產生 <code>.tex</code>
+            ，偵測到中文就自動套 ctex / XeLaTeX，再編譯成 PDF。
+          </p>
+          <MermaidDiagram
+            caption="匯入 → 編輯 → 匯出；PDF 由 LaTeX 經 XeLaTeX 編譯"
+            code={`flowchart LR
+    Imp["匯入<br/>.docx / .md / .tex / .txt"] --> ED
+    ED["編輯器<br/>(結構化 JSON)"]
+    ED -- AI 輔助 / 引用 / 檢查 --> ED
+    ED --> EXP{選擇匯出格式}
+    EXP -- DOCX --> W[Word]
+    EXP -- "Markdown / HTML / TXT" --> MD[文字格式]
+    EXP -- "LaTeX / PDF" --> TEX["產生 .tex<br/>偵測中文 → ctex"]
+    TEX -- .tex --> L[LaTeX 原始檔]
+    TEX -- PDF --> X["XeLaTeX 編譯<br/>(60s 逾時保護)"]
+    X -- 成功 --> P[PDF 下載]
+    X -- 失敗 --> Err["回傳編譯日誌末段<br/>方便除錯"]`}
+          />
+          <p className="text-sm text-muted-foreground">
+            匯出 PDF 需要伺服器具備
+            XeLaTeX；若環境未安裝會明確回報，而不是默默失敗。
+          </p>
+        </Section>
+
+        {/* 8. 技術一覽 */}
+        <Section id="tech" title="技術一覽（給工程讀者）">
+          <p>
+            前後端分離；<strong>缺陷分析</strong>與{" "}
+            <strong>AI 寫作編輯器</strong>兩大子系統共用同一個後端與資料層。
+            後端把抽取與判讀外包給 LLM，論文結構存知識圖譜、其餘存關聯式資料庫。
+          </p>
+          <MermaidDiagram
+            caption="整體架構：兩大子系統共用後端與資料層"
+            code={`flowchart TB
+    User([使用者])
+    subgraph FE["前端 · Next.js / React（PWA · 可安裝）"]
+        direction LR
+        S1["缺陷分析<br/>上傳 · 結果 · 知識圖譜"]
+        S2["AI 寫作編輯器<br/>寫作 · 引用 · 匯出"]
+    end
+    BE["後端 · FastAPI (Python)"]
+    LLM[(OpenAI<br/>gpt-5.4)]
+    Neo[(Neo4j<br/>知識圖譜)]
+    SQL[(SQLite<br/>資料 / 結果 / 成本)]
+
+    User --> FE
+    S1 --> BE
+    S2 --> BE
+    BE -- 抽取 / 判讀 / 寫作 --> LLM
+    BE -- 論文結構 --> Neo
+    BE -- 流水資料 --> SQL`}
+          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FeatureCard
+              title="前端"
+              desc="Next.js 16 · React 19 · TypeScript · Tailwind · TipTap 編輯器 · 知識圖譜視覺化。"
+            />
+            <FeatureCard
+              title="後端"
+              desc="Python · FastAPI · PyMuPDF（PDF 解析）；LLM 用 OpenAI gpt-5.4，可換 Azure / 自架。"
+            />
+            <FeatureCard
+              title="資料"
+              desc="Neo4j 存論文結構（圖）、SQLite 存中繼資料 / 分析結果 / 成本紀錄。"
+            />
+            <FeatureCard
+              title="部署"
+              desc="Docker Compose 一鍵起；生產用 Caddy 反向代理收斂成單一對外 port。"
+            />
+            <FeatureCard
+              title="PWA（可安裝）"
+              desc="可「加入主畫面」當原生 App 用（平板全螢幕）；網路不穩離線顯示上次畫面，資料一律走網路、不會看到過期內容。"
+            />
+          </div>
+        </Section>
+
+        {/* 8.5 AI 採用一覽 */}
+        <Section id="ai" title="AI 採用一覽（哪裡用 AI、用什麼模型）">
+          <p>
+            系統<strong>不是「把全文丟給一個大模型」</strong>
+            ，而是把工作切成許多小步驟， 每步挑<strong>剛好夠用</strong>
+            的模型——重判讀用大模型、量大的輕任務用 mini、
+            語意比對用向量模型。依任務分三層：
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {AI_MODELS.map((m) => (
+              <Card key={m.model} className="border-l-4 border-l-primary/60">
+                <CardContent className="space-y-1.5 p-4 text-sm">
+                  <p className="font-mono text-[13px] font-semibold">
+                    {m.model}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{m.role}</p>
+                  <p>{m.desc}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <h3>每個功能用到的模型</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs">
+                <tr>
+                  <th className="p-2 text-left">子系統</th>
+                  <th className="p-2 text-left">功能 / 步驟</th>
+                  <th className="p-2 text-left">用 AI 做什麼</th>
+                  <th className="p-2 text-left">模型</th>
                 </tr>
-                <tr className="border-t">
-                  <td className="p-2 font-mono text-xs">COVERS</td>
-                  <td className="p-2 text-xs">FRU → EDU</td>
-                  <td className="p-2">{t("kg.edges.covers.meaning")}</td>
-                  <td className="p-2 text-xs">{t("kg.edges.covers.example")}</td>
+              </thead>
+              <tbody>
+                {AI_USAGE.map((r, i) => (
+                  <tr key={`${r.feature}-${i}`} className="border-t align-top">
+                    <td className="p-2 whitespace-nowrap text-muted-foreground">
+                      {r.group}
+                    </td>
+                    <td className="p-2 font-medium whitespace-nowrap">
+                      {r.feature}
+                    </td>
+                    <td className="p-2 text-muted-foreground">{r.use}</td>
+                    <td className="p-2 font-mono text-[12px] whitespace-nowrap">
+                      {r.model}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            注意：<strong>「哪裡有缺陷」不是 AI 決定的</strong>—— AI
+            只負責把論文拆成結構、抽特徵、給文字建議；判定缺陷的是
+            <strong>固定規則</strong>
+            （見「它怎麼運作」），所以結果可重現、可追溯。
+          </p>
+
+          <h3>每個功能吃什麼、怎麼判、上限多少</h3>
+          <p className="text-sm text-muted-foreground">
+            每個 AI 功能只拿到「剛好夠用」的輸入，並各自有字數 /
+            句數上限，避免把整篇硬塞給模型：
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs">
+                <tr>
+                  <th className="p-2 text-left">功能</th>
+                  <th className="p-2 text-left">吃什麼（input）</th>
+                  <th className="p-2 text-left">怎麼判（規則）</th>
+                  <th className="p-2 text-left">上限</th>
                 </tr>
-                <tr className="border-t">
-                  <td className="p-2 font-mono text-xs">NUCLEUS</td>
-                  <td className="p-2 text-xs">RST → EDU</td>
-                  <td className="p-2">{t("kg.edges.nucleus.meaning")}</td>
-                  <td className="p-2 text-xs">{t("kg.edges.nucleus.example")}</td>
+              </thead>
+              <tbody>
+                {AI_DETAIL.map((r) => (
+                  <tr key={r.feature} className="border-t align-top">
+                    <td className="p-2 font-medium whitespace-nowrap">
+                      {r.feature}
+                    </td>
+                    <td className="p-2 text-muted-foreground">{r.input}</td>
+                    <td className="p-2 text-muted-foreground">{r.rule}</td>
+                    <td className="p-2 text-xs whitespace-nowrap">{r.limit}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Card className="border-l-4 border-l-amber-400/70">
+            <CardContent className="space-y-1.5 p-4 text-sm">
+              <p className="font-semibold">
+                易混淆：「是否支持」vs.「語意檢查」
+              </p>
+              <p className="text-muted-foreground">
+                兩者都在查「來源撐不撐得起這句主張」，但機制不同：
+                <strong>是否支持（verify）</strong>用{" "}
+                <strong>LLM 看摘要</strong>，給 supports / partial / unsupported
+                的紅綠燈；<strong>語意檢查（ground）</strong>用{" "}
+                <strong>向量相似度在全文裡排名</strong>，只回最相符的 3
+                句原文＋分數，<strong>不下支持與否的判定</strong>。
+              </p>
+            </CardContent>
+          </Card>
+          <p className="text-xs text-muted-foreground">
+            三個模型皆透過環境變數設定（
+            <code>OPENAI_MODEL_HEAVY</code> / <code>_LIGHT</code> /{" "}
+            <code>OPENAI_MODEL_EMBED</code>），可整批換成 Azure OpenAI
+            或自架相容模型而不動程式碼；DOI 解析、文獻查詢走 Crossref / OpenAlex
+            等學術 API，本身不耗 LLM。
+          </p>
+        </Section>
+
+        {/* 9. 上雲規劃 */}
+        <Section id="cloud" title="上雲規劃">
+          <p>
+            目前是單機 Docker
+            Compose（適合實驗室自用）。要對外開放、承受多人同時用，瓶頸在三個「綁在單機上的狀態」：
+            <strong>SQLite 單檔、本機磁碟檔案、記憶體裡的任務進度</strong>
+            。上雲就是把這三個解耦，換成可水平擴展的託管服務。
+          </p>
+          <MermaidDiagram
+            caption="上雲後的目標架構"
+            code={`flowchart TB
+    Users([使用者]) --> CDN["CDN / 邊緣<br/>前端"]
+    CDN --> LB["負載平衡 + TLS"]
+    LB --> API["後端 API<br/>容器 ×N（可水平擴展）"]
+    API --> Q[("任務佇列")]
+    Q --> WK["分析 Worker ×N"]
+    API --> PG[("託管 Postgres<br/>(原 SQLite)")]
+    WK --> PG
+    API --> NEO[("託管 Neo4j")]
+    WK --> NEO
+    API --> OBJ[("物件儲存<br/>PDF / 匯出檔")]
+    WK --> OBJ
+    WK --> LLM["LLM API"]
+    API --> SEC["機密管理"]`}
+          />
+
+          <h3>現在 → 上雲 對照</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs">
+                <tr>
+                  <th className="p-2 text-left">項目</th>
+                  <th className="p-2 text-left">現在</th>
+                  <th className="p-2 text-left">上雲後</th>
                 </tr>
-                <tr className="border-t">
-                  <td className="p-2 font-mono text-xs">SATELLITE</td>
-                  <td className="p-2 text-xs">RST → EDU</td>
-                  <td className="p-2">{t("kg.edges.satellite.meaning")}</td>
-                  <td className="p-2 text-xs">{t("kg.edges.satellite.example")}</td>
-                </tr>
-                <tr className="border-t">
-                  <td className="p-2 font-mono text-xs">ER</td>
-                  <td className="p-2 text-xs">Entity → Entity</td>
-                  <td className="p-2">{t("kg.edges.er.meaning")}</td>
-                  <td className="p-2 text-xs">
-                    {t("kg.edges.er.examplePrefix")}
-                    {`{predicate: "based_on"}`}
-                    {t("kg.edges.er.exampleSuffix")}
-                  </td>
-                </tr>
-                <tr className="border-t">
-                  <td className="p-2 font-mono text-xs">MENTIONED_IN</td>
-                  <td className="p-2 text-xs">Entity → EDU</td>
-                  <td className="p-2">{t("kg.edges.mentionedIn.meaning")}</td>
-                  <td className="p-2 text-xs">
-                    {t("kg.edges.mentionedIn.example")}
-                  </td>
-                </tr>
+              </thead>
+              <tbody>
+                {CLOUD_MAP.map((r) => (
+                  <tr key={r.item} className="border-t align-top">
+                    <td className="p-2 font-medium whitespace-nowrap">
+                      {r.item}
+                    </td>
+                    <td className="p-2 text-muted-foreground">{r.now}</td>
+                    <td className="p-2">{r.cloud}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
 
-          <h3>{t("kg.fruHeading")}</h3>
-          <p className="text-xs text-muted-foreground">{t("kg.fruIntro")}</p>
-          <SubtypeTable items={FRU_FUNCTION_NAMES} kind="fruFunctions" />
+          <h3>分三階段走</h3>
+          <ol>
+            <li>
+              <strong>階段一 · 搬遷（最少改動）：</strong>
+              整套 Compose 直接搬到一台雲端 VM 先上線，TLS
+              改用雲端憑證。功能不變，先求「在雲上跑起來」。
+            </li>
+            <li>
+              <strong>階段二 · 解耦狀態：</strong>
+              換掉三個擋擴展的點——SQLite → 託管 Postgres、本機磁碟 →
+              物件儲存、記憶體任務 → 持久佇列 + 獨立 worker；Neo4j
+              改託管。此時才能多實例、可重試。
+            </li>
+            <li>
+              <strong>階段三 · 彈性與維運：</strong>
+              API 與分析 worker 依負載自動擴縮；補上監控 /
+              告警（成本日誌已有基礎），機密進機密管理服務。
+            </li>
+          </ol>
+          <p className="text-sm text-muted-foreground">
+            LLM 已是 API 形式（可指向 OpenAI / Azure /
+            自架），上雲不需改動；這也讓「本地 +
+            雲端混合推論以省成本」成為可選項。
+          </p>
+        </Section>
 
-          <h3>{t("kg.rstHeading")}</h3>
-          <p className="text-xs text-muted-foreground">{t("kg.rstIntro")}</p>
-          <SubtypeTable items={RST_TYPE_NAMES} kind="rstTypes" />
-
-          <h3>{t("kg.whyHeading")}</h3>
-          <p>{t("kg.whyIntro")}</p>
+        {/* 10. 為什麼可信 */}
+        <Section id="trust" title="為什麼可信">
           <ul>
             <li>
-              <strong>REL-01 Claim-Evidence</strong>：{t("kg.why.rel01")}
+              <strong>可重現：</strong>
+              「哪裡有問題」由固定規則決定，同一篇跑兩次結果一致，能做學術評估。
             </li>
             <li>
-              <strong>REL-09 Observation-Attribution</strong>：{t("kg.why.rel09")}
+              <strong>可追溯：</strong>每個缺陷都指回 PDF
+              上的具體句子；助手回答也強制標出處可點擊跳轉。
             </li>
             <li>
-              <strong>REL-04 Macro-Decomposition</strong>：{t("kg.why.rel04")}
+              <strong>有方法論依據：</strong>結合「神經網路抽取 +
+              符號規則推理」（Neurosymbolic
+              AI），並以修辭結構理論（RST）為標註基礎。
             </li>
             <li>
-              <strong>{t("kg.why.entityLabel")}</strong>：{t("kg.why.entity")}
+              <strong>用實驗佐證：</strong>另有離線消融實驗，比較「先拆解再評論
+              vs. 直接丟全文」，驗證本方法的優勢。
             </li>
           </ul>
         </Section>
 
-        {/* 5. SQLite 資料結構 */}
-        <Section id="rds" title={t("sections.rds.title")}>
-          <p>{t("rds.p1")}</p>
-          <MermaidDiagram
-            caption={t("rds.diagramCaption")}
-            code={`erDiagram
-    papers ||--o| results : "${t("rds.erd.rel1to1")}"
-    papers ||--o{ llm_calls : "${t("rds.erd.rel1toManyCalls")}"
-    papers ||--o{ defect_judgments : "${t("rds.erd.rel1toManyJudgments")}"
-    results ||--o{ defect_judgments : "${t("rds.erd.relLogical")}"
-
-    papers {
-        TEXT paper_id PK
-        TEXT title
-        TEXT content_hash
-        TEXT pdf_path
-        TEXT created_at
-    }
-    results {
-        TEXT paper_id PK
-        TEXT result_json
-        TEXT finished_at
-    }
-    llm_calls {
-        INTEGER id PK
-        TEXT paper_id
-        TEXT stage
-        TEXT model
-        INTEGER input_tokens
-        INTEGER output_tokens
-        REAL cost_usd
-        TEXT created_at
-    }
-    defect_judgments {
-        TEXT paper_id PK
-        TEXT defect_id PK
-        TEXT rule_id
-        TEXT verdict
-        TEXT note
-        TEXT created_at
-    }`}
-          />
-
-          <h3>{t("rds.schemaHeading")}</h3>
-
-          <TableSchema
-            name="papers"
-            purpose={t("rds.tables.papers.purpose")}
-            keyDesign={t("rds.tables.papers.keyDesign")}
-            columns={[
-              { col: "paper_id", type: "TEXT PK", desc: t("rds.tables.papers.cols.paper_id") },
-              { col: "title", type: "TEXT", desc: t("rds.tables.papers.cols.title") },
-              { col: "content_hash", type: "TEXT", desc: t("rds.tables.papers.cols.content_hash") },
-              { col: "pdf_path", type: "TEXT", desc: t("rds.tables.papers.cols.pdf_path") },
-              { col: "created_at", type: "TEXT NOT NULL", desc: t("rds.tables.papers.cols.created_at") },
-            ]}
-          />
-
-          <TableSchema
-            name="results"
-            purpose={t("rds.tables.results.purpose")}
-            keyDesign={t("rds.tables.results.keyDesign")}
-            columns={[
-              { col: "paper_id", type: "TEXT PK / FK", desc: t("rds.tables.results.cols.paper_id") },
-              { col: "result_json", type: "TEXT NOT NULL", desc: t("rds.tables.results.cols.result_json") },
-              { col: "finished_at", type: "TEXT NOT NULL", desc: t("rds.tables.results.cols.finished_at") },
-            ]}
-          />
-
-          <TableSchema
-            name="llm_calls"
-            purpose={t("rds.tables.llm_calls.purpose")}
-            keyDesign={t("rds.tables.llm_calls.keyDesign")}
-            columns={[
-              { col: "id", type: "INTEGER PK AUTOINCREMENT", desc: t("rds.tables.llm_calls.cols.id") },
-              { col: "paper_id", type: "TEXT", desc: t("rds.tables.llm_calls.cols.paper_id") },
-              { col: "stage", type: "TEXT NOT NULL", desc: t("rds.tables.llm_calls.cols.stage") },
-              { col: "model", type: "TEXT NOT NULL", desc: t("rds.tables.llm_calls.cols.model") },
-              { col: "input_tokens", type: "INTEGER NOT NULL", desc: t("rds.tables.llm_calls.cols.input_tokens") },
-              { col: "output_tokens", type: "INTEGER NOT NULL", desc: t("rds.tables.llm_calls.cols.output_tokens") },
-              { col: "cache_read_tokens", type: "INTEGER DEFAULT 0", desc: t("rds.tables.llm_calls.cols.cache_read_tokens") },
-              { col: "cache_write_tokens", type: "INTEGER DEFAULT 0", desc: t("rds.tables.llm_calls.cols.cache_write_tokens") },
-              { col: "cost_usd", type: "REAL NOT NULL", desc: t("rds.tables.llm_calls.cols.cost_usd") },
-              { col: "created_at", type: "TEXT NOT NULL", desc: t("rds.tables.llm_calls.cols.created_at") },
-            ]}
-          />
-
-          <TableSchema
-            name="defect_judgments"
-            purpose={t("rds.tables.defect_judgments.purpose")}
-            keyDesign={t("rds.tables.defect_judgments.keyDesign")}
-            columns={[
-              { col: "paper_id", type: "TEXT PK", desc: t("rds.tables.defect_judgments.cols.paper_id") },
-              { col: "defect_id", type: "TEXT PK", desc: t("rds.tables.defect_judgments.cols.defect_id") },
-              { col: "rule_id", type: "TEXT NOT NULL", desc: t("rds.tables.defect_judgments.cols.rule_id") },
-              { col: "verdict", type: "TEXT CHECK", desc: t("rds.tables.defect_judgments.cols.verdict") },
-              { col: "note", type: "TEXT", desc: t("rds.tables.defect_judgments.cols.note") },
-              { col: "created_at", type: "TEXT NOT NULL", desc: t("rds.tables.defect_judgments.cols.created_at") },
-            ]}
-          />
-
-          <h3>{t("rds.strengthHeading")}</h3>
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-xs">
-              <tr>
-                <th className="p-2 text-left">{t("rds.strengthColRel")}</th>
-                <th className="p-2 text-left">{t("rds.strengthColStrength")}</th>
-                <th className="p-2 text-left">{t("rds.strengthColWhy")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-t">
-                <td className="p-2 font-mono text-xs">papers ↔ results</td>
-                <td className="p-2">{t("rds.strength.papersResults.strength")}</td>
-                <td className="p-2">{t("rds.strength.papersResults.why")}</td>
-              </tr>
-              <tr className="border-t">
-                <td className="p-2 font-mono text-xs">papers ↔ llm_calls</td>
-                <td className="p-2">{t("rds.strength.papersCalls.strength")}</td>
-                <td className="p-2">{t("rds.strength.papersCalls.why")}</td>
-              </tr>
-              <tr className="border-t">
-                <td className="p-2 font-mono text-xs">papers ↔ judgments</td>
-                <td className="p-2">{t("rds.strength.papersJudgments.strength")}</td>
-                <td className="p-2">{t("rds.strength.papersJudgments.why")}</td>
-              </tr>
-              <tr className="border-t">
-                <td className="p-2 font-mono text-xs">judgments ↔ results.json</td>
-                <td className="p-2">{t("rds.strength.judgmentsResults.strength")}</td>
-                <td className="p-2">{t("rds.strength.judgmentsResults.why")}</td>
-              </tr>
-            </tbody>
-          </table>
-        </Section>
-
-        {/* 6. 13 條 REL 規則 */}
-        <Section id="rules" title={t("sections.rules.title")}>
-          <p>{t("rules.p1")}</p>
-          <MermaidDiagram
-            caption={t("rules.diagramCaption")}
-            code={`flowchart LR
-    Y[${t("rules.diagram.yaml")}] --> S1
-    S1[${t("rules.diagram.step1")}] --> C[${t("rules.diagram.candidates")}]
-    C --> S2[${t("rules.diagram.step2")}]
-    S2 --> D[${t("rules.diagram.defect")}]`}
-          />
-          <h3>{t("rules.listHeading")}</h3>
-          <p className="text-xs text-muted-foreground">{t("rules.listIntro")}</p>
-
-          <div className="space-y-3">
-            {REL_RULES.map((r) => (
-              <RuleCard key={r.id} rule={r} />
+        {/* 11. 未來展望 */}
+        <Section id="future" title="未來展望">
+          <p>
+            接下來的方向，從「把現有功能補完」到「放大這套結構化資料的價值」：
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {ROADMAP.map((f) => (
+              <FeatureCard key={f.title} title={f.title} desc={f.desc} />
             ))}
           </div>
         </Section>
 
-        {/* 7. 範例走查 */}
-        <Section id="example" title={t("sections.example.title")}>
-          <p>{t.rich("example.intro", { b: (c) => <strong>{c}</strong> })}</p>
-
-          <ExampleStep n={1} title={t("example.step1.title")}>
-            <Quote>
-              While single-head attention is 0.9 BLEU worse than the best setting,
-              quality also drops off with too many heads.
-            </Quote>
-            <p>{t("example.step1.translation")}</p>
-            <p className="text-xs text-muted-foreground">
-              {t("example.step1.location")}
-            </p>
-          </ExampleStep>
-
-          <ExampleStep n={2} title={t("example.step2.title")}>
-            <p>{t("example.step2.intro")}</p>
-            <ul>
-              <li>
-                <strong>{t("example.step2.observationLabel")}</strong>
-                {t("example.step2.observation")}
-              </li>
-              <li>
-                <strong>{t("example.step2.locationLabel")}</strong>
-                {t("example.step2.location")}
-              </li>
-              <li>
-                <strong>{t("example.step2.rstLabel")}</strong>
-                {t("example.step2.rst")}
-              </li>
-            </ul>
-            <p>{t("example.step2.key")}</p>
-          </ExampleStep>
-
-          <ExampleStep n={3} title={t("example.step3.title")}>
-            <p>{t("example.step3.intro")}</p>
-            <blockquote className="my-2 border-l-2 border-primary bg-primary/5 p-3 text-sm font-medium">
-              {t("example.step3.quote")}
-            </blockquote>
-            <p>{t.rich("example.step3.body", { b: (c) => <strong>{c}</strong> })}</p>
-            <p className="text-xs text-muted-foreground">
-              {t("example.step3.contrast")}
-            </p>
-          </ExampleStep>
-
-          <ExampleStep n={4} title={t("example.step4.title")}>
-            <p>{t("example.step4.intro")}</p>
-            <ul>
-              <li>
-                <strong>{t("example.step4.verdictLabel")}</strong>
-                {t("example.step4.verdict")}
-              </li>
-              <li>
-                <strong>{t("example.step4.severityLabel")}</strong>
-                {t("example.step4.severity")}
-              </li>
-              <li>
-                <strong>{t("example.step4.confidenceLabel")}</strong>
-                {t("example.step4.confidence")}
-              </li>
-              <li>
-                <strong>{t("example.step4.suggestionLabel")}</strong>
-                {t("example.step4.suggestion")}
-              </li>
-            </ul>
-          </ExampleStep>
-
-          <ExampleStep n={5} title={t("example.step5.title")}>
-            <Card className="border-l-4 border-l-orange-500">
-              <CardContent className="space-y-2 p-3 text-sm">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant="outline" className="font-mono text-[10px]">
-                    REL-09
-                  </Badge>
-                  <span className="font-semibold">
-                    {t("example.step5.defectName")}
-                  </span>
-                  <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700">
-                    {t("example.step5.severityBadge")}
-                  </span>
-                  <Badge variant="secondary" className="text-[10px]">
-                    Results
-                  </Badge>
-                  <span className="rounded bg-sky-100 px-1.5 py-0.5 font-mono text-[10px] text-sky-700">
-                    75%
-                  </span>
-                </div>
-                <p className="border-l-2 border-muted-foreground/30 pl-2 text-xs italic text-muted-foreground">
-                  「While single-head attention is 0.9 BLEU worse than the best setting,
-                  quality also drops off with too many heads.」
-                </p>
-                <p>{t("example.step5.body")}</p>
-                <div className="rounded bg-muted/60 p-2 text-xs">
-                  <strong>{t("example.step5.suggestionLabel")}</strong>
-                  {t("example.step5.suggestion")}
-                </div>
-              </CardContent>
-            </Card>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {t("example.step5.footnote")}
-            </p>
-          </ExampleStep>
-
-          <ExampleStep n={6} title={t("example.step6.title")}>
-            <p>
-              {t("example.step6.body1Prefix")}
-              <strong>{t("example.step6.verdictCorrect")}</strong> /{" "}
-              <strong>{t("example.step6.verdictPartial")}</strong> /{" "}
-              <strong>{t("example.step6.verdictWrong")}</strong>
-              {t("example.step6.body1Suffix")}
-            </p>
-            <p>
-              {t("example.step6.body2Prefix")}
-              <strong>{t("example.step6.body2Bold")}</strong>
-              {t("example.step6.body2Suffix")}
-            </p>
-          </ExampleStep>
-        </Section>
-
-        {/* 8. 人工評估機制 */}
-        <Section id="phase2" title={t("sections.phase2.title")}>
-          <p>
-            {t("phase2.p1Prefix")}
-            <strong>{t("phase2.p1Bold")}</strong>
-            {t("phase2.p1Suffix")}
-          </p>
-          <MermaidDiagram
-            caption={t("phase2.diagramCaption")}
-            code={`flowchart LR
-    A[${t("phase2.diagram.newPaper")}] --> B[${t("phase2.diagram.cypher")}]
-    B --> D[${t("phase2.diagram.llm")}]
-    D --> G[${t("phase2.diagram.defectList")}]
-    G -. ${t("phase2.diagram.manualLabel")} .-> H[("${t("phase2.diagram.sqlite")}")]
-    H --> I["${t("phase2.diagram.summary")}"]
-    H --> J["${t("phase2.diagram.export")}"]`}
-          />
-          <p>{t("phase2.p2")}</p>
-        </Section>
-
-        {/* 9. 聊天 Guardrails */}
-        <Section id="guards" title={t("sections.guards.title")}>
-          <p>{t("guards.p1")}</p>
-          <ol className="text-sm">
-            <li>
-              <strong>{t("guards.scopeLabel")}</strong>
-              {t("guards.scope")}
-            </li>
-            <li>
-              <strong>{t("guards.citeLabel")}</strong>
-              {t("guards.citePrefix")}
-              <code className="rounded bg-muted px-1 text-xs">[EDU:xxx]</code>
-              {t("guards.citeMid")}
-              <code className="rounded bg-muted px-1 text-xs">[DEFECT:xxx]</code>
-              {t("guards.citeSuffix")}
-            </li>
-            <li>
-              <strong>{t("guards.injectionLabel")}</strong>
-              {t("guards.injection")}
-            </li>
-            <li>
-              <strong>{t("guards.rateLabel")}</strong>
-              {t("guards.rate")}
-            </li>
-          </ol>
-        </Section>
-
-        {/* 10. 理論文獻 */}
-        <Section id="literature" title={t("sections.literature.title")}>
-          <p>{t("literature.p1")}</p>
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-xs">
-              <tr>
-                <th className="p-2 text-left">{t("literature.colDesign")}</th>
-                <th className="p-2 text-left">{t("literature.colWork")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {LITERATURE.map((row) => (
-                <tr key={row.key} className="border-t">
-                  <td className="p-2">{t(`literature.items.${row.key}`)}</td>
-                  <td className="p-2 italic">{row.work}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Section>
-
-        {/* 11. 效能與穩定性 */}
-        <Section id="perf" title={t("sections.perf.title")}>
-          <p>
-            {t("perf.p1Prefix")}
-            <strong>{t("perf.p1Calls")}</strong>
-            {t("perf.p1Mid")}
-            <strong>{t("perf.p1Minutes")}</strong>
-            {t("perf.p1Suffix")}
-          </p>
-
-          <h3>{t("perf.h1")}</h3>
-          <p>{t.rich("perf.h1p", { table: () => <code>llm_calls</code> })}</p>
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-xs">
-              <tr>
-                <th className="p-2 text-left">{t("perf.diag1ColBlock")}</th>
-                <th className="p-2 text-left">{t("perf.diag1ColCalls")}</th>
-                <th className="p-2 text-left">{t("perf.diag1ColTime")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-t">
-                <td className="p-2">{t("perf.diag1.extractBlock")}</td>
-                <td className="p-2">{t("perf.diag1.extractCalls")}</td>
-                <td className="p-2">{t("perf.diag1.extractTime")}</td>
-              </tr>
-              <tr className="border-t">
-                <td className="p-2">{t("perf.diag1.rulesBlock")}</td>
-                <td className="p-2">{t("perf.diag1.rulesCalls")}</td>
-                <td className="p-2">{t("perf.diag1.rulesTime")}</td>
-              </tr>
-              <tr className="border-t">
-                <td className="p-2">{t("perf.diag1.crossBlock")}</td>
-                <td className="p-2">{t("perf.diag1.crossCalls")}</td>
-                <td className="p-2">{t("perf.diag1.crossTime")}</td>
-              </tr>
-              <tr className="border-t font-medium">
-                <td className="p-2">{t("perf.diag1.totalBlock")}</td>
-                <td className="p-2">{t("perf.diag1.totalCalls")}</td>
-                <td className="p-2">{t("perf.diag1.totalTime")}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <h3>{t("perf.h2")}</h3>
-          <p>{t.rich("perf.h2p", { maxWorkers: () => <code>OPENAI_MAX_WORKERS</code> })}</p>
-          <ul>
-            <li>
-              <strong>{t("perf.h2li.crossSectionLabel")}</strong>
-              {t("perf.h2li.crossSection")}
-            </li>
-            <li>
-              <strong>{t("perf.h2li.crossRuleLabel")}</strong>
-              {t("perf.h2li.crossRule")}
-            </li>
-            <li>
-              <strong>{t("perf.h2li.safeLabel")}</strong>
-              {t.rich("perf.h2li.safe", { poolMap: () => <code>pool.map</code> })}
-            </li>
-            <li>
-              <strong>{t("perf.h2li.rateLabel")}</strong>
-              {t("perf.h2li.ratePrefix")}
-              <code>call_with_tool</code>
-              {t("perf.h2li.rateSuffix")}
-            </li>
-          </ul>
-
-          <h3>{t("perf.h3")}</h3>
-          <p>
-            {t("perf.h3p1Prefix")}
-            <strong>{t("perf.h3p1Bold")}</strong>
-            {t("perf.h3p1Suffix")}
-          </p>
-          <p>
-            {t("perf.h3p2Prefix")}
-            <code>{`{candidate_index, violates:false}`}</code>
-            {t("perf.h3p2Suffix")}
-          </p>
-
-          <h3>{t("perf.h4")}</h3>
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-xs">
-              <tr>
-                <th className="p-2 text-left">{t("perf.h4ColStage")}</th>
-                <th className="p-2 text-left">{t("perf.h4ColBefore")}</th>
-                <th className="p-2 text-left">{t("perf.h4ColAfter")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-t">
-                <td className="p-2">build_paper_graph</td>
-                <td className="p-2">{t("perf.diag4.buildBefore")}</td>
-                <td className="p-2">{t("perf.diag4.buildAfter")}</td>
-              </tr>
-              <tr className="border-t">
-                <td className="p-2">check_all_rules</td>
-                <td className="p-2">{t("perf.diag4.checkBefore")}</td>
-                <td className="p-2">{t("perf.diag4.checkAfter")}</td>
-              </tr>
-              <tr className="border-t">
-                <td className="p-2">cross_section</td>
-                <td className="p-2">{t("perf.diag4.crossBefore")}</td>
-                <td className="p-2">{t("perf.diag4.crossAfter")}</td>
-              </tr>
-              <tr className="border-t font-medium">
-                <td className="p-2">{t("perf.diag4.totalStage")}</td>
-                <td className="p-2">{t("perf.diag4.totalBefore")}</td>
-                <td className="p-2">{t("perf.diag4.totalAfter")}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <h3>{t("perf.h5")}</h3>
-          <p>
-            {t.rich("perf.h5p", {
-              garbled: () => <code>*?Ti2`</code>,
-              chapter: () => <code>Chapter</code>,
-            })}
-          </p>
-
-          <h3>{t("perf.h6")}</h3>
-          <p>{t.rich("perf.h6p", { tests: () => <code>backend/tests/</code> })}</p>
-        </Section>
-
-        {/* 12. 寫作編輯器 */}
-        <Section id="editor" title={t("sections.editor.title")}>
-          <p>{t("editor.p1")}</p>
-
-          <h3>{t("editor.modulesHeading")}</h3>
-          <ul>
-            {EDITOR_MODULES.map((k) => (
-              <li key={k}>
-                <strong>{t(`editor.modules.${k}.title`)}</strong>
-                {t(`editor.modules.${k}.desc`)}
-              </li>
-            ))}
-          </ul>
-
-          <MermaidDiagram
-            caption={t("editor.diagramCaption")}
-            code={`flowchart LR
-    U([${t("editor.diagram.author")}])
-    ED["${t("editor.diagram.ed")}"]
-    SVC["${t("editor.diagram.svc")}"]
-    CT["${t("editor.diagram.cite")}"]
-    OA[(OpenAlex)]
-    EX["${t("editor.diagram.export")}"]
-    DB[("${t("editor.diagram.db")}")]
-
-    U --> ED
-    ED -- ${t("editor.diagram.edgeStream")} --> SVC
-    ED -- ${t("editor.diagram.edgeSearch")} --> CT
-    CT --> OA
-    ED -- ${t("editor.diagram.edgeExport")} --> EX
-    ED -- ${t("editor.diagram.edgeSave")} --> DB`}
-          />
-
-          <h3>{t("editor.diffHeading")}</h3>
-          <p>{t("editor.diff")}</p>
-        </Section>
-
         {/* Footer */}
         <footer className="border-t pt-6 text-center text-xs text-muted-foreground">
-          {t("footer.prefix")}
-          <a
-            href="https://github.com/anthropics/claude-code"
-            className="text-primary hover:underline"
-          >
-            docs/SYSTEM.md
-          </a>
+          想看深入的工程細節（資料 schema、完整 13 條規則、效能數據、API）見{" "}
+          <code>docs/SYSTEM.md</code>；13 條規則怎麼寫、怎麼維護見{" "}
+          <code>docs/REL-rules-explained.md</code>。
         </footer>
       </div>
     </div>
   );
 }
 
-// ---------- 子組件 ----------
+// ---------- 子元件 ----------
 
 function Section({
   id,
@@ -871,15 +686,17 @@ function Section({
       <h2 className="mb-4 border-b pb-2 text-2xl font-semibold tracking-tight">
         {title}
       </h2>
-      <div className={cn(
-        "space-y-5 text-base leading-relaxed",
-        "[&_h3]:mt-6 [&_h3]:text-xl [&_h3]:font-semibold",
-        "[&_p]:leading-relaxed",
-        "[&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1",
-        "[&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:space-y-1",
-        "[&_table]:my-3 [&_table]:rounded-md [&_table]:border",
-        "[&_th]:border-b [&_td]:border-b [&_td:last-child]:border-r-0",
-      )}>
+      <div
+        className={cn(
+          "space-y-5 text-base leading-relaxed",
+          "[&_h3]:mt-6 [&_h3]:text-lg [&_h3]:font-semibold",
+          "[&_p]:leading-relaxed",
+          "[&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1.5",
+          "[&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:space-y-2",
+          "[&_table]:my-3 [&_table]:rounded-md [&_table]:border",
+          "[&_th]:border-b [&_td]:border-b [&_td:last-child]:border-r-0",
+        )}
+      >
         {children}
       </div>
     </section>
@@ -914,381 +731,384 @@ function ComparisonRow({
   );
 }
 
-function NodeCard({
-  name,
-  color,
-  attrs,
-  meaning,
-}: {
-  name: string;
-  color: string;
-  attrs: string[];
-  meaning: string;
-}) {
+function PainCard({ title, desc }: { title: string; desc: string }) {
+  return (
+    <Card className="border-l-4 border-l-rose-400/70">
+      <CardContent className="space-y-1 p-4 text-sm">
+        <p className="font-semibold">{title}</p>
+        <p className="text-muted-foreground">{desc}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FeatureCard({ title, desc }: { title: string; desc: string }) {
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <span className={cn("rounded px-2 py-0.5 font-mono text-xs", color)}>
-            {name}
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2 text-sm">
-        <p className="text-muted-foreground">{meaning}</p>
-        <div className="flex flex-wrap gap-1">
-          {attrs.map((a) => (
-            <code
-              key={a}
-              className="rounded bg-muted px-1.5 py-0.5 text-[10px]"
-            >
-              {a}
-            </code>
-          ))}
-        </div>
+      <CardContent className="space-y-1 p-4 text-sm">
+        <p className="font-semibold">{title}</p>
+        <p className="text-muted-foreground">{desc}</p>
       </CardContent>
     </Card>
   );
 }
 
-function RuleCard({ rule }: { rule: RelRule }) {
-  const t = useTranslations("about");
-  const hitBadge: Record<RelRule["vaswaniHit"], { label: string; cls: string }> = {
-    fire: { label: t("rules.card.hitFire"), cls: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" },
-    partial: { label: t("rules.card.hitPartial"), cls: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300" },
-    healthy: { label: t("rules.card.hitHealthy"), cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" },
-  };
-  const badge = hitBadge[rule.vaswaniHit];
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-          <Badge variant="outline" className="font-mono">
-            {rule.id}
-          </Badge>
-          <span>{t(`relRules.${rule.id}.name`)}</span>
-          <Badge variant="secondary" className="font-mono text-[10px]">
-            {rule.defectLabel}
-          </Badge>
-          <span
-            className={cn(
-              "rounded px-1.5 py-0.5 text-[10px] font-medium",
-              badge.cls
-            )}
-          >
-            {badge.label}
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2 text-sm">
-        <div>
-          <strong className="text-muted-foreground text-xs">{t("rules.card.meaningLabel")}</strong>
-          <p>{t(`relRules.${rule.id}.meaning`)}</p>
-        </div>
-        <div>
-          <strong className="text-muted-foreground text-xs">{t("rules.card.triggerLabel")}</strong>
-          <p>{t(`relRules.${rule.id}.trigger`)}</p>
-        </div>
-        <div className="space-y-2 rounded bg-muted/40 p-3">
-          <div className="text-xs leading-relaxed">
-            <strong>{t("rules.card.exampleLabel")}</strong>
-            {t(`relRules.${rule.id}.example`)}
-          </div>
-          <div className="border-l-2 border-primary/40 pl-3">
-            <p className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">
-              {t("rules.card.englishLabel", { location: rule.vaswaniLocation })}
-            </p>
-            <p className="font-serif text-xs italic leading-relaxed text-foreground/80">
-              &ldquo;{rule.vaswaniEnglish}&rdquo;
-            </p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+// ---------- 資料 ----------
 
-function TableSchema({
-  name,
-  purpose,
-  keyDesign,
-  columns,
-}: {
-  name: string;
-  purpose: string;
-  keyDesign: string;
-  columns: { col: string; type: string; desc: string }[];
-}) {
-  const t = useTranslations("about");
-  return (
-    <Card className="my-4">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2">
-          <span className="rounded bg-muted px-2 py-0.5 font-mono text-sm">
-            {name}
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm">
-        <p>
-          <strong>{t("rds.tablePurpose")}</strong>
-          {purpose}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          <strong>{t("rds.tableKeyDesign")}</strong>
-          {keyDesign}
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-muted/40 text-[11px] uppercase text-muted-foreground">
-              <tr>
-                <th className="p-2 text-left">{t("rds.tableColCol")}</th>
-                <th className="p-2 text-left">{t("rds.tableColType")}</th>
-                <th className="p-2 text-left">{t("rds.tableColDesc")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {columns.map((c) => (
-                <tr key={c.col} className="border-t">
-                  <td className="p-2 font-mono">{c.col}</td>
-                  <td className="p-2 font-mono text-muted-foreground">{c.type}</td>
-                  <td className="p-2">{c.desc}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+const COMPARE = [
+  { dim: "結果可重現", llm: "每次答案不同", ours: "規則決定，穩定可評估" },
+  { dim: "講得清在哪", llm: "描述模糊", ours: "高亮 PDF 上具體句子" },
+  { dim: "標準可維護", llm: "黑盒", ours: "規則可由人增修" },
+  { dim: "跨論文比較", llm: "做不到", ours: "結構持久保存可比對" },
+];
 
-function ExampleStep({
-  n,
-  title,
-  children,
-}: {
-  n: number;
-  title: string;
-  children: React.ReactNode;
-}) {
-  const t = useTranslations("about");
-  return (
-    <div className="my-4 rounded-md border-l-4 border-l-primary/40 bg-card p-4">
-      <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-        {t("example.stepLabel", { n })}
-      </p>
-      <h3 className="mb-2 text-base font-semibold">{title}</h3>
-      <div className="space-y-2 text-sm">{children}</div>
-    </div>
-  );
-}
-
-function Quote({ children }: { children: React.ReactNode }) {
-  return (
-    <blockquote className="my-2 border-l-2 border-primary/40 bg-muted/40 p-3 italic">
-      &ldquo;{children}&rdquo;
-    </blockquote>
-  );
-}
-
-const FRU_FUNCTION_NAMES = [
-  "Motivation",
-  "Claim",
-  "Evidence",
-  "Background",
-  "Definition",
-  "MethodStep",
-  "Observation",
-  "Attribution",
-  "Concession",
-  "Compensation",
-  "Specific",
-  "Generalization",
-  "Restatement",
-  "MetaDiscourse",
-  "Other",
-] as const;
-
-const RST_TYPE_NAMES = [
-  "Elaboration",
-  "Background",
-  "Cause",
-  "Result",
-  "Contrast",
-  "Concession",
-  "Evidence",
-  "Justify",
-  "Motivation",
-  "Solutionhood",
-  "Sequence",
-  "Restatement",
-  "Summary",
-  "Condition",
-  "Other",
-] as const;
-
-function SubtypeTable({
-  items,
-  kind,
-}: {
-  items: readonly string[];
-  kind: "fruFunctions" | "rstTypes";
-}) {
-  const t = useTranslations("about");
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/40 text-xs">
-          <tr>
-            <th className="p-2 text-left">{t("subtypeTable.colName")}</th>
-            <th className="p-2 text-left">{t("subtypeTable.colMeaning")}</th>
-            <th className="p-2 text-left">{t("subtypeTable.colExample")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((name) => (
-            <tr key={name} className="border-t align-top">
-              <td className="p-2">
-                <Badge variant="outline" className="font-mono text-[10px]">
-                  {name}
-                </Badge>
-              </td>
-              <td className="p-2 text-xs">{t(`${kind}.${name}.meaning`)}</td>
-              <td className="p-2 text-xs leading-relaxed">
-                {t(`${kind}.${name}.example`)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-type RelRule = {
-  id: string;
-  defectLabel: string;
-  vaswaniEnglish: string;
-  vaswaniLocation: string;
-  vaswaniHit: "fire" | "healthy" | "partial";
-};
-
-const REL_RULES: RelRule[] = [
+const RULE_SUMMARY = [
+  { name: "主張無證據", example: "下了結論卻沒給數據或引用支撐。" },
+  { name: "缺乏動機", example: "給了方法步驟，沒說為什麼這樣做。" },
+  { name: "問題與解法錯位", example: "方法沒回應前言提出的問題。（跨章節）" },
+  { name: "觀察未歸因", example: "報了一個現象，卻沒解釋成因。" },
+  { name: "讓步未補償", example: "承認了弱點，卻沒給緩解或對策。" },
+  { name: "結論失準", example: "結論與摘要 / 前言的主張對不上。（跨章節）" },
   {
-    id: "REL-01",
-    defectLabel: "NakedClaim",
-    vaswaniEnglish:
-      "The Transformer allows for significantly more parallelization and can reach a new state of the art in translation quality after being trained for as little as twelve hours on eight P100 GPUs.",
-    vaswaniLocation: "Section 1 Introduction, p.2",
-    vaswaniHit: "fire",
-  },
-  {
-    id: "REL-02",
-    defectLabel: "BaselineNotCritiqued",
-    vaswaniEnglish:
-      "Table 2: The Transformer achieves better BLEU scores than previous state-of-the-art models on the English-to-German and English-to-French newstest2014 tests at a fraction of the training cost. (Lists ByteNet 23.75, GNMT+RL 24.6, ConvS2S 25.16, MoE 26.03 — but no discussion of each baseline's design weaknesses.)",
-    vaswaniLocation: "Section 6.1 / Table 2, p.8",
-    vaswaniHit: "partial",
-  },
-  {
-    id: "REL-03",
-    defectLabel: "MissingMotivation",
-    vaswaniEnglish:
-      "We used the Adam optimizer with β1 = 0.9, β2 = 0.98 and ϵ = 10^−9. We varied the learning rate over the course of training, according to the formula: ... We used warmup_steps = 4000.",
-    vaswaniLocation: "Section 5.3 Optimizer, p.7",
-    vaswaniHit: "fire",
-  },
-  {
-    id: "REL-04",
-    defectLabel: "NoMacroDecomposition",
-    vaswaniEnglish:
-      "[Intro] This inherently sequential nature precludes parallelization within training examples ... [+] One key factor affecting the ability to learn such [long-range] dependencies is the length of the paths forward and backward signals have to traverse in the network. [— Method 章節直接給 Self-Attention / Multi-Head Attention 而沒重述「我們解 problem 1 + 2」的對應映射]",
-    vaswaniLocation: "Intro p.2 ↔ Section 3 Model Architecture p.3",
-    vaswaniHit: "fire",
-  },
-  {
-    id: "REL-05",
-    defectLabel: "WeakProcessSequence",
-    vaswaniEnglish:
-      "3.1 Encoder and Decoder Stacks / 3.2 Attention / 3.3 Position-wise Feed-Forward Networks / 3.4 Embeddings and Softmax / 3.5 Positional Encoding — 子章節編號清楚對應 forward pass 的順序。",
-    vaswaniLocation: "Section 3 Model Architecture, p.3–6",
-    vaswaniHit: "healthy",
-  },
-  {
-    id: "REL-06",
-    defectLabel: "ConceptNotFormalized",
-    vaswaniEnglish:
-      "Experiments on two machine translation tasks show these models to be superior in quality while being more parallelizable and requiring significantly less time to train.",
-    vaswaniLocation: "Abstract, p.1",
-    vaswaniHit: "fire",
-  },
-  {
-    id: "REL-07",
-    defectLabel: "SetupNotScoped",
-    vaswaniEnglish:
-      "We trained on the standard WMT 2014 English-German dataset consisting of about 4.5 million sentence pairs ... Each training batch contained a set of sentence pairs containing approximately 25000 source tokens and 25000 target tokens. We trained our models on one machine with 8 NVIDIA P100 GPUs.",
-    vaswaniLocation: "Section 5.1–5.2 Training Data / Hardware, p.7",
-    vaswaniHit: "healthy",
-  },
-  {
-    id: "REL-08",
-    defectLabel: "ProblemSolutionMismatch",
-    vaswaniEnglish:
-      "[Section 2] In the Transformer this is reduced to a constant number of operations, albeit at the cost of reduced effective resolution due to averaging attention-weighted positions, an effect we counteract with Multi-Head Attention as described in section 3.2. [— Section 3.2 Multi-Head Attention 一開頭沒重述「降解析度問題」就直接給公式]",
-    vaswaniLocation: "Section 2 p.2 ↔ Section 3.2.2 Multi-Head Attention p.4",
-    vaswaniHit: "fire",
-  },
-  {
-    id: "REL-09",
-    defectLabel: "ObservationWithoutAttribution",
-    vaswaniEnglish:
-      "While single-head attention is 0.9 BLEU worse than the best setting, quality also drops off with too many heads. [— 此段後直接跳到 row (B)，沒解釋為什麼太多 head 會掉品質]",
-    vaswaniLocation: "Section 6.2 Model Variations / Table 3 row (A), p.9",
-    vaswaniHit: "fire",
-  },
-  {
-    id: "REL-10",
-    defectLabel: "UncompensatedConcession",
-    vaswaniEnglish:
-      "...albeit at the cost of reduced effective resolution due to averaging attention-weighted positions, an effect we counteract with Multi-Head Attention as described in section 3.2.",
-    vaswaniLocation: "Section 2 Background, p.2",
-    vaswaniHit: "healthy",
-  },
-  {
-    id: "REL-11",
-    defectLabel: "SpecificGeneralizationImbalance",
-    vaswaniEnglish:
-      "We show that the Transformer generalizes well to other tasks by applying it successfully to English constituency parsing both with large and limited training data.",
-    vaswaniLocation: "Abstract, p.1",
-    vaswaniHit: "fire",
-  },
-  {
-    id: "REL-12",
-    defectLabel: "ConclusionMisaligned",
-    vaswaniEnglish:
-      "[Abstract] We show that the Transformer generalizes well to other tasks by applying it successfully to English constituency parsing ... [Conclusion] On both WMT 2014 English-to-German and WMT 2014 English-to-French translation tasks, we achieve a new state of the art. [— Conclusion 只重申翻譯成果，沒重申 constituency parsing 的泛化驗證]",
-    vaswaniLocation: "Abstract p.1 ↔ Section 7 Conclusion p.10",
-    vaswaniHit: "fire",
-  },
-  {
-    id: "REL-13",
-    defectLabel: "MetaDiscourseImbalance",
-    vaswaniEnglish:
-      "To the best of our knowledge, however, the Transformer is the first transduction model relying entirely on self-attention to compute representations of its input and output without using sequence-aligned RNNs or convolution. In the following sections, we will describe the Transformer, motivate self-attention and discuss its advantages over models such as [17, 18] and [9].",
-    vaswaniLocation: "Section 2 Background, last paragraph, p.2",
-    vaswaniHit: "healthy",
+    name: "其他 7 類",
+    example:
+      "基線未評析、實驗設定不全、概念未定義、流程順序薄弱、特例通則失衡、後設論述失衡……",
   },
 ];
 
-const LITERATURE: { key: string; work: string }[] = [
-  { key: "transformer", work: "Vaswani et al. 2017 — Attention Is All You Need" },
-  { key: "rst", work: "Mann & Thompson 1988 — Rhetorical Structure Theory" },
-  { key: "argMining", work: "Stab & Gurevych 2017 — Parsing Argumentation Structures (CL Journal)" },
-  { key: "kgLlm", work: "Pan et al. 2024 — Unifying LLMs and KGs: A Roadmap (TKDE)" },
-  { key: "neurosymbolic", work: "Garcez & Lamb 2020 — Neurosymbolic AI: The 3rd Wave" },
-  { key: "toolUse", work: "Schick et al. 2023 — Toolformer" },
-  { key: "longContext", work: "Liu et al. 2024 — Lost in the Middle (TACL)" },
-  { key: "hallucination", work: "Tonmoy et al. 2024 — Hallucination Mitigation Survey" },
-  { key: "humanJudge", work: "Chiang & Lee 2023 — Can LLMs Be Alternative to Human Evaluations (ACL)" },
+const ANALYSIS_FEATURES = [
+  {
+    title: "一鍵上傳分析",
+    desc: "丟 PDF / TXT（中英皆可），自動解析、顯示即時進度。",
+  },
+  {
+    title: "結構缺陷清單",
+    desc: "列出每個問題、嚴重度（高/中/低）、所屬章節與信心分數。",
+  },
+  {
+    title: "PDF 雙向定位",
+    desc: "點缺陷 → PDF 跳到該句並高亮；點高亮 → 反向選回缺陷。",
+  },
+  { title: "知識圖譜檢視", desc: "用互動圖呈現論文的概念關係與修辭結構。" },
+  {
+    title: "論文助手聊天",
+    desc: "限定本篇問答，回答必附可點擊的原文出處，內建防濫用機制。",
+  },
+  {
+    title: "報告匯出",
+    desc: "把缺陷清單匯出 CSV（像資安弱掃報告），可交給指導老師。",
+  },
+  {
+    title: "歷史與快取",
+    desc: "分析過的論文都留存可回看；同檔再傳秒回、不重花錢。",
+  },
+  { title: "成本透明", desc: "每篇分析的 LLM 花費即時顯示，方便控管。" },
+];
+
+const MAILS = [
+  {
+    kind: "🔴 即時告警",
+    badgeCls: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
+    title: "上傳分析失敗告警",
+    when: "即時，每筆分析失敗各寄一封。",
+    content:
+      "檔名、大小、paper_id、失敗階段、錯誤類型與訊息、上傳時間，附後台連結可下載原檔重現。",
+  },
+  {
+    kind: "🟡 每日摘要",
+    badgeCls:
+      "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+    title: "每日上傳摘要",
+    when: "排程，每天固定時間（預設 09:00 台北）回顧過去 24 小時；當日 0 上傳則不寄。",
+    content:
+      "總上傳數、分狀態（成功 / 快取命中 / 失敗 / 進行中）、失敗清單，附後台連結。",
+  },
+];
+
+const EDITOR_AI = [
+  {
+    title: "自動補全",
+    desc: "停頓或按 Cmd+J，串流續寫一兩句「幽靈文字」，參考標題與大綱語境。",
+  },
+  {
+    title: "AI 改寫",
+    desc: "選一段 → 七種模式（改寫 / 簡化 / 擴寫 / 精簡 / 通順 / 學術語氣 / 修文法）或自訂指令，原文新文並排比對。",
+  },
+  {
+    title: "大綱生成",
+    desc: "給一個主題 → 產生章節標題樹，直接插入游標位置。",
+  },
+];
+
+const EDITOR_CHECK = [
+  {
+    title: "即時草稿檢查",
+    desc: "逐段套用單章節結構規則（依內容快取，改哪段查哪段），缺陷行內標示 + 修改建議。",
+  },
+  {
+    title: "全篇檢查 + 圖譜",
+    desc: "一次建合併知識圖譜、跑跨章節規則（前後呼應），並可視覺化整篇結構。",
+  },
+];
+
+const EDITOR_CITE = [
+  {
+    title: "文獻推薦",
+    desc: "針對一句主張到 OpenAlex（Crossref 備援）找來源，中英交錯、依語意重排，回前 15 筆。",
+  },
+  {
+    title: "DOI 解析",
+    desc: "貼一個 DOI / 連結 → 自動補齊完整書目（Crossref）。",
+  },
+  {
+    title: "引用重連",
+    desc: "解析文末純文字參考清單 → 逐筆到 OpenAlex 高信心比對 → 把內文（作者, 年）換成活引用節點。",
+  },
+  {
+    title: "引用查核（verify）",
+    desc: "判斷來源摘要是否支持該主張：支持 / 部分 / 不支持，附支持節錄與信心分數。",
+  },
+  {
+    title: "全文落地（ground）",
+    desc: "抓被引論文 PDF，用語意比對找出最相符的前 5 句原文；無 PDF 則退回摘要。降低「捏造引用」。",
+  },
+  { title: "書目更新", desc: "依 OpenAlex id 重新抓取，保持書目最新。" },
+];
+
+const CLOUD_MAP = [
+  {
+    item: "運算",
+    now: "單機 Docker Compose",
+    cloud: "容器服務，API 與分析 worker 可各自水平擴展",
+  },
+  {
+    item: "知識圖譜",
+    now: "自架 Neo4j 容器",
+    cloud: "託管 Neo4j（如 AuraDB）或雲上自架",
+  },
+  {
+    item: "關聯式資料",
+    now: "SQLite 單檔",
+    cloud: "託管 Postgres（多實例共用、可備援）",
+  },
+  { item: "檔案", now: "本機磁碟 uploads/", cloud: "物件儲存（S3 / GCS）" },
+  {
+    item: "背景任務",
+    now: "記憶體 dict（重啟丟失）",
+    cloud: "持久佇列 + worker（可重試、可擴展）",
+  },
+  {
+    item: "TLS / 入口",
+    now: "Caddy 單機反代",
+    cloud: "雲端負載平衡 + 憑證管理",
+  },
+  { item: "機密", now: ".env 檔", cloud: "機密管理服務" },
+  { item: "LLM", now: "OpenAI API", cloud: "不變（已可換 Azure / 自架）" },
+];
+
+const AI_MODELS = [
+  {
+    model: "gpt-5.4",
+    role: "重判讀（heavy）",
+    desc: "需要深度推理的判讀：修辭結構抽取、逐條結構規則檢核、跨章節呼應檢查。",
+  },
+  {
+    model: "gpt-5.4-mini",
+    role: "輕任務（light）",
+    desc: "量大但較單純：拆解、抽取、翻譯、論文助手、寫作輔助、引用的 LLM 步驟。",
+  },
+  {
+    model: "text-embedding-3-small",
+    role: "語意向量（embedding）",
+    desc: "把句子轉成向量做語意比對：知識圖譜、文獻重排、引用落地。",
+  },
+];
+
+const AI_USAGE = [
+  {
+    group: "論文審稿",
+    feature: "論述拆解（EDU）",
+    use: "把整篇切成最小論述單元。",
+    model: "gpt-5.4-mini",
+  },
+  {
+    group: "論文審稿",
+    feature: "實體 / 關係抽取",
+    use: "抽出概念與其關聯，建知識圖譜。",
+    model: "gpt-5.4-mini",
+  },
+  {
+    group: "論文審稿",
+    feature: "修辭結構抽取（RST / FRU）",
+    use: "判讀段落的論證 / 修辭角色。",
+    model: "gpt-5.4",
+  },
+  {
+    group: "論文審稿",
+    feature: "標題偵測",
+    use: "從版面推斷論文標題。",
+    model: "gpt-5.4-mini",
+  },
+  {
+    group: "論文審稿",
+    feature: "13 條結構規則判讀",
+    use: "對每條規則判斷該段是否觸發缺陷、給理由。",
+    model: "gpt-5.4",
+  },
+  {
+    group: "論文審稿",
+    feature: "跨章節 second pass",
+    use: "檢查前言 / 方法 / 結論的前後呼應。",
+    model: "gpt-5.4",
+  },
+  {
+    group: "論文審稿",
+    feature: "缺陷說明多語翻譯",
+    use: "把缺陷描述 / 建議在地化（中英）。",
+    model: "gpt-5.4-mini",
+  },
+  {
+    group: "論文審稿",
+    feature: "知識圖譜向量",
+    use: "節點語意向量，供圖譜與檢索使用。",
+    model: "text-embedding-3-small",
+  },
+  {
+    group: "論文審稿",
+    feature: "論文助手聊天",
+    use: "限定本篇的問答、附原文出處。",
+    model: "gpt-5.4-mini",
+  },
+  {
+    group: "寫作編輯器",
+    feature: "自動補全",
+    use: "依語境串流續寫一兩句。",
+    model: "gpt-5.4-mini",
+  },
+  {
+    group: "寫作編輯器",
+    feature: "AI 改寫（7 模式）",
+    use: "改寫 / 簡化 / 擴寫 / 通順 / 學術語氣等。",
+    model: "gpt-5.4-mini",
+  },
+  {
+    group: "寫作編輯器",
+    feature: "大綱生成",
+    use: "依主題產生章節標題樹。",
+    model: "gpt-5.4-mini",
+  },
+  {
+    group: "寫作編輯器",
+    feature: "草稿 / 全篇結構檢查",
+    use: "把審稿規則帶進寫作（與審稿同模型）。",
+    model: "gpt-5.4 + mini",
+  },
+  {
+    group: "引用工具鏈",
+    feature: "文獻推薦",
+    use: "依語意對候選文獻重排序。",
+    model: "gpt-5.4-mini + embedding",
+  },
+  {
+    group: "引用工具鏈",
+    feature: "引用重連",
+    use: "把純文字參考清單比對回真實文獻。",
+    model: "gpt-5.4-mini + embedding",
+  },
+  {
+    group: "引用工具鏈",
+    feature: "引用查核（verify）",
+    use: "判斷來源是否支持該主張。",
+    model: "gpt-5.4-mini",
+  },
+  {
+    group: "引用工具鏈",
+    feature: "全文落地（ground）",
+    use: "語意比對找出最相符的原文句子。",
+    model: "text-embedding-3-small",
+  },
+];
+
+const AI_DETAIL = [
+  {
+    feature: "自動補全",
+    input: "游標前正文（取尾端）；標題與章節大綱（目錄）另塞進 system 當語境。",
+    rule: "貼著章節主題續寫一兩句；送出前去重、輸出若只是把原文回放就立即截斷（防 loop）。",
+    limit: "正文 ≤ 2000 字 · 輸出 ≤ 200 tok",
+  },
+  {
+    feature: "AI 改寫",
+    input: "只有選取的那一段（不帶前後文、不帶全文）。",
+    rule: "不判「該不該改」；依 7 種預設或自訂指令改寫，不得新增引用 / 數據 / 事實、保留既有引用標記。",
+    limit: "選取段 ≤ 4000 字 · 輸出 ≤ 600 tok",
+  },
+  {
+    feature: "大綱生成",
+    input: "一句主題。",
+    rule: "產生章節標題樹，插入游標位置。",
+    limit: "主題 ≤ 500 字",
+  },
+  {
+    feature: "缺陷檢查",
+    input: "知識圖譜中 Cypher 撈出的「候選子圖」（不是整篇全文）。",
+    rule: "規則先框定範圍，LLM 只在候選內判 violates / 嚴重度 / 信心；信心 < 0.3 視為不違反。",
+    limit: "候選 ≤ 120,000 字（跨章節 ≤ 400,000）",
+  },
+  {
+    feature: "即時草稿檢查",
+    input: "編輯器內的草稿段落（即把審稿規則帶進寫作）。",
+    rule: "與缺陷檢查同一套規則；逐段檢查只跑 10 條單章節規則，依內容快取。",
+    limit: "每段 ≤ 20,000 字 · 全篇 ≤ 40,000 字",
+  },
+  {
+    feature: "文獻推薦",
+    input: "一句 claim（主張）。",
+    rule: "中文先用 LLM 抽英文關鍵字 → 查 OpenAlex / Crossref → embedding 依語意重排。",
+    limit: "回前 15 筆",
+  },
+  {
+    feature: "是否支持（verify）",
+    input: "claim + 來源的標題與摘要。",
+    rule: "LLM 判 supports / partial / unsupported，只憑摘要、不得腦補，附逐字佐證句。",
+    limit: "claim ≤ 2000 字 · 摘要 ≤ 8000 字",
+  },
+  {
+    feature: "語意檢查（ground）",
+    input: "claim + 被引論文全文的每一句（無全文則退回摘要）。",
+    rule: "沒有 LLM、沒有門檻、不分類；純算 cosine 相似度排名取最相符的 3 句。",
+    limit: "每句 ≥ 20 字 · ≤ 400 句 · 取 top 3",
+  },
+  {
+    feature: "論文助手",
+    input: "本篇的 EDU + 缺陷 + 規則當脈絡，加使用者提問。",
+    rule: "限定本篇問答、強制附可點擊出處；內建越界拒答與防注入。",
+    limit: "單則 ≤ 2000 字 · 歷史 ≤ 10 輪 · 15/分",
+  },
+];
+
+const ROADMAP = [
+  {
+    title: "PDF 匯入編輯器",
+    desc: "把既有 PDF 草稿直接帶進寫作編輯器修改（目前主要缺口）。",
+  },
+  {
+    title: "規則隨用越準",
+    desc: "把使用者的人工判定（判對 / 誤判）回饋給系統，自動校準規則精準度。",
+  },
+  {
+    title: "跨論文比較與文獻網絡",
+    desc: "善用已存成圖的論文結構，做多篇對齊、概念與引用關係分析。",
+  },
+  {
+    title: "領域規則包",
+    desc: "社科量化與 CS/NLP 的失準型態不同，未來提供分領域的規則變體。",
+  },
+  {
+    title: "成本優化",
+    desc: "本地 + 雲端混合推論、批次 API 折扣，降低大量分析的花費。",
+  },
+  {
+    title: "帳號與多人協作",
+    desc: "個人空間與權限，讓實驗室多位成員各自管理論文與草稿。",
+  },
 ];

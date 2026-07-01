@@ -55,8 +55,9 @@ const TEMPLATES = ["twthesis", "article", "twocolumn", "ieee"] as const;
 const templateStorageKey = (docId: string) => `editor:template:${docId}`;
 const coverStorageKey = (docId: string) => `editor:cover:${docId}`;
 
-// Taiwan-thesis cover fields, paired zh/en. Placeholders are illustrative
-// (modeled on a real CGU master thesis) — empty fields are skipped server-side.
+// Taiwan-thesis cover fields, paired zh/en. Placeholders are neutral, generic
+// hints showing the expected shape of each field — empty fields are skipped
+// server-side.
 const COVER_ROWS: {
   key: string;
   zh: string;
@@ -68,50 +69,50 @@ const COVER_ROWS: {
     key: "university",
     zh: "universityZh",
     en: "universityEn",
-    phZh: "長庚大學",
-    phEn: "Chang Gung University",
+    phZh: "○○大學",
+    phEn: "University Name",
   },
   {
     key: "department",
     zh: "departmentZh",
     en: "departmentEn",
-    phZh: "資訊管理學系",
-    phEn: "Department of Information Management",
+    phZh: "○○學系",
+    phEn: "Department Name",
   },
   {
     key: "degree",
     zh: "degreeZh",
     en: "degreeEn",
     phZh: "碩士論文",
-    phEn: "Master Thesis",
+    phEn: "Master's Thesis",
   },
   {
     key: "title",
     zh: "titleZh",
     en: "titleEn",
     phZh: "中文論文題目",
-    phEn: "English Title",
+    phEn: "English Thesis Title",
   },
   {
     key: "advisor",
     zh: "advisorZh",
     en: "advisorEn",
-    phZh: "張禾坤 博士",
-    phEn: "Her-Kun Chang, Ph.D.",
+    phZh: "指導教授姓名",
+    phEn: "Advisor Name",
   },
   {
     key: "student",
     zh: "studentZh",
     en: "studentEn",
-    phZh: "盧建霖",
-    phEn: "Chien-Lin Lu",
+    phZh: "研究生姓名",
+    phEn: "Student Name",
   },
   {
     key: "date",
     zh: "dateZh",
     en: "dateEn",
-    phZh: "中華民國 108 年 1 月",
-    phEn: "January 2019",
+    phZh: "中華民國 ○○ 年 ○ 月",
+    phEn: "Month Year",
   },
 ];
 

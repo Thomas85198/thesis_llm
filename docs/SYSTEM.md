@@ -562,15 +562,15 @@ Abstract 寫「使用動機及持續使用意圖均有受到心流之影響」�
 - 3-8 筆：取最新（時序）。最新的判定通常反映最新的 calibration。
 - > 8 筆：未來可改成「representative sampling」（最有代表性的 wrong + 最有代表性的 correct）。
 
-### 10.4 跨章節推理需要 Opus 1M context
+### 10.4 跨章節推理需要 1M context
 
 REL-04 (Macro-Decomposition) / REL-08 (Problem-Solution) / REL-12 (Core-Restatement) 本質要對比兩個以上章節：
 - 「Conclusion 的 restatement 跟 Introduction 的 claim 是否一致？」
 - 「Method 拆解是否真的對應 Introduction 的問題？」
 
-per-section Cypher 抓不到這個（candidates 只能看一個 section 的子圖）。原本只用 Sonnet 在 per-section 模式跑，這三條規則經常 0 hit 或漏判。
+per-section Cypher 抓不到這個（candidates 只能看一個 section 的子圖）。早期只在 per-section 模式跑這三條規則，經常 0 hit 或漏判。
 
-加了 [cross_section_pass](../backend/app/rules.py)（Opus 1M）一次掃整篇後，這三條的命中質量明顯改善。Schema 強制 `evidence_edu_ids ≥ 2`，要求 LLM 必須引兩個以上 EDU 才能 emit 缺陷，避免它退化成 per-section 抓法。
+加了 [cross_section_pass](../backend/app/rules.py)（gpt-5.4 1M context）一次掃整篇後，這三條的命中質量明顯改善。Schema 強制 `evidence_edu_ids ≥ 2`，要求 LLM 必須引兩個以上 EDU 才能 emit 缺陷，避免它退化成 per-section 抓法。
 
 **通則**：跨章節規則要獨立的 prompt + 模型分配，不能塞在 per-section 流程裡。
 

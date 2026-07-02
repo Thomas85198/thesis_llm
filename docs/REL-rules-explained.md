@@ -65,7 +65,7 @@
 ## 5. 跨章節第二階段（cross-section pass）
 
 - 有些規則要**同時看兩個章節**才能判（例：Conclusion 有沒有重述 Introduction 的核心）。逐章節的 Cypher 候選看不到對側 → 判不準也定不到位。
-- 做法：逐規則掃完後，再跑**一次全篇 context 的 pass**（長 context 模型，預設 gpt-4.1 / 1M），專處理 **REL-04 / REL-08 / REL-12**。
+- 做法：逐規則掃完後，再跑**一次全篇 context 的 pass**（長 context 模型，預設 `gpt-5.4` / 1M，見 `llm.py:93`；2026-07-02 校正原記 gpt-4.1），專處理 **REL-04 / REL-08 / REL-12**。
 - 此 pass 的 schema **強制 ≥2 個跨章節證據 EDU** → 缺陷一定定位得到（修掉了 3.4.1 的「無定位假按鈕」問題）。
 - 開關：環境變數 `ENABLE_CROSS_SECTION_PASS`（預設開）。開著時 REL-04/12 **只在這跑**、不在逐章節重複跑。
 

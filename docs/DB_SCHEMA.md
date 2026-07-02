@@ -2,7 +2,11 @@
 
 > 檔案位置：[backend/data.db](../backend/data.db)
 > 程式碼定義：[backend/app/db.py](../backend/app/db.py) `SCHEMA` 字串
-> 共 4 張表，互不重疊：metadata、analysis result、cost log、human judgments
+> 共 9 張表（2026-07-02 校正，原文誤記 4 張）：
+> - 檢核管線：`papers`（metadata）、`results`（analysis result）、`llm_calls`（cost log）、`defect_judgments`（human judgments）
+> - 編輯器：`documents`、`document_versions`、`paper_chunks`、`draft_check_cache`
+> - 上傳稽核：`upload_events`
+> 下文詳述前四張；後五張見 [backend/app/db.py](../backend/app/db.py) `SCHEMA` 字串（尚未全數展開於本文件）。
 
 ---
 
@@ -28,7 +32,7 @@
 | `paper_id` | TEXT PRIMARY KEY | 論文唯一識別，格式 `paper:xxxxxxxx`（8 hex chars） |
 | `title` | TEXT | 論文標題（使用者上傳時填，沒填就用檔名） |
 | `content_hash` | TEXT | 檔案內容 SHA-256，用於上傳去重快取 |
-| `pdf_path` | TEXT | PDF 原檔在 `backend/uploads/` 的絕對路徑 |
+| `pdf_path` | TEXT | PDF 原檔在 `backend/uploads/` 的**檔名（basename）**，非絕對路徑（2026-07-02 校正；見 `routes.py:396`、`scripts/migrate_pdf_path.py`） |
 | `created_at` | TEXT NOT NULL | 建立時間（ISO 8601 UTC） |
 
 **索引**：`idx_papers_hash ON (content_hash)` — 加速去重查詢
@@ -68,7 +72,7 @@ result_json = {
 }
 graph = { paper_id, title, edus[], entities[], er_triples[], fru_nodes[], rst_nodes[] }
 defects[] = { id, rule_id, defect_type, severity, section, evidence_edu_ids, description, suggestion, confidence }
-rule_meta[] = { rule_id, examples_used, candidate_count, defect_count }
+rule_meta[] = { rule_id, candidate_count, defect_count }   # 2026-07-02 校正：無 examples_used（schemas.py RuleRunMeta 只有這三欄，few-shot 已移除）
 ```
 
 **範例查詢**（用 SQLite 的 JSON 函式抽欄位）：
@@ -79,11 +83,12 @@ SELECT paper_id,
        json_array_length(json_extract(result_json, '$.graph.edus')) AS edu_count
 FROM results;
 
--- 找特定論文有用幾筆 Phase 2 範例
+-- 找特定論文每條規則的候選數 / 缺陷數
+-- （2026-07-02 校正：原用 $.examples_used，該欄不存在——few-shot 已移除，rule_meta 只有 candidate_count/defect_count）
 SELECT paper_id, value
 FROM results, json_each(json_extract(result_json, '$.rule_meta'))
 WHERE paper_id = 'paper:xxx'
-  AND CAST(json_extract(value, '$.examples_used') AS INTEGER) > 0;
+  AND CAST(json_extract(value, '$.defect_count') AS INTEGER) > 0;
 ```
 
 ---
@@ -219,7 +224,7 @@ erDiagram
         INTEGER id PK "自增流水號"
         TEXT paper_id "可 NULL (soft FK)"
         TEXT stage "edu/er/rst_fru/rule_check/cross_section_pass/chat"
-        TEXT model "claude-sonnet-4-6 等"
+        TEXT model "gpt-5.4 / gpt-5.4-mini 等"
         INTEGER input_tokens
         INTEGER output_tokens
         INTEGER cache_read_tokens "default 0"

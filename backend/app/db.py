@@ -478,6 +478,26 @@ def mark_upload_done(job_id: str) -> None:
         )
 
 
+def mark_stale_uploads_interrupted() -> int:
+    """Flip leftover 'pending' events to error at startup.
+
+    Job state is in-memory, so a restart mid-analysis strands the audit row at
+    'pending' forever (and the daily summary keeps counting it as running).
+    Returns the number of rows flipped.
+    """
+    with connect() as c:
+        cur = c.execute(
+            """
+            UPDATE upload_events
+            SET status='error', error_type='Interrupted', error_stage='interrupted',
+                error_message='backend restarted during analysis', finished_at=?
+            WHERE status='pending'
+            """,
+            (_now(),),
+        )
+        return cur.rowcount
+
+
 def mark_upload_failed(
     job_id: str, error_type: str, error_stage: str, error_message: str
 ) -> None:

@@ -2,6 +2,7 @@
 PDF/text → spans (with page+bbox) → sections → EDU (mapped back to bbox)
         → ER → RST/FRU → PaperGraph
 """
+
 from __future__ import annotations
 
 import os
@@ -28,6 +29,7 @@ from .schemas import EDU, ERTriple, Entity, FRUNode, PaperGraph, RSTNode, Sectio
 @dataclass
 class Span:
     """A contiguous piece of text from the PDF with its page + bbox."""
+
     page: int
     bbox: tuple[float, float, float, float]  # x0, y0, x1, y1
     text: str
@@ -39,27 +41,47 @@ class Span:
 # Arabic ("1." / "1 " / "1.2 ") and Chinese ("一、" / "二." / "（三）") numbering
 # common in zh-TW theses — without this, "一、緒論" never matches and the whole
 # paper collapses into one giant "Other" section.
-_SEC_NUM = r"(?:[（(]?\s*(?:\d+(?:\.\d+)*\.?|[一二三四五六七八九十百]+)\s*[)）、.．]?\s*)?"
+_SEC_NUM = (
+    r"(?:[（(]?\s*(?:\d+(?:\.\d+)*\.?|[一二三四五六七八九十百]+)\s*[)）、.．]?\s*)?"
+)
 
 SECTION_PATTERNS: list[tuple[SectionName, re.Pattern[str]]] = [
     ("Abstract", re.compile(r"^\s*(摘要|abstract)\b", re.IGNORECASE | re.MULTILINE)),
     (
         "Introduction",
-        re.compile(rf"^\s*{_SEC_NUM}(introduction|引言|緒論|前言)\b", re.IGNORECASE | re.MULTILINE),
+        re.compile(
+            rf"^\s*{_SEC_NUM}(introduction|引言|緒論|前言)\b",
+            re.IGNORECASE | re.MULTILINE,
+        ),
     ),
-    ("Method", re.compile(rf"^\s*{_SEC_NUM}(method(s|ology)?|方法|研究方法)\b", re.IGNORECASE | re.MULTILINE)),
+    (
+        "Method",
+        re.compile(
+            rf"^\s*{_SEC_NUM}(method(s|ology)?|方法|研究方法)\b",
+            re.IGNORECASE | re.MULTILINE,
+        ),
+    ),
     (
         "Experiment",
-        re.compile(rf"^\s*{_SEC_NUM}(experiment(s)?|實驗)\b", re.IGNORECASE | re.MULTILINE),
+        re.compile(
+            rf"^\s*{_SEC_NUM}(experiment(s)?|實驗)\b", re.IGNORECASE | re.MULTILINE
+        ),
     ),
-    ("Results", re.compile(rf"^\s*{_SEC_NUM}(results?|結果)\b", re.IGNORECASE | re.MULTILINE)),
+    (
+        "Results",
+        re.compile(rf"^\s*{_SEC_NUM}(results?|結果)\b", re.IGNORECASE | re.MULTILINE),
+    ),
     (
         "Discussion",
-        re.compile(rf"^\s*{_SEC_NUM}(discussion|討論|分析)\b", re.IGNORECASE | re.MULTILINE),
+        re.compile(
+            rf"^\s*{_SEC_NUM}(discussion|討論|分析)\b", re.IGNORECASE | re.MULTILINE
+        ),
     ),
     (
         "Conclusion",
-        re.compile(rf"^\s*{_SEC_NUM}(conclusion(s)?|結論|總結)\b", re.IGNORECASE | re.MULTILINE),
+        re.compile(
+            rf"^\s*{_SEC_NUM}(conclusion(s)?|結論|總結)\b", re.IGNORECASE | re.MULTILINE
+        ),
     ),
 ]
 
@@ -67,6 +89,7 @@ EXCLUDED_SECTIONS: set[SectionName] = set()
 
 
 # ---------- PDF / text extraction ----------
+
 
 def extract_spans_from_bytes(
     data: bytes,
@@ -124,7 +147,9 @@ def _extract_pdf_spans_native(data: bytes, textpage_fn=None) -> list[Span]:
                 if block.get("type") != 0:  # 0 = text block
                     continue
                 for line in block.get("lines", []):
-                    line_text = "".join(sp.get("text", "") for sp in line.get("spans", []))
+                    line_text = "".join(
+                        sp.get("text", "") for sp in line.get("spans", [])
+                    )
                     line_text = line_text.strip()
                     if not line_text:
                         continue
@@ -182,6 +207,7 @@ def _extract_pdf_spans_ocr(data: bytes) -> list[Span]:
     DPI 200 is a balance — 300 is sharper but ~2x slower per page; 150 starts
     losing CJK strokes.
     """
+
     def _ocr_textpage(page):
         return page.get_textpage_ocr(language="chi_tra+eng", dpi=200, full=True)
 
@@ -220,6 +246,7 @@ def spans_to_text(spans: list[Span]) -> str:
 
 # ---------- Section split ----------
 
+
 def split_sections_with_spans(
     spans: list[Span],
 ) -> list[tuple[SectionName, list[Span]]]:
@@ -244,14 +271,26 @@ def split_sections_with_spans(
         end = matches[i + 1][0] if i + 1 < len(matches) else len(text)
         boundaries.append((name, start, end))
 
-    out: list[tuple[SectionName, list[Span]]] = []
+    # Merge segments that map to the same section name (title block synthesized
+    # as "Abstract" + the real 摘要 heading, sub-headings re-matching a pattern,
+    # …). Duplicate names would otherwise produce colliding EDU ids
+    # ({paper_id}:{section}:edu:{i} restarts at 0 per segment) and Neo4j MERGE
+    # would silently overwrite earlier EDUs. First-seen order; spans deduped
+    # because boundary spans can fall into two adjacent segments.
+    merged: dict[SectionName, list[Span]] = {}
+    order: list[SectionName] = []
     for name, start, end in boundaries:
         section_spans = [s for s in spans if s.char_start < end and s.char_end > start]
-        out.append((name, section_spans))
-    return out
+        if name not in merged:
+            merged[name] = []
+            order.append(name)
+        seen = {id(s) for s in merged[name]}
+        merged[name].extend(s for s in section_spans if id(s) not in seen)
+    return [(name, merged[name]) for name in order]
 
 
 # ---------- EDU localization (text → page+bbox) ----------
+
 
 def _locate_edu_in_spans(
     edu_text: str, section_spans: list[Span]
@@ -477,7 +516,14 @@ ER_SCHEMA = {
 }
 
 ENTITY_TYPES = {
-    "Concept", "Method", "Metric", "Dataset", "Model", "Task", "Claim", "Other",
+    "Concept",
+    "Method",
+    "Metric",
+    "Dataset",
+    "Model",
+    "Task",
+    "Claim",
+    "Other",
 }
 
 
@@ -610,14 +656,38 @@ RST_FRU_SCHEMA = {
 }
 
 RST_RELATION_TYPES = {
-    "Elaboration", "Background", "Cause", "Result", "Contrast", "Concession",
-    "Evidence", "Justify", "Motivation", "Solutionhood", "Sequence",
-    "Restatement", "Summary", "Condition", "Other",
+    "Elaboration",
+    "Background",
+    "Cause",
+    "Result",
+    "Contrast",
+    "Concession",
+    "Evidence",
+    "Justify",
+    "Motivation",
+    "Solutionhood",
+    "Sequence",
+    "Restatement",
+    "Summary",
+    "Condition",
+    "Other",
 }
 FRU_FUNCTIONS = {
-    "Motivation", "Claim", "Evidence", "Background", "Definition", "MethodStep",
-    "Observation", "Attribution", "Concession", "Compensation", "Specific",
-    "Generalization", "Restatement", "MetaDiscourse", "Other",
+    "Motivation",
+    "Claim",
+    "Evidence",
+    "Background",
+    "Definition",
+    "MethodStep",
+    "Observation",
+    "Attribution",
+    "Concession",
+    "Compensation",
+    "Specific",
+    "Generalization",
+    "Restatement",
+    "MetaDiscourse",
+    "Other",
 }
 
 
@@ -758,9 +828,7 @@ def build_paper_graph(
     # the assembled graph is deterministic regardless of completion order.
     if work:
         with ThreadPoolExecutor(max_workers=llm_max_workers()) as pool:
-            results = pool.map(
-                lambda a: _process_section(a[0], a[1], paper_id), work
-            )
+            results = pool.map(lambda a: _process_section(a[0], a[1], paper_id), work)
             for res in results:
                 if res is None:
                     continue

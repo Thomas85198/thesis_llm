@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import base64
 import io
+import ipaddress
 import os
 import re
+import socket
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from docx import Document
@@ -42,9 +45,26 @@ def _upload_dir() -> Path:
     return Path(__file__).parent.parent / "uploads"
 
 
+def _is_public_http_url(src: str) -> bool:
+    """SSRF guard for figure fetches: user-controlled srcs reach a server-side
+    GET, which must not be able to read compose-internal services
+    (http://neo4j:7474, cloud metadata, …)."""
+    try:
+        parsed = urlparse(src)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return False
+        for info in socket.getaddrinfo(parsed.hostname, None):
+            ip = ipaddress.ip_address(info[4][0])
+            if not ip.is_global:
+                return False
+        return True
+    except Exception:  # noqa: BLE001 — unresolvable host etc. → treat as unsafe
+        return False
+
+
 def _image_bytes(src: str) -> tuple[bytes, str] | None:
     """Resolve a figure src to (bytes, ext). Reads our own uploads from disk;
-    fetches external image URLs over HTTP. None on any failure."""
+    fetches public external image URLs over HTTP. None on any failure."""
     if not src:
         return None
     try:
@@ -55,12 +75,22 @@ def _image_bytes(src: str) -> tuple[bytes, str] | None:
                 return None
             ext = p.suffix.lstrip(".").lower() or "png"
             return p.read_bytes(), (ext if ext in _IMG_EXTS else "png")
-        with httpx.Client(timeout=15.0, follow_redirects=True) as cli:
-            resp = cli.get(src)
-            resp.raise_for_status()
-            data = resp.content
-        if len(data) > _MAX_IMG_BYTES:
+        if not _is_public_http_url(src):
             return None
+        # No redirects (a public URL could 302 to an internal one) and a
+        # streamed size cap (the old post-download check still buffered the
+        # whole body in memory first).
+        with httpx.Client(timeout=15.0, follow_redirects=False) as cli:
+            with cli.stream("GET", src) as resp:
+                resp.raise_for_status()
+                chunks: list[bytes] = []
+                size = 0
+                for chunk in resp.iter_bytes():
+                    size += len(chunk)
+                    if size > _MAX_IMG_BYTES:
+                        return None
+                    chunks.append(chunk)
+                data = b"".join(chunks)
         ext = src.rsplit(".", 1)[-1].split("?")[0].lower() if "." in src else "png"
         return data, (ext if ext in _IMG_EXTS else "png")
     except Exception:  # noqa: BLE001 — best-effort; fall back to caption text
@@ -636,8 +666,17 @@ def _render_block_docx(
                 _docx_refs_grouped(docx, resolved, ctx["refs_label"], ctx["locale"])
             else:
                 docx.add_heading(ctx["refs_label"], level=1)
-                for i, c in enumerate(resolved):
-                    docx.add_paragraph(full_reference(c, ctx["style"], i + 1))
+                # Number by first-appearance order (same universe as in-text
+                # labels and the LaTeX list) — enumerate(resolved) drifted as
+                # soon as an unlinked citation occupied an in-text number.
+                for c in resolved:
+                    docx.add_paragraph(
+                        full_reference(
+                            c,
+                            ctx["style"],
+                            _citation_number(ctx["order"], _cite_key(c)),
+                        )
+                    )
     else:  # paragraph and any unknown block → a plain paragraph of its inline content
         p = docx.add_paragraph()
         if tw:
@@ -838,6 +877,7 @@ def to_docx(
         "fig": 0,
         "tab": 0,
         "resolved": resolved,
+        "order": order,
         "refs_label": refs_label,
         "locale": locale,
         "style": style,
@@ -857,8 +897,10 @@ def to_docx(
             _docx_refs_grouped(docx, resolved, refs_label, locale)
         else:
             docx.add_heading(refs_label, level=1)
-            for i, c in enumerate(resolved):
-                docx.add_paragraph(full_reference(c, style, i + 1))
+            for c in resolved:
+                docx.add_paragraph(
+                    full_reference(c, style, _citation_number(order, _cite_key(c)))
+                )
 
     buf = io.BytesIO()
     docx.save(buf)
@@ -1389,8 +1431,12 @@ def to_markdown(document: dict, style: str, refs_label: str) -> str:
     if resolved:
         out.append(f"## {refs_label}")
         out.append("")
+        # List marker stays sequential (markdown renderers renumber anyway);
+        # the reference's own [n] must match the in-text numbering universe.
         for i, c in enumerate(resolved):
-            out.append(f"{i + 1}. {full_reference(c, style, i + 1)}")
+            out.append(
+                f"{i + 1}. {full_reference(c, style, _citation_number(order, _cite_key(c)))}"
+            )
     return "\n".join(out).strip() + "\n"
 
 
@@ -1444,8 +1490,9 @@ def to_text(document: dict, style: str, refs_label: str) -> str:
     resolved = [c for c in citations if not c.get("unlinked")]
     if resolved:
         out.append(refs_label)
-        for i, c in enumerate(resolved):
-            out.append(f"[{i + 1}] {full_reference(c, style, i + 1)}")
+        for c in resolved:
+            num = _citation_number(order, _cite_key(c))
+            out.append(f"[{num}] {full_reference(c, style, num)}")
     return "\n".join(out).strip() + "\n"
 
 
@@ -1478,7 +1525,9 @@ def _inline_html(nodes: list[dict], style: str, order: list[str]) -> str:
                 _h(in_text_label(a, style, _citation_number(order, _cite_key(a))))
             )
         elif t == "mathInline":
-            parts.append("\\(" + (n.get("attrs") or {}).get("latex", "") + "\\)")
+            # _h(): raw latex straight into HTML is stored XSS (docs are shared
+            # globally). MathJax parses the entity-escaped text just fine.
+            parts.append("\\(" + _h((n.get("attrs") or {}).get("latex", "")) + "\\)")
     return "".join(parts)
 
 
@@ -1674,7 +1723,9 @@ def to_html(
                 f'<figure><img src="{_h(uri)}" alt="{_h(a.get("caption", ""))}">{caphtml}</figure>'
             )
         elif t == "mathBlock":
-            parts.append("<p>\\[" + (b.get("attrs") or {}).get("latex", "") + "\\]</p>")
+            parts.append(
+                "<p>\\[" + _h((b.get("attrs") or {}).get("latex", "")) + "\\]</p>"
+            )
         elif t == "tableBlock":
             cap, rows = _table_parts(b)
             tcap = ""
@@ -1700,8 +1751,9 @@ def to_html(
                     parts.append(_html_refs_grouped(resolved, refs_label, locale))
                 else:
                     items = "".join(
-                        f"<li>{_h(full_reference(c, style, i + 1))}</li>"
-                        for i, c in enumerate(resolved)
+                        f'<li value="{_citation_number(order, _cite_key(c))}">'
+                        f"{_h(full_reference(c, style, _citation_number(order, _cite_key(c))))}</li>"
+                        for c in resolved
                     )
                     parts.append(
                         f'<h2>{_h(refs_label)}</h2><ol class="refs">{items}</ol>'
@@ -1717,8 +1769,9 @@ def to_html(
             parts.append(_html_refs_grouped(resolved, refs_label, locale))
         else:
             items = "".join(
-                f"<li>{_h(full_reference(c, style, i + 1))}</li>"
-                for i, c in enumerate(resolved)
+                f'<li value="{_citation_number(order, _cite_key(c))}">'
+                f"{_h(full_reference(c, style, _citation_number(order, _cite_key(c))))}</li>"
+                for c in resolved
             )
             parts.append(f'<h2>{_h(refs_label)}</h2><ol class="refs">{items}</ol>')
 

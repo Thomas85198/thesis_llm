@@ -6,7 +6,7 @@ import hashlib
 import os
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote
@@ -30,7 +30,7 @@ from . import grounding as grounding_mod
 from . import outline as outline_mod
 from . import rewrite as rewrite_mod
 from . import db, kg, pipeline, rules
-from .schemas import AnalysisResult
+from .schemas import AnalysisResult, PaperGraph
 
 
 class JudgmentIn(BaseModel):
@@ -207,6 +207,19 @@ JobStatus = Literal["queued", "extracting", "checking", "done", "error"]
 _jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
 
+# Uploads: the public endpoint had no size/type guard while editor import (20MB)
+# and images (10MB) did — a multi-GB file went straight into memory.
+_MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "50")) * 1024 * 1024
+_UPLOAD_SUFFIXES = {".pdf", ".txt", ".md"}
+
+# Same-hash uploads racing the first analysis used to double the full LLM spend
+# (the hash cache only hits after results are written). hash → job/paper ids.
+_inflight_hashes: dict[str, dict[str, str]] = {}
+
+# Finished jobs kept ≥ this long for the frontend to collect the result, then
+# pruned — the dict previously grew without bound (multi-MB result per entry).
+_JOB_TTL_S = 3600
+
 
 def _set_job(job_id: str, **fields: Any) -> None:
     with _jobs_lock:
@@ -219,12 +232,27 @@ def _get_job(job_id: str) -> dict[str, Any] | None:
         return None if j is None else dict(j)
 
 
+def _prune_jobs() -> None:
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=_JOB_TTL_S)
+    with _jobs_lock:
+        stale = [
+            jid
+            for jid, j in _jobs.items()
+            if j.get("status") in ("done", "error")
+            and j.get("finished_at")
+            and datetime.fromisoformat(j["finished_at"]) < cutoff
+        ]
+        for jid in stale:
+            del _jobs[jid]
+
+
 def _run_analysis(
     job_id: str,
     paper_id: str,
     title: str,
     raw: bytes,
     filename: str,
+    content_hash: str = "",
 ) -> None:
     # Track which phase we're in so a failure records WHERE it broke
     # (upload_events.error_stage). Updated as the pipeline advances.
@@ -340,9 +368,19 @@ def _run_analysis(
                 job_id,
                 status="error",
                 error=f"{exc!r} (cleanup also failed: {cleanup_exc!r})",
+                finished_at=datetime.now(timezone.utc).isoformat(),
             )
         else:
-            _set_job(job_id, status="error", error=repr(exc))
+            _set_job(
+                job_id,
+                status="error",
+                error=repr(exc),
+                finished_at=datetime.now(timezone.utc).isoformat(),
+            )
+    finally:
+        if content_hash:
+            with _jobs_lock:
+                _inflight_hashes.pop(content_hash, None)
 
 
 @router.post("/api/upload")
@@ -351,9 +389,27 @@ async def upload(
 ) -> dict[str, Any]:
     if not file.filename:
         raise HTTPException(400, "missing filename")
+    if Path(file.filename).suffix.lower() not in _UPLOAD_SUFFIXES:
+        raise HTTPException(
+            400,
+            f"unsupported file type (accepted: {', '.join(sorted(_UPLOAD_SUFFIXES))})",
+        )
 
     raw = await file.read()
+    if len(raw) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            413, f"file too large (max {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB)"
+        )
     content_hash = hashlib.sha256(raw).hexdigest()
+    _prune_jobs()
+
+    # Same file already being analyzed right now → return that job instead of
+    # paying for a second identical run (the hash cache below only hits after
+    # results are persisted).
+    with _jobs_lock:
+        inflight = _inflight_hashes.get(content_hash)
+    if inflight and _get_job(inflight["job_id"]) is not None:
+        return {**inflight, "cached": False, "in_flight": True}
 
     # Cache hit: same file already analyzed (persistent across restarts).
     cached = db.get_paper_by_hash(content_hash)
@@ -361,6 +417,15 @@ async def upload(
         cached_paper_id = cached["paper_id"]
         cached_result = db.get_result(cached_paper_id)
         if cached_result is not None:
+            # SQLite can outlive the Neo4j volume (redeploy / `down -v`): the
+            # cached result renders, but the KG view and EDU lookups would 404.
+            # Rebuild the graph from the stored result before serving the hit.
+            try:
+                if not kg.paper_exists(cached_paper_id):
+                    graph = PaperGraph.model_validate(cached_result["graph"])
+                    kg.write_graph(graph)
+            except Exception as rebuild_exc:
+                print(f"[routes] cache-hit KG rebuild failed: {rebuild_exc!r}")
             now = datetime.now(timezone.utc).isoformat()
             job_id = f"job:{uuid.uuid4().hex[:8]}"
             _set_job(
@@ -424,6 +489,8 @@ async def upload(
         content_hash=content_hash,
         pdf_path=pdf_filename,
     )
+    with _jobs_lock:
+        _inflight_hashes[content_hash] = {"job_id": job_id, "paper_id": paper_id}
     background.add_task(
         _run_analysis,
         job_id,
@@ -431,6 +498,7 @@ async def upload(
         title,  # raw user title (may be empty) — _run_analysis auto-detects if blank
         raw,
         file.filename,
+        content_hash,
     )
     return {"job_id": job_id, "paper_id": paper_id, "cached": False}
 

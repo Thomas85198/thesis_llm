@@ -122,6 +122,13 @@ def check_rule(
         "candidates": [{"index": i, **c} for i, c in enumerate(candidates)],
     }
 
+    user_json, dropped = _dump_capped(payload, "candidates")
+    if dropped:
+        print(
+            f"[rules] {rule['id']}: payload over {_PAYLOAD_CHAR_CAP} chars — "
+            f"dropped {dropped} trailing candidate(s) of {len(candidates)}"
+        )
+
     out = call_with_tool(
         model=model_heavy(),
         system=load_prompt("checker").format(
@@ -130,7 +137,7 @@ def check_rule(
             rule_description=rule["description"],
             language=LANG_NAME[PRIMARY_LOCALE],
         ),
-        user_content=json.dumps(payload, ensure_ascii=False, default=str)[:120_000],
+        user_content=user_json,
         tool_name="emit_verdicts",
         tool_description="Emit per-candidate verdicts on this rule.",
         tool_input_schema=VERDICT_SCHEMA,
@@ -171,6 +178,29 @@ def check_rule(
         )
     meta.defect_count = len(defects)
     return defects, meta
+
+
+_PAYLOAD_CHAR_CAP = 120_000
+
+
+def _dump_capped(payload: dict[str, Any], list_key: str) -> tuple[str, int]:
+    """Serialize payload, dropping trailing items of payload[list_key] until the
+    JSON fits the char cap.
+
+    A raw [:cap] slice used to cut the JSON mid-string — the model then saw
+    broken JSON and the tail candidates vanished without a trace.
+    Returns (json_text, dropped_count).
+    """
+    text = json.dumps(payload, ensure_ascii=False, default=str)
+    if len(text) <= _PAYLOAD_CHAR_CAP:
+        return text, 0
+    items = list(payload[list_key])
+    dropped = 0
+    while items and len(text) > _PAYLOAD_CHAR_CAP:
+        items.pop()
+        dropped += 1
+        text = json.dumps({**payload, list_key: items}, ensure_ascii=False, default=str)
+    return text, dropped
 
 
 def _clamp_confidence(value: Any) -> float | None:
@@ -377,16 +407,26 @@ def cross_section_pass(
         if len(ev_ids) < 2:
             # The schema requires ≥2 evidence EDUs across sections; skip if not.
             continue
+        # Defensive per-item parsing, mirroring check_rule: function calling
+        # doesn't hard-enforce enum/required, and one malformed item used to
+        # raise out of here and discard the whole cross-section pass.
+        description = v.get("description")
+        if not description:
+            continue
+        try:
+            severity = Severity(v.get("severity", "medium"))
+        except ValueError:
+            severity = Severity("medium")
         defects.append(
             Defect(
                 id=f"defect:{uuid.uuid4().hex[:8]}",
                 rule_id=rid,
                 defect_type=f"{rule['defect_label']}（跨章節）",
-                severity=Severity(v.get("severity", "medium")),
+                severity=severity,
                 section=v.get("section", "Other"),
                 evidence_edu_ids=ev_ids,
-                description={PRIMARY_LOCALE: v["description"]},
-                suggestion={PRIMARY_LOCALE: v["suggestion"]},
+                description={PRIMARY_LOCALE: description},
+                suggestion={PRIMARY_LOCALE: v.get("suggestion", "")},
                 confidence=_clamp_confidence(v.get("confidence")),
             )
         )
@@ -439,7 +479,18 @@ def localize_defects(defects: list[Defect], paper_id: str) -> None:
         }
         for i, d in enumerate(defects)
     ]
-    payload = json.dumps(items, ensure_ascii=False)[:120_000]
+    # Cap on item boundaries (a raw [:cap] slice used to cut the JSON mid-
+    # string). Dropped defects keep their PRIMARY_LOCALE text via UI fallback.
+    total = len(items)
+    payload = json.dumps(items, ensure_ascii=False)
+    while items and len(payload) > _PAYLOAD_CHAR_CAP:
+        items.pop()
+        payload = json.dumps(items, ensure_ascii=False)
+    if len(items) < total:
+        print(
+            f"[translate] payload over {_PAYLOAD_CHAR_CAP} chars — "
+            f"dropped {total - len(items)} trailing defect(s) of {total}"
+        )
 
     for target in targets:
         try:

@@ -1,12 +1,15 @@
 """Neo4j layer: write PaperGraph, run Cypher rule queries."""
+
 from __future__ import annotations
 
 import os
 import threading
+import time
 from contextlib import contextmanager
 from typing import Any, Iterator
 
 from neo4j import Driver, GraphDatabase
+from neo4j.exceptions import TransientError
 
 from .schemas import PaperGraph
 
@@ -53,6 +56,13 @@ SCHEMA_CYPHER = [
     "CREATE CONSTRAINT entity_id IF NOT EXISTS FOR (n:Entity) REQUIRE n.id IS UNIQUE",
     "CREATE CONSTRAINT fru_id IF NOT EXISTS FOR (f:FRU) REQUIRE f.id IS UNIQUE",
     "CREATE CONSTRAINT rst_id IF NOT EXISTS FOR (r:RST) REQUIRE r.id IS UNIQUE",
+    # clear_paper / fetch_graph_for_viz filter by paper_id — without these every
+    # call is an AllNodesScan once the DB holds more than a few papers.
+    "CREATE INDEX edu_paper IF NOT EXISTS FOR (e:EDU) ON (e.paper_id)",
+    "CREATE INDEX entity_paper IF NOT EXISTS FOR (n:Entity) ON (n.paper_id)",
+    "CREATE INDEX fru_paper IF NOT EXISTS FOR (f:FRU) ON (f.paper_id)",
+    "CREATE INDEX rst_paper IF NOT EXISTS FOR (r:RST) ON (r.paper_id)",
+    "CREATE INDEX paper_paper IF NOT EXISTS FOR (p:Paper) ON (p.paper_id)",
 ]
 
 
@@ -70,17 +80,41 @@ def clear_paper(paper_id: str) -> None:
             """,
             pid=paper_id,
         )
+        # Paper nodes written before paper_id was mirrored onto them (see
+        # _write_tx) are missed by the sweep above — delete by id as well.
+        s.run("MATCH (p:Paper {id:$pid}) DETACH DELETE p", pid=paper_id)
 
 
 def write_graph(graph: PaperGraph) -> None:
     init_schema()
+    # Fresh deployments hit a TransientError on the first write while the
+    # constraints above are still warming up — one retry absorbs it instead of
+    # failing the whole job and forcing a manual re-upload.
+    try:
+        with session() as s:
+            s.execute_write(_write_tx, graph)
+    except TransientError:
+        time.sleep(2)
+        with session() as s:
+            s.execute_write(_write_tx, graph)
+
+
+def paper_exists(paper_id: str) -> bool:
+    """Whether the paper's graph is actually present (cache hits must check —
+    SQLite can outlive the Neo4j volume)."""
     with session() as s:
-        s.execute_write(_write_tx, graph)
+        rec = s.run(
+            "MATCH (p:Paper {id:$pid})-[:HAS_EDU]->(:EDU) RETURN count(*) AS c LIMIT 1",
+            pid=paper_id,
+        ).single()
+        return bool(rec and rec["c"] > 0)
 
 
 def _write_tx(tx: Any, g: PaperGraph) -> None:
     tx.run(
-        "MERGE (p:Paper {id:$id}) SET p.title=$title",
+        # paper_id mirrors id so clear_paper's `WHERE n.paper_id = $pid` sweep
+        # also removes the Paper node itself (it used to leave an orphan).
+        "MERGE (p:Paper {id:$id}) SET p.title=$title, p.paper_id=$id",
         id=g.paper_id,
         title=g.title,
     )

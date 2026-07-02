@@ -87,6 +87,17 @@ Related Work 深度/比較表（skill #3，偏人工判斷）。
 > 高嚴重項已抽查原始碼驗證屬實。審查用的 subagent 定義在 `.claude/agents/code-reviewer.md`。
 > 依「先修對的、再修快的、最後修好看的」排序；安全項因部署為**公網無認證 + 文件全域共享**而全部升一級。
 
+> **修復狀態（2026-07-02，分支 `fix/health-check-2026-07`）**
+> - ✅ **已修**：E1 的 B1/B2/B5/B6/B7；E2 的 S1–S6；E3 全部十項；E4 的 llm 重試疊加、
+>   temperature 防禦、Neo4j paper_id index、objectURL 洩漏、relTime；E5 的測試隔離
+>   （全域 conftest）與前端 typecheck script。後端 commit `fix(backend)`、前端 commit
+>   `fix(frontend)`；另修 docker-compose 密碼來源註解/neo4j restart/CORS 預設 IP。
+>   pytest 163 passed 全綠、tsc 零錯誤、eslint 與 baseline 相同。
+> - ⏸ **刻意未動**：B3/B4 與 REL-02 過濾（rules.yaml Cypher 語意）——會改變缺陷數，
+>   須先跑 forensic 18 缺陷基準回歸，且依 D2-17 要與 ablation 收尾錯開節奏；
+>   S7 non-root 容器（涉及既有 volume 權限，要與部署協調）；S8 限流 key（等帳號系統）；
+>   E4 其餘成本/重構項與 E5 的新增測試、E6 功能項。
+
 ### E1. 會產生錯誤結果的 BUG（優先修）
 
 | # | 位置 | 問題 | 觸發條件 | 修法 |

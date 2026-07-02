@@ -47,7 +47,9 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-thesis_demo_pw}
       DATA_DIR: /data
       # Browser hits Caddy on one origin, so CORS only needs that origin.
-      CORS_ORIGIN_REGEX: ${CORS_ORIGIN_REGEX:-^http://140\.115\.54\.48:8083$}
+      # (Default tracked the old .48 server for a while — keep it aligned with
+      # PUBLIC_BASE / the current host when neither env var is set.)
+      CORS_ORIGIN_REGEX: ${CORS_ORIGIN_REGEX:-^http://140\.115\.54\.62:8083$}
       FRONTEND_URL: ${PUBLIC_BASE:-http://140.115.54.62:8083}
     volumes:
       - app-data:/data

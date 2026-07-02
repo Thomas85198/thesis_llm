@@ -8,8 +8,11 @@ import { Document, Page, pdfjs } from "react-pdf";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Bundle the worker that ships with the installed pdfjs-dist (same version
-// react-pdf uses) instead of fetching it from a CDN at runtime.
+// Bundle the worker locally instead of fetching from a CDN at runtime.
+// ⚠️ pdfjs-dist in package.json MUST stay pinned to the exact version
+// react-pdf depends on (see node_modules/react-pdf/package.json) — pdf.js
+// hard-fails with "API version does not match Worker version" otherwise,
+// and every PDF preview silently breaks.
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url,

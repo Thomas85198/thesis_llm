@@ -22,7 +22,11 @@
     "close": "關閉",
     "toastDone": "分析完成",
     "toastDefects": "共 {count} 個缺陷",
-    "viewResults": "查看結果"
+    "viewResults": "查看結果",
+    "waitingBackend": "等待後端開始處理…",
+    "analysisFailed": "分析失敗",
+    "jobInterrupted": "先前的分析已中斷",
+    "jobInterruptedDesc": "後端可能已重啟，請重新上傳。"
   },
   "guard": {
     "leaveConfirm": "分析進行中，離開會關閉這個進度畫面（分析仍會在背景完成，可從上方「分析中」狀態回來）。確定離開？"
@@ -52,7 +56,8 @@
     "errorTitle": "錯誤",
     "cacheHitTitle": "命中快取",
     "cacheHitDesc": "相同檔案已分析過，跳過重新處理",
-    "uploadFailed": "上傳失敗"
+    "uploadFailed": "上傳失敗",
+    "invalidFileType": "不支援的檔案格式，請上傳 PDF / TXT / MD"
   },
   "jobStatus": {
     "queued": "排隊中",
@@ -89,6 +94,15 @@
     "notFound": "找不到結果",
     "notFoundHint": "可能原因：後端伺服器重啟導致 in-memory 結果遺失。請重新上傳論文。",
     "backToUpload": "回上傳頁"
+  },
+  "pdfViewer": {
+    "errorTitle": "無法顯示 PDF 預覽",
+    "errorDesc": "可能是以純文字（TXT / MD）上傳、檔案毀損，或載入時後端正忙。",
+    "reload": "重新載入",
+    "downloadOriginal": "下載原始檔"
+  },
+  "mermaid": {
+    "renderFailed": "圖表渲染失敗：{error}"
   },
   "defects": {
     "countSuffix": "個缺陷",

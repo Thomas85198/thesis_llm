@@ -577,7 +577,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       toast.error(t("defect.needsText"));
       return;
     }
-    checkTokenRef.current += 1; // supersede any in-flight quick check
+    const token = ++checkTokenRef.current; // supersede any in-flight quick check
     checkAbortRef.current?.abort();
     openKG();
     setKgLoading(true);
@@ -587,6 +587,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
         sections,
         locale,
       );
+      if (checkTokenRef.current !== token) return; // superseded by a newer check
       setDefects(defects);
       ed.commands.setDefectHighlights(
         defects.flatMap((d) =>
@@ -599,6 +600,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       setKgSummary({ total: defects.length, cross });
       setKgResult(result);
     } catch (e) {
+      if (checkTokenRef.current !== token) return;
       if (e instanceof ChatRateLimitError)
         toast.error(t("defect.rateLimited", { seconds: e.retryAfter }));
       else toast.error(String(e));
@@ -640,6 +642,9 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       return;
     }
     setVerifyingCites(true);
+    // Positions were snapshotted above — lock editing while verifies are in
+    // flight so the doc can't shift and verdicts land on the wrong chips.
+    ed.setEditable(false);
     let done = 0;
     let problems = 0;
     let stopped = false;
@@ -672,6 +677,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
       if (stopped) toast.error(t("verify.rateLimited"));
       else toast.success(t("verify.done", { count: done, problems }));
     } finally {
+      ed.setEditable(true);
       setVerifyingCites(false);
     }
   }, [doc.doc_id, locale, t, verifyingCites]);
@@ -845,6 +851,7 @@ export function TiptapEditor({ doc }: { doc: EditorDoc }) {
           partial: t("verify.partial"),
           unsupported: t("verify.unsupported"),
         },
+        unlinkedTooltip: t("citation.unlinkedChipTooltip"),
       }),
       Figure.configure({
         labels: {

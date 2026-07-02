@@ -192,7 +192,10 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   }
 
   function enqueue(body: { title?: string; content_json?: ProseMirrorDoc }) {
-    saveChain = saveChain.then(() => persist(body));
+    // Capture the doc this save belongs to *now* — the chained persist may run
+    // after the user switched documents, and must not write into the new one.
+    const docId = get().docId;
+    saveChain = saveChain.then(() => persist(body, docId));
     return saveChain;
   }
 
@@ -208,12 +211,13 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     }, delay);
   }
 
-  async function persist(body: {
-    title?: string;
-    content_json?: ProseMirrorDoc;
-  }) {
-    const docId = get().docId;
-    if (!docId) return;
+  async function persist(
+    body: { title?: string; content_json?: ProseMirrorDoc },
+    docId: string | null,
+  ) {
+    // Drop the save if the document changed since it was enqueued — writing a
+    // stale body into whichever doc is now open would corrupt it.
+    if (!docId || get().docId !== docId) return;
     // While a conflict is unresolved, pause autosaves — saving again would just
     // 409 again (and risk clobbering). The conflict banner drives resolution.
     if (get().conflict) return;

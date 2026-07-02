@@ -1,14 +1,19 @@
 "use client";
 
 import { DownloadIcon, FileWarningIcon, RefreshCwIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Use the same pdfjs version that react-pdf bundles, served from CDN.
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Bundle the worker that ships with the installed pdfjs-dist (same version
+// react-pdf uses) instead of fetching it from a CDN at runtime.
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
 
 type Highlight = {
   edu_id: string;
@@ -38,12 +43,15 @@ export function PdfViewer({
   focusedEduId,
   onHighlightClick,
 }: Props) {
+  const t = useTranslations("pdfViewer");
   const [numPages, setNumPages] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Bumped to force react-pdf to remount + refetch when the user retries.
   const [reloadKey, setReloadKey] = useState(0);
   // page index → natural width/height (PDF points)
-  const [pageDims, setPageDims] = useState<Record<number, { w: number; h: number }>>({});
+  const [pageDims, setPageDims] = useState<
+    Record<number, { w: number; h: number }>
+  >({});
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const [renderWidth, setRenderWidth] = useState(0);
@@ -92,10 +100,10 @@ export function PdfViewer({
             : {
                 ...prev,
                 [pageIdx]: { w: page.originalWidth, h: page.originalHeight },
-              }
+              },
         );
       },
-    []
+    [],
   );
 
   return (
@@ -107,9 +115,9 @@ export function PdfViewer({
         <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
           <FileWarningIcon className="h-8 w-8 text-muted-foreground" />
           <div>
-            <p className="text-sm font-medium">無法顯示 PDF 預覽</p>
+            <p className="text-sm font-medium">{t("errorTitle")}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              可能是以純文字（TXT / MD）上傳、檔案毀損，或載入時後端正忙。
+              {t("errorDesc")}
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-2">
@@ -124,7 +132,7 @@ export function PdfViewer({
               }}
             >
               <RefreshCwIcon className="h-4 w-4" />
-              重新載入
+              {t("reload")}
             </Button>
             <a
               href={pdfUrl}
@@ -133,7 +141,7 @@ export function PdfViewer({
               className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
             >
               <DownloadIcon className="h-4 w-4" />
-              下載原始檔
+              {t("downloadOriginal")}
             </a>
           </div>
           <p className="max-w-md break-all text-[10px] text-muted-foreground/70">

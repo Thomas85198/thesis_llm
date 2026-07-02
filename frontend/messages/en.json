@@ -22,7 +22,11 @@
     "close": "Close",
     "toastDone": "Analysis complete",
     "toastDefects": "{count} defects",
-    "viewResults": "View results"
+    "viewResults": "View results",
+    "waitingBackend": "Waiting for the backend to start…",
+    "analysisFailed": "Analysis failed",
+    "jobInterrupted": "The previous analysis was interrupted",
+    "jobInterruptedDesc": "The backend may have restarted — please upload again."
   },
   "guard": {
     "leaveConfirm": "An analysis is in progress. Leaving will close this progress view (the analysis keeps running in the background — return via the “Analyzing” badge above). Leave anyway?"
@@ -52,7 +56,8 @@
     "errorTitle": "Error",
     "cacheHitTitle": "Cache hit",
     "cacheHitDesc": "This file has already been analyzed; skipping reprocessing.",
-    "uploadFailed": "Upload failed"
+    "uploadFailed": "Upload failed",
+    "invalidFileType": "Unsupported file type — please upload a PDF, TXT, or MD file"
   },
   "jobStatus": {
     "queued": "Queued",
@@ -89,6 +94,15 @@
     "notFound": "Result not found",
     "notFoundHint": "Possible cause: the backend server restarted and lost the in-memory result. Please re-upload the paper.",
     "backToUpload": "Back to upload"
+  },
+  "pdfViewer": {
+    "errorTitle": "Can't display the PDF preview",
+    "errorDesc": "The file may have been uploaded as plain text (TXT / MD), be corrupted, or the backend was busy while loading.",
+    "reload": "Reload",
+    "downloadOriginal": "Download original file"
+  },
+  "mermaid": {
+    "renderFailed": "Diagram rendering failed: {error}"
   },
   "defects": {
     "countSuffix": "defects",

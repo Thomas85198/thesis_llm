@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,6 +13,7 @@ type Props = {
 };
 
 export function MermaidDiagram({ code, className, caption }: Props) {
+  const t = useTranslations("mermaid");
   const ref = useRef<HTMLDivElement | null>(null);
   const id = useId().replace(/[:]/g, "-");
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +55,7 @@ export function MermaidDiagram({ code, className, caption }: Props) {
         {!ready && !error && <Skeleton className="h-48 w-full" />}
         {error && (
           <p className="text-sm text-destructive">
-            圖表渲染失敗：{error}
+            {t("renderFailed", { error })}
           </p>
         )}
         <div ref={ref} className={cn("[&_svg]:mx-auto", !ready && "hidden")} />

@@ -348,6 +348,51 @@ def test_recommend_wraps_httpx_error(monkeypatch):
         citation.recommend("anything")
 
 
+def test_recommend_en_falls_back_to_crossref_when_openalex_down(monkeypatch):
+    def boom(*a, **k):
+        raise httpx.ConnectError("openalex down")
+
+    cr = [
+        {
+            "openalex_id": "",
+            "doi": "10.1/x",
+            "title": "Fallback Paper",
+            "authors": "A",
+            "year": 2020,
+            "venue": "V",
+            "abstract": "",
+            "url": "u",
+            "oa_url": "",
+            "cited_by": 1,
+            "source": "crossref",
+        }
+    ]
+    monkeypatch.setattr(openalex, "search_works", boom)
+    monkeypatch.setattr(citation.crossref, "search_works", lambda *a, **k: cr)
+    out = citation.recommend("english claim only", lang="en", rerank=False)
+    # the en branch used to throw the Crossref fallback results away
+    assert [c["title"] for c in out] == ["Fallback Paper"]
+
+
+def test_recommend_zh_mode_searches_even_for_english_claim(monkeypatch):
+    calls = {"cr": 0, "oa": 0}
+
+    def fake_cr(*a, **k):
+        calls["cr"] += 1
+        return []
+
+    def fake_oa(*a, **k):
+        calls["oa"] += 1
+        return []
+
+    monkeypatch.setattr(citation.crossref, "search_works", fake_cr)
+    monkeypatch.setattr(openalex, "search_works", fake_oa)
+    citation.recommend("pure english claim", lang="zh", rerank=False)
+    # zh mode used to skip BOTH sources for a non-CJK claim (silent [])
+    assert calls["cr"] >= 1
+    assert calls["oa"] >= 1
+
+
 # ---------- rate limit ----------
 
 

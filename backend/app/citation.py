@@ -180,7 +180,9 @@ def recommend(
     """
     is_cjk = bool(_CJK.search(claim))
     en_query = to_search_query(claim)
-    want_en = lang in ("all", "en")
+    # "zh" also queries OpenAlex — the docstring promises "English appended",
+    # which silently never happened (en side was empty in zh mode).
+    want_en = lang in ("all", "en", "zh")
     want_zh = lang in ("all", "zh")
 
     openalex_results: list[dict] = []
@@ -197,9 +199,10 @@ def recommend(
     crossref_results: list[dict] = []
     crossref_attempted = False
     crossref_ok = False
-    # Crossref for the Chinese side (cjk claim) and as an English fallback when
-    # OpenAlex is empty/down.
-    if (want_zh and is_cjk) or (want_en and not openalex_results):
+    # Crossref runs: always in zh mode (even for an English claim — it used to
+    # skip both sources and silently return []), for the Chinese side of "all",
+    # and as an English fallback when OpenAlex is empty/down.
+    if (want_zh and (is_cjk or lang == "zh")) or (not openalex_results):
         crossref_attempted = True
         cr_query = claim if is_cjk else en_query  # Chinese claim → search Chinese
         try:
@@ -217,7 +220,9 @@ def recommend(
         en_list = rerank_by_claim(claim.strip(), en_list)
 
     if lang == "en":
-        candidates = _dedupe(en_list)
+        # Fall back to Crossref's English hits when OpenAlex is down — the
+        # fallback search ran, but this branch used to throw its results away.
+        candidates = _dedupe(en_list or crossref_results)
     elif lang == "zh":
         candidates = _dedupe(crossref_results + en_list)
     else:  # "all" — interleave so neither language crowds the other out

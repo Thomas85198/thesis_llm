@@ -323,6 +323,14 @@ def from_markdown(text: str) -> tuple[str, dict]:
         if tk.get("type") == "heading" and (tk.get("attrs") or {}).get("level") == 1:
             title = _raw_text(tk.get("children"))
             tokens = tokens[:idx] + tokens[idx + 1 :]
+            # The leading `#` became the document title, so shift every other
+            # heading up one level (## → H1, ### → H2 — pandoc's convention).
+            # Without this a "# title + ## chapters" file has no H1 left and
+            # the Taiwan-thesis export renders sections as 0.1/0.2 (no 第N章).
+            for t in tokens:
+                if t.get("type") == "heading":
+                    attrs = t.setdefault("attrs", {})
+                    attrs["level"] = max(1, int(attrs.get("level", 1)) - 1)
         break
     return title, _doc(_md_blocks(tokens))
 

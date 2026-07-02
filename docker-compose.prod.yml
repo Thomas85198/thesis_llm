@@ -1,4 +1,4 @@
-# Production stack for the lab server (140.115.54.48).
+# Production stack for the lab server (140.115.54.62).
 #
 # The lab firewall exposes ONE external port: 8083. So unlike the local
 # docker-compose.yml (which publishes 3000/8000 separately), here ONLY Caddy
@@ -8,7 +8,7 @@
 # Usage on the server:
 #   cp backend/.env.example backend/.env   # fill OPENAI_API_KEY
 #   echo 'NEO4J_PASSWORD=<strong-pw>'      >> .env   # root .env, compose interpolation
-#   echo 'PUBLIC_BASE=http://140.115.54.48:8083' >> .env
+#   echo 'PUBLIC_BASE=http://140.115.54.62:8083' >> .env
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
 # Volumes:
@@ -48,7 +48,7 @@ services:
       DATA_DIR: /data
       # Browser hits Caddy on one origin, so CORS only needs that origin.
       CORS_ORIGIN_REGEX: ${CORS_ORIGIN_REGEX:-^http://140\.115\.54\.48:8083$}
-      FRONTEND_URL: ${PUBLIC_BASE:-http://140.115.54.48:8083}
+      FRONTEND_URL: ${PUBLIC_BASE:-http://140.115.54.62:8083}
     volumes:
       - app-data:/data
     depends_on:
@@ -62,7 +62,7 @@ services:
       args:
         # Browser-facing API base. Same origin as the frontend because Caddy
         # routes /api/* to the backend — baked in at build time.
-        NEXT_PUBLIC_API_BASE: ${PUBLIC_BASE:-http://140.115.54.48:8083}
+        NEXT_PUBLIC_API_BASE: ${PUBLIC_BASE:-http://140.115.54.62:8083}
     container_name: thesis_frontend
     environment:
       # SSR / server components fetch via the compose network, not localhost.

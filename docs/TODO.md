@@ -98,6 +98,20 @@ Related Work 深度/比較表（skill #3，偏人工判斷）。
 >   S7 non-root 容器（涉及既有 volume 權限，要與部署協調）；S8 限流 key（等帳號系統）；
 >   E4 其餘成本/重構項與 E5 的新增測試、E6 功能項。
 
+> **第二輪（2026-07-02 下午，demo-checklist 驗測後補修）**
+> - ✅ **PDF 預覽全掛（regression）**：worker 改 bundle 內建時解析到頂層
+>   pdfjs-dist@5.7.284，與 react-pdf 內部 API 5.4.296 版本不符 → 全部預覽靜默失敗。
+>   已 pin 5.4.296 dedupe 成單一份；**升 react-pdf 時必須同步這個 pin**（pdf-viewer.tsx 有註記）。
+> - ✅ **引用搜尋降級鏈**：OpenAlex 上游 503 期間 en 模式把 Crossref fallback 結果丟棄、
+>   zh 模式遇英文 claim 兩來源都不查；已修，Crossref 並補 429/503 retry。
+>   ⚠️ OpenAlex 掛掉時 verify 會回 unknown、ground 回 none（候選無 abstract/openalex_id），
+>   屬合理降級——demo 前先確認 `curl api.openalex.org` 健康。
+> - ✅ **md 匯入 → 台灣論文 0.x 章節**：`# 標題 + ## 章` 的 md 匯入後 heading 未上移一級
+>   → twthesis 無 chapter。已修（pandoc 慣例 shift）。
+> - 驗測範圍：demo-checklist 全 API 鏈（匯入/自動儲存/版本/四格式匯出+封面/引用三件套/
+>   relink 未測/autocomplete/rewrite/outline/缺陷檢查 15 條）＋ CDP 抽查結果頁與編輯器 UI。
+>   pytest 167 passed。
+
 ### E1. 會產生錯誤結果的 BUG（優先修）
 
 | # | 位置 | 問題 | 觸發條件 | 修法 |

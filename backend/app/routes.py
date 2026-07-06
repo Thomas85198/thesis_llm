@@ -20,6 +20,7 @@ from . import autocomplete as autocomplete_mod
 from . import chat as chat_mod
 from . import citation as citation_mod
 from . import citation_relink as citation_relink_mod
+from . import convert_upload
 from . import crossref as crossref_mod
 from . import claim_verifier as claim_verifier_mod
 from . import draft_check as draft_check_mod
@@ -258,6 +259,27 @@ def _run_analysis(
     # (upload_events.error_stage). Updated as the pipeline advances.
     stage = "extracting"
     try:
+        # md/txt 沒有頁面座標、前端也無法預覽 —— 先排版成真 PDF
+        # （理由與排版細節見 convert_upload docstring），成功後整條鏈把它
+        # 當 PDF 論文；轉檔失敗就退回舊行為（純文字分析、無預覽），
+        # 絕不因轉檔擋掉分析。papers.pdf_path 改指向轉出的 PDF（供預覽），
+        # upload_events 仍記錄原始檔（audit 用）。
+        if Path(filename).suffix.lower() in (".md", ".txt"):
+            _set_job(job_id, status="extracting", message="Converting to PDF…")
+            try:
+                pdf_bytes = convert_upload.to_pdf(raw, filename)
+                pdf_filename = f"{paper_id.replace(':', '_')}.pdf"
+                (UPLOAD_DIR / pdf_filename).write_bytes(pdf_bytes)
+                db.upsert_paper(
+                    paper_id, title.strip(), filename, content_hash, pdf_filename
+                )
+                raw, filename = pdf_bytes, pdf_filename
+            except Exception as conv_exc:
+                _set_job(
+                    job_id,
+                    convert_warning=f"md/txt→PDF conversion skipped: {conv_exc!r}",
+                )
+
         # Extraction moved here from the upload handler so the OCR fallback
         # (used when the PDF has no ToUnicode CMap) doesn't block the HTTP
         # request — OCR on a 30-page paper can take minutes.

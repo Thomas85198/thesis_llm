@@ -114,11 +114,17 @@ Related Work 深度/比較表（skill #3，偏人工判斷）。
 >   無動機交代，舊版因反模式永遠 0 候選）；REL-13 零後設論述案例正確 fire。
 >   pytest 全綠、本地 docker 已重建驗證。另以合成測試論文（種入已知缺陷）端到端
 >   驗證：REL-03 舊查詢 0 候選 vs 新查詢抓到並判出缺陷、REL-11 泛化無實例被抓。
-> - ⚠️ **驗測發現（未修）**：主上傳的 md 章節偵測吃不到 markdown 標題——
->   `SECTION_PATTERNS` 以 `^\s*` 起手，`## 1 緒論` 的 `#` 不是空白 → md 上傳
->   全部落 section=Other（庫內兩篇 md 皆如此）。PDF 不受影響。修法：pattern 前綴
->   容忍 `#+`，或 md 路徑先 strip 標題記號。連帶影響：全 Other 的文件 REL-02
->   （限章節過濾）零候選、REL-05/07（按章節撈）也撈不到。
+> - ✅ **驗測發現 → 已修（2026-07-06，md/txt 上傳轉 PDF）**：原發現＝主上傳的
+>   md 章節偵測吃不到 markdown 標題（`SECTION_PATTERNS` 以 `^\s*` 起手，`#` 不是
+>   空白 → md 上傳全落 section=Other，REL-02/05/07 等按章節的規則全失效），且
+>   md/txt 無頁面座標 → 前端 PDF 預覽與缺陷 highlight 全不可用。修法＝方案 A：
+>   `convert_upload.py` 在 `_run_analysis` 前把 md/txt 排版成真 PDF（復用
+>   import_doc→export_doc(article)→內建 XeLaTeX 鏈；關 secnumdepth＋剝標題編號
+>   讓裸標題命中 SECTION_PATTERNS），之後整條鏈當 PDF 論文處理，前端零改動。
+>   轉檔失敗 fallback 舊行為（純文字分析、無預覽）不擋分析；papers.pdf_path 指
+>   轉出 PDF、upload_events 仍留原始檔。e2e 實測：同一篇測試 md 章節從全 Other
+>   變 6 個正常章節、44/44 EDU 帶真實 bbox、預覽端點回真 PDF。既有 md 論文
+>   （cache 內）不回溯轉檔，重傳（改一字破 cache）即得新行為。
 
 > **第二輪（2026-07-02 下午，demo-checklist 驗測後補修）**
 > - ✅ **PDF 預覽全掛（regression）**：worker 改 bundle 內建時解析到頂層
@@ -187,10 +193,17 @@ Related Work 深度/比較表（skill #3，偏人工判斷）。
 
 ### E5. 測試缺口
 
-- **後端核心鏈幾乎零測試**：`rules.py` per-section verdict 解析（缺 description 跳過 / severity fallback / confidence clamp / REL-04·12 skip）、`kg.py` 全部 Cypher 寫入、`db.py` papers/results/cache roundtrip、`routes.py` cache-hit 路徑——全無覆蓋。編輯器子系統覆蓋良好、`163 passed` 全綠離線。**最值得先補**：`check_rule` verdict 解析（純函式 mock `call_with_tool`）與 `db.py` papers/cache roundtrip。
-- **兩個 route 測試污染真實 DB**（`test_editor_upload.py:10`、`test_document_restore.py:10`）：用 `TestClient(app)` 沒 monkeypatch `db.DB_PATH`/`UPLOAD_DIR` → 寫進真實 `backend/data.db`、殘留 `uploads/img_*.png`。修：抬升 `test_documents.py` 的 `fresh_db` 成全域 conftest fixture。
-- **前端零測試**：無 jest/vitest/playwright、無 test script。最值得補：`lib/api.ts` 後端 contract 單測（成本最低）、editor Zustand store 與 TipTap JSON 轉換純邏輯測試（v4.17 最易 regression 區）。
-- **前端無 typecheck script**（`package.json`）：型別錯只能等 `next build` 才爆。加 `"typecheck": "tsc --noEmit"`。
+- ✅ **後端核心鏈最值錢的兩塊已補（2026-07-06）**：`tests/test_check_rule.py`（verdict
+  解析防禦全覆蓋：零候選跳 LLM、缺 description 跳過、severity fallback、confidence
+  clamp、FRU→EDU 展開、`_dump_capped` 按候選邊界裁切）＋ `tests/test_db_papers.py`
+  （papers/results roundtrip、content-hash 快取語意——含「無完成結果不算 cache hit」
+  與「刪除清乾淨」）。仍未覆蓋：`kg.py` Cypher 寫入、`routes.py` cache-hit 路徑。
+- ✅ 兩個 route 測試污染真實 DB——第一輪已修（全域 conftest 隔離）。
+- ✅ **前端首批測試（2026-07-06）**：引入 vitest（lockfile 以 npm 10 重產、docker
+  `npm ci` 驗證通過），`lib/api.test.ts` 14 條 contract 測試（`pickLocalized` 降級鏈、
+  URL encode、錯誤內文、uploadPaper FormData）；`npm test` script。
+  仍未覆蓋：editor Zustand store 與 TipTap JSON 轉換純邏輯（v4.17 最易 regression 區）。
+- ✅ 前端 typecheck script——第一輪已加。
 
 ### E6. 值得補的功能（先修完上面再談）
 

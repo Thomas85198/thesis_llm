@@ -36,13 +36,16 @@ rules:
       在 Method/Experiment 中提到 baseline 時，應有對其侷限或不足的批判，
       作為自身方法的對照動機。只列 baseline 不批判是缺陷。
     candidate_query: |
+      // 依 description 限定 Method/Experiment（含 Results）章節的提及。
+      // 原版不限章節，Introduction/Related Work 的 survey 式提及
+      // 讓每個 Method 實體都進候選 → 候選膨脹、誤報面擴大。
       MATCH (e:Entity {paper_id: $pid})
       WHERE toLower(e.name) CONTAINS 'baseline'
          OR e.type = 'Method'
-      OPTIONAL MATCH (e)-[:MENTIONED_IN]->(edu:EDU)
+      MATCH (e)-[:MENTIONED_IN]->(edu:EDU)
+      WHERE edu.section IN ['Method', 'Experiment', 'Results']
       WITH e, collect(DISTINCT edu.id) AS edu_ids, collect(DISTINCT edu.text) AS edu_texts,
            collect(DISTINCT edu.section) AS sections
-      WHERE size(edu_ids) > 0
       RETURN e.id AS entity_id, e.name AS entity_name, edu_ids, edu_texts, sections
     defect_label: BaselineNotCritiqued
 
@@ -52,15 +55,26 @@ rules:
       對每個關鍵研究行動 (選某資料集/某評估指標/某架構) 都應有合理化說明。
       無動機交代 (Missing Motivation) 是常見缺陷。
     candidate_query: |
-      MATCH (f:FRU {paper_id: $pid, function: 'MethodStep'})
-      WHERE NOT EXISTS {
-        MATCH (m:FRU {paper_id: $pid, function: 'Motivation'})-[:COVERS]->(:EDU)
-        WHERE m.id <> f.id
-      }
-      RETURN f.id AS fru_id, f.summary AS summary,
-             [(f)-[:COVERS]->(e:EDU) | e.id] AS edu_ids,
-             [(f)-[:COVERS]->(e:EDU) | e.text] AS edu_texts,
-             [(f)-[:COVERS]->(e:EDU) | e.section][0] AS section
+      // 對每個 MethodStep FRU，檢查同章節、order 鄰近範圍內是否有 Motivation
+      // （動機通常在步驟之前，所以往前看得比往後遠）。原版是 paper-global
+      // NOT EXISTS：全篇任一 Motivation 就放過所有 MethodStep（REL-09 已改
+      // proximity，這裡跟上）。
+      MATCH (f:FRU {paper_id: $pid, function: 'MethodStep'})-[:COVERS]->(f_edu:EDU)
+      WITH f, f_edu.section AS section,
+           min(f_edu.order) AS f_start,
+           max(f_edu.order) AS f_end,
+           collect(f_edu.id)   AS edu_ids,
+           collect(f_edu.text) AS edu_texts
+
+      OPTIONAL MATCH (m:FRU {paper_id: $pid, function: 'Motivation'})-[:COVERS]->(m_edu:EDU)
+      WHERE m_edu.section = section
+        AND m_edu.order >= f_start - 8
+        AND m_edu.order <= f_end + 3
+
+      WITH f, section, edu_ids, edu_texts, count(DISTINCT m) AS nearby_motivation_count
+      WHERE nearby_motivation_count = 0
+
+      RETURN f.id AS fru_id, f.summary AS summary, edu_ids, edu_texts, section
     defect_label: MissingMotivation
 
   - id: REL-04
@@ -186,14 +200,25 @@ rules:
       承認侷限 (Concession) 後應有補償策略 (Compensation) — 例如未來工作、可行替代或範圍說明。
       只承認不補償會弱化論證。
     candidate_query: |
-      MATCH (f:FRU {paper_id: $pid, function: 'Concession'})
-      WHERE NOT EXISTS {
-        MATCH (c:FRU {paper_id: $pid, function: 'Compensation'})
-        WHERE c.id <> f.id
-      }
-      RETURN f.id AS fru_id, f.summary AS summary,
-             [(f)-[:COVERS]->(e:EDU) | e.id] AS edu_ids,
-             [(f)-[:COVERS]->(e:EDU) | e.text] AS edu_texts
+      // 對每個 Concession FRU，檢查同章節、order 鄰近範圍內是否有 Compensation
+      // （補償通常緊接在讓步之後，所以往後看得比往前遠）。原版是 paper-global
+      // NOT EXISTS 反模式（同 REL-03），已套 REL-09 的 proximity 寫法。
+      MATCH (f:FRU {paper_id: $pid, function: 'Concession'})-[:COVERS]->(f_edu:EDU)
+      WITH f, f_edu.section AS section,
+           min(f_edu.order) AS f_start,
+           max(f_edu.order) AS f_end,
+           collect(f_edu.id)   AS edu_ids,
+           collect(f_edu.text) AS edu_texts
+
+      OPTIONAL MATCH (c:FRU {paper_id: $pid, function: 'Compensation'})-[:COVERS]->(c_edu:EDU)
+      WHERE c_edu.section = section
+        AND c_edu.order >= f_start - 3
+        AND c_edu.order <= f_end + 8
+
+      WITH f, section, edu_ids, edu_texts, count(DISTINCT c) AS nearby_compensation_count
+      WHERE nearby_compensation_count = 0
+
+      RETURN f.id AS fru_id, f.summary AS summary, edu_ids, edu_texts, section
     defect_label: UncompensatedConcession
 
   - id: REL-11
@@ -202,10 +227,20 @@ rules:
       具體案例 (specific) 應導向通則 (generalization)，反之通則應有具體案例支撐。
       只有特例沒泛化、或只有泛化沒實例都是缺陷。
     candidate_query: |
-      MATCH (f1:FRU {paper_id: $pid, function: 'Specific'})
+      // 錨定 Paper 起手：零 Specific 也要回一列，否則「只有泛化沒實例」
+      // 這一半永遠不 fire（原版 MATCH Specific 起手，零節點 → 0 rows →
+      // 直接跳過 LLM 判讀）。collect(DISTINCT 節點) 會略過 null，
+      // 空集合正確回 []。
+      MATCH (p:Paper {id: $pid})
+      OPTIONAL MATCH (f1:FRU {paper_id: $pid, function: 'Specific'})
+      WITH p, collect(DISTINCT f1) AS specs
       OPTIONAL MATCH (f2:FRU {paper_id: $pid, function: 'Generalization'})
-      RETURN collect(DISTINCT {id: f1.id, summary: f1.summary}) AS specifics,
-             collect(DISTINCT {id: f2.id, summary: f2.summary}) AS generalizations
+      WITH specs, collect(DISTINCT f2) AS gens
+      // 兩側皆零＝全文根本沒用這種論證結構（常見於短 draft），
+      // 「失衡」無從談起 → 跳過，省一次 LLM 判讀。
+      WHERE size(specs) + size(gens) > 0
+      RETURN [x IN specs | {id: x.id, summary: x.summary}] AS specifics,
+             [x IN gens | {id: x.id, summary: x.summary}] AS generalizations
     defect_label: SpecificGeneralizationImbalance
 
   - id: REL-12
@@ -228,9 +263,19 @@ rules:
       論文應有適當的後設論述 (例如「本節將介紹...」、「下一節討論...」、章節導引)，
       幫助讀者導航。完全缺乏或氾濫使用都是問題。
     candidate_query: |
-      MATCH (f:FRU {paper_id: $pid, function: 'MetaDiscourse'})
-      RETURN f.id AS fru_id, f.summary AS summary,
-             [(f)-[:COVERS]->(e:EDU) | e.id] AS edu_ids,
-             [(f)-[:COVERS]->(e:EDU) | e.text] AS edu_texts,
-             [(f)-[:COVERS]->(e:EDU) | e.section][0] AS section
+      // 錨定 Paper 起手：完全零 MetaDiscourse 也要回一列（原版 MATCH 起手，
+      // 零節點 → 0 rows → 「完全缺後設論述」這一半永遠不 fire）。
+      // 附 paper_sections 當分母，讓 LLM 能同時判「缺乏」與「氾濫」。
+      MATCH (p:Paper {id: $pid})
+      OPTIONAL MATCH (f:FRU {paper_id: $pid, function: 'MetaDiscourse'})-[:COVERS]->(d:EDU)
+      WITH p, f, collect(d.id) AS edu_ids, collect(d.text) AS edu_texts,
+           collect(d.section)[0] AS section
+      WITH p, [x IN collect({fru_id: f.id, summary: f.summary, section: section,
+                             edu_ids: edu_ids, edu_texts: edu_texts})
+               WHERE x.fru_id IS NOT NULL] AS meta_discourse_frus
+      OPTIONAL MATCH (p)-[:HAS_EDU]->(e:EDU)
+      WITH meta_discourse_frus, collect(DISTINCT e.section) AS paper_sections
+      // 零 EDU 的空文件（殘留 draft）連「缺後設論述」都無從判 → 跳過。
+      WHERE size(paper_sections) > 0
+      RETURN meta_discourse_frus, paper_sections
     defect_label: MetaDiscourseImbalance

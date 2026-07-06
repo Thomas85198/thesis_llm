@@ -93,10 +93,32 @@ Related Work 深度/比較表（skill #3，偏人工判斷）。
 >   （全域 conftest）與前端 typecheck script。後端 commit `fix(backend)`、前端 commit
 >   `fix(frontend)`；另修 docker-compose 密碼來源註解/neo4j restart/CORS 預設 IP。
 >   pytest 163 passed 全綠、tsc 零錯誤、eslint 與 baseline 相同。
-> - ⏸ **刻意未動**：B3/B4 與 REL-02 過濾（rules.yaml Cypher 語意）——會改變缺陷數，
->   須先跑 forensic 18 缺陷基準回歸，且依 D2-17 要與 ablation 收尾錯開節奏；
->   S7 non-root 容器（涉及既有 volume 權限，要與部署協調）；S8 限流 key（等帳號系統）；
->   E4 其餘成本/重構項與 E5 的新增測試、E6 功能項。
+> - ⏸ **刻意未動**：S7 non-root 容器（涉及既有 volume 權限，要與部署協調）；
+>   S8 限流 key（等帳號系統）；E4 其餘成本/重構項與 E5 的新增測試、E6 功能項。
+
+> **第三輪（2026-07-06，rules.yaml Cypher 語意修復）**
+> - ✅ **B3（零節點不 fire）**：REL-13 屬實（逐 FRU 回列，零節點 → 0 rows → 不進
+>   LLM），改錨定 `Paper` 單列彙總（Attention 16 列→1 列）附 `paper_sections` 當分母。
+>   REL-11 經驗證舊版靠純 aggregation 在零節點時仍回一列（原審查描述過重），但單邊
+>   空時會塞 `{id:null}` 垃圾 map——已改乾淨寫法。另加空集合 guard：REL-11 兩側皆零、
+>   REL-13 零 EDU（殘留 draft 很多）直接跳過，省 LLM 呼叫。
+> - ✅ **B4（REL-03/10 paper-global NOT EXISTS 反模式）**：套 REL-09 的同章節 +
+>   order proximity 寫法（REL-03 動機在前看 −8/+3；REL-10 補償在後看 −3/+8）。
+> - ✅ **REL-02 過濾**：MENTIONED_IN 限定 Method/Experiment/Results 章節，
+>   砍掉 Intro/Related Work survey 式提及的候選膨脹（LiteAgent 20→9、Attention 7→1）。
+> - **回歸方式**：forensic 論文與 18 缺陷基準已隨 Neo4j volume 重建消失，改以現庫
+>   4 篇論文做「舊 vs 新」A/B——candidate 數純 Cypher 對比 + 改動 5 條規則的
+>   LLM 判讀對照既存 result 基準（extraction 未動，不需重跑全管線）。結果：
+>   REL-02 @ LiteAgent 基準 2 條實為同一問題重複報告（entity 膨脹產物），新版收斂
+>   1 條實質保留；REL-03 基準缺陷保留＋新增合理缺陷（Attention 抓到 beam size/α
+>   無動機交代，舊版因反模式永遠 0 候選）；REL-13 零後設論述案例正確 fire。
+>   pytest 全綠、本地 docker 已重建驗證。另以合成測試論文（種入已知缺陷）端到端
+>   驗證：REL-03 舊查詢 0 候選 vs 新查詢抓到並判出缺陷、REL-11 泛化無實例被抓。
+> - ⚠️ **驗測發現（未修）**：主上傳的 md 章節偵測吃不到 markdown 標題——
+>   `SECTION_PATTERNS` 以 `^\s*` 起手，`## 1 緒論` 的 `#` 不是空白 → md 上傳
+>   全部落 section=Other（庫內兩篇 md 皆如此）。PDF 不受影響。修法：pattern 前綴
+>   容忍 `#+`，或 md 路徑先 strip 標題記號。連帶影響：全 Other 的文件 REL-02
+>   （限章節過濾）零候選、REL-05/07（按章節撈）也撈不到。
 
 > **第二輪（2026-07-02 下午，demo-checklist 驗測後補修）**
 > - ✅ **PDF 預覽全掛（regression）**：worker 改 bundle 內建時解析到頂層

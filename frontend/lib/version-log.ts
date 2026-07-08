@@ -38,6 +38,18 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.18.0",
+    date: "2026-07-07",
+    changes: [
+      { type: "feat" }, // md/txt 上傳先轉真 PDF：預覽、缺陷 highlight、章節偵測全部可用
+      { type: "fix" }, // 分析正確性：EDU id 碰撞、REL 規則 Cypher 語意（零節點也判、動機/補償就近判、REL-02 章節過濾）
+      { type: "fix" }, // 安全強化：LaTeX 編譯限制讀檔、HTML 匯出 XSS、SSRF 防護、上傳大小/格式上限、zip bomb 防護
+      { type: "fix" }, // 可靠性：快取命中自動重建 KG、首次上傳暖機重試、重啟後任務不卡死、同檔並發去重、輪詢停損
+      { type: "fix" }, // 編輯器：跨文件自動儲存污染、手動引用驗證 key、PDF 預覽 regression、引用搜尋降級鏈、md 匯入章節層級
+      { type: "chore" }, // 測試補強：後端核心鏈（verdict 解析/快取語意）＋前端 vitest 首批 contract 測試
+    ],
+  },
+  {
     version: "4.17.1",
     date: "2026-06-25",
     changes: [

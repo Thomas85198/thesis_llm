@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app import db, grounding, llm, openalex
+
+
+@pytest.fixture(autouse=True)
+def _clear_claim_cache():
+    # _claim_vec is a process-global lru_cache; without clearing, one test's
+    # stubbed embedding leaks into another test using the same claim string.
+    grounding._claim_vec.cache_clear()
+    yield
 
 
 def test_split_sentences_filters_short():
@@ -100,6 +110,58 @@ def test_ground_empty_claim_returns_none(monkeypatch):
         "source": "none",
         "supporting": [],
     }
+
+
+def test_negative_result_is_cached(monkeypatch):
+    """No full text AND no abstract → 'none' must be cached; a repeat click
+    must not re-hit OpenAlex / re-download anything (E4 cost fix)."""
+    store = {}
+    monkeypatch.setattr(db, "get_paper_chunks", lambda oid: store.get(oid, []))
+    monkeypatch.setattr(
+        db,
+        "upsert_paper_chunks",
+        lambda oid, source, chunks: store.__setitem__(
+            oid,
+            [
+                {"idx": i, "text": t, "embedding": e, "source": source}
+                for i, t, e in chunks
+            ],
+        ),
+    )
+    monkeypatch.setattr(grounding, "_fetch_fulltext", lambda url: "")
+    calls = {"openalex": 0}
+
+    def fake_lookup(ids):
+        calls["openalex"] += 1
+        return {"W1": {"oa_url": "", "abstract": ""}}
+
+    monkeypatch.setattr(openalex, "get_works_by_ids", fake_lookup)
+    monkeypatch.setattr(llm, "embed", lambda texts: [[1.0]] * len(texts))
+
+    assert grounding.ground("W1", "", "claim text", "d")["source"] == "none"
+    assert grounding.ground("W1", "", "claim text", "d")["source"] == "none"
+    assert calls["openalex"] == 1  # second call served from the cached sentinel
+
+
+def test_claim_embedding_is_cached(monkeypatch):
+    store = {
+        "W1": [
+            {"idx": 0, "text": "sentence one", "embedding": [1.0], "source": "abstract"}
+        ]
+    }
+    monkeypatch.setattr(db, "get_paper_chunks", lambda oid: store.get(oid, []))
+    calls = {"embed": 0}
+
+    def fake_embed(texts):
+        calls["embed"] += 1
+        return [[1.0]] * len(texts)
+
+    monkeypatch.setattr(llm, "embed", fake_embed)
+
+    grounding.ground("W1", "", "the same claim", "d")
+    grounding.ground("W1", "", "the same claim", "d")
+
+    assert calls["embed"] == 1  # claim vector reused across repeat grounds
 
 
 def test_rate_limit(monkeypatch):

@@ -67,7 +67,9 @@ CREATE INDEX IF NOT EXISTS idx_papers_hash ON papers(content_hash);
 CREATE TABLE IF NOT EXISTS results (
     paper_id     TEXT PRIMARY KEY REFERENCES papers(paper_id) ON DELETE CASCADE,
     result_json  TEXT NOT NULL,        -- AnalysisResult 整份 JSON (graph + defects)
-    finished_at  TEXT NOT NULL         -- 分析完成時間 (ISO 8601 UTC)
+    finished_at  TEXT NOT NULL,        -- 分析完成時間 (ISO 8601 UTC)
+    defect_count INTEGER,              -- 冗餘欄位: len(defects)，列表頁免解整份 JSON
+    edu_count    INTEGER               -- 冗餘欄位: len(graph.edus)，同上
 );
 
 -- ============================================================
@@ -245,6 +247,29 @@ def _migrate(conn: sqlite3.Connection) -> None:
             """
         )
 
+    # Migration 2 (2026-07-08): results.defect_count / edu_count
+    # list_papers used to json.loads every full result (multi-MB each) just to
+    # count defects/EDUs — an N+1 that scales with library size. Denormalize
+    # the two counts; upsert_result keeps them in sync going forward.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(results)").fetchall()}
+    if "defect_count" not in cols:
+        conn.execute("ALTER TABLE results ADD COLUMN defect_count INTEGER")
+        conn.execute("ALTER TABLE results ADD COLUMN edu_count INTEGER")
+        rows = conn.execute("SELECT paper_id, result_json FROM results").fetchall()
+        for paper_id, result_json in rows:
+            try:
+                res = json.loads(result_json)
+            except Exception:
+                continue  # unreadable row: leave NULL, list_papers falls back
+            conn.execute(
+                "UPDATE results SET defect_count=?, edu_count=? WHERE paper_id=?",
+                (
+                    len(res.get("defects", [])),
+                    len(res.get("graph", {}).get("edus", [])),
+                    paper_id,
+                ),
+            )
+
 
 def _ensure_init() -> None:
     global _initialized
@@ -344,7 +369,7 @@ def list_papers() -> list[dict[str, Any]]:
             """
             SELECT p.paper_id, p.title, p.filename, p.created_at,
                    r.result_json IS NOT NULL AS has_result,
-                   r.finished_at
+                   r.finished_at, r.defect_count, r.edu_count
             FROM papers p
             LEFT JOIN results r ON r.paper_id = p.paper_id
             ORDER BY COALESCE(r.finished_at, p.created_at) DESC
@@ -374,13 +399,22 @@ def upsert_result(paper_id: str, result: dict[str, Any]) -> None:
     with connect() as c:
         c.execute(
             """
-            INSERT INTO results (paper_id, result_json, finished_at)
-            VALUES (?, ?, ?)
+            INSERT INTO results (paper_id, result_json, finished_at,
+                                 defect_count, edu_count)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(paper_id) DO UPDATE SET
                 result_json=excluded.result_json,
-                finished_at=excluded.finished_at
+                finished_at=excluded.finished_at,
+                defect_count=excluded.defect_count,
+                edu_count=excluded.edu_count
             """,
-            (paper_id, json.dumps(result, ensure_ascii=False), _now()),
+            (
+                paper_id,
+                json.dumps(result, ensure_ascii=False),
+                _now(),
+                len(result.get("defects", [])),
+                len(result.get("graph", {}).get("edus", [])),
+            ),
         )
 
 

@@ -9,6 +9,7 @@ Locale codes mirror the frontend (i18n/routing.ts): "zh-Hant", "en", ...
 PRIMARY_LOCALE is the language the checker/cross-section prompts generate in;
 every other supported locale is filled by the translation pass.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -21,6 +22,18 @@ LANG_NAME: dict[str, str] = {
     "zh-Hant": "繁體中文",
     "en": "English",
 }
+
+# Backend-produced UI strings (document exports etc.). Locale-as-data:
+# adding a language means adding entries here, not editing call sites.
+STRINGS: dict[str, dict[str, str]] = {
+    "refs_label": {"zh-Hant": "參考文獻", "en": "References"},
+}
+
+
+def t(key: str, locale: str | None) -> str:
+    """Look up a backend UI string, falling back to PRIMARY_LOCALE."""
+    table = STRINGS[key]
+    return table.get(normalize_locale(locale), table[PRIMARY_LOCALE])
 
 
 def normalize_locale(locale: str | None) -> str:

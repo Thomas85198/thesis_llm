@@ -64,6 +64,8 @@ WHERE content_hash = 'xxx...';
 | `paper_id` | TEXT PRIMARY KEY | 對應 `papers.paper_id`，CASCADE 刪除 |
 | `result_json` | TEXT NOT NULL | 完整 `AnalysisResult` JSON（含 graph + defects + rule_meta） |
 | `finished_at` | TEXT NOT NULL | 分析完成時間（ISO 8601 UTC） |
+| `defect_count` | INTEGER | 冗餘欄位：`len(defects)`。論文列表頁只要數字，免解整份 JSON（N+1 修正，2026-07-08） |
+| `edu_count` | INTEGER | 冗餘欄位：`len(graph.edus)`，同上。舊列由 migration backfill，之後 `upsert_result` 同步維護 |
 
 **JSON 內結構**（重點欄位）：
 ```

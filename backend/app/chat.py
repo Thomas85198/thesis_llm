@@ -12,10 +12,9 @@ from __future__ import annotations
 
 import re
 import threading
-import time
 from typing import Any, Literal
 
-from . import db, i18n, llm
+from . import db, i18n, llm, ratelimit
 from .prompts import load_prompt
 
 Role = Literal["user", "assistant"]
@@ -51,18 +50,7 @@ _rate_buckets: dict[str, list[float]] = {}
 
 def _check_rate_limit(paper_id: str) -> tuple[bool, int]:
     """Return (allowed, remaining_seconds_until_next_slot)."""
-    now = time.time()
-    window = 60.0
-    with _rate_lock:
-        bucket = [t for t in _rate_buckets.get(paper_id, []) if now - t < window]
-        if len(bucket) >= RATE_LIMIT_PER_MIN:
-            oldest = min(bucket)
-            wait = max(1, int(window - (now - oldest)))
-            _rate_buckets[paper_id] = bucket
-            return False, wait
-        bucket.append(now)
-        _rate_buckets[paper_id] = bucket
-    return True, 0
+    return ratelimit.check(_rate_buckets, _rate_lock, RATE_LIMIT_PER_MIN, paper_id)
 
 
 # ---------- Context assembly ----------

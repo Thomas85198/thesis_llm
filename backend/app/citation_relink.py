@@ -19,10 +19,9 @@ from __future__ import annotations
 import math
 import re
 import threading
-import time
 from typing import Any
 
-from . import llm, openalex
+from . import llm, openalex, ratelimit
 from .prompts import load_prompt
 
 # Relink is heavy (LLM parse + N OpenAlex searches + embeddings). It's user-
@@ -33,15 +32,7 @@ _rate_buckets: dict[str, list[float]] = {}
 
 
 def check_rate_limit(doc_id: str) -> tuple[bool, int]:
-    now = time.monotonic()
-    with _rate_lock:
-        bucket = [t for t in _rate_buckets.get(doc_id, []) if now - t < 60]
-        if len(bucket) >= _RATE_LIMIT_PER_MIN:
-            _rate_buckets[doc_id] = bucket
-            return False, int(60 - (now - bucket[0])) + 1
-        bucket.append(now)
-        _rate_buckets[doc_id] = bucket
-        return True, 0
+    return ratelimit.check(_rate_buckets, _rate_lock, _RATE_LIMIT_PER_MIN, doc_id)
 
 
 _REF_HEADING = re.compile(r"參考文獻|參考書目|引用文獻|References|Bibliography", re.I)
@@ -131,7 +122,10 @@ def high_confidence_matches(parsed: list[dict]) -> list[dict]:
     Returns the parsed record augmented with `openalex` (normalized candidate)
     and `similarity`. Conservative by design — a weak match is dropped, not linked.
     """
-    matched: list[dict] = []
+    # Stage 1: OpenAlex search per ref, queuing every title for ONE embed call
+    # (this used to be one embeddings request per ref — 60 refs = 60 requests).
+    pending: list[tuple[dict, list[dict], int]] = []  # (ref, cands, offset)
+    texts: list[str] = []
     for r in parsed:
         title = (r.get("title") or "").strip()
         if not r.get("is_academic") or len(title) < 8:
@@ -143,13 +137,21 @@ def high_confidence_matches(parsed: list[dict]) -> list[dict]:
         cands = [c for c in cands if c.get("title")]
         if not cands:
             continue
-        try:
-            vecs = llm.embed([title] + [c["title"] for c in cands])
-        except Exception:  # noqa: BLE001 — no quota → can't verify → skip
-            continue
-        qv = vecs[0]
+        pending.append((r, cands, len(texts)))
+        texts.append(title)
+        texts.extend(c["title"] for c in cands)
+    if not pending:
+        return []
+    try:
+        vecs = llm.embed(texts)
+    except Exception:  # noqa: BLE001 — no quota → can't verify anything → skip all
+        return []
+
+    matched: list[dict] = []
+    for r, cands, off in pending:
+        qv = vecs[off]
         cand, sim = max(
-            ((c, _cosine(qv, v)) for c, v in zip(cands, vecs[1:])),
+            ((c, _cosine(qv, v)) for c, v in zip(cands, vecs[off + 1 :])),
             key=lambda p: p[1],
         )
         if sim >= _SIM_THRESHOLD:

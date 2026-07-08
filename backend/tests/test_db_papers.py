@@ -126,3 +126,66 @@ def test_list_papers_reports_has_result_flag():
 
     assert by_id["paper:done"]["has_result"]
     assert not by_id["paper:pending"]["has_result"]
+
+
+def test_upsert_result_denormalizes_counts():
+    """list_papers reads defect/EDU counts from denormalized columns — the
+    whole point is skipping the multi-MB json.loads per paper (E4 N+1)."""
+    _paper()
+    db.upsert_result(
+        "paper:t1",
+        {
+            "defects": [{"rule_id": "REL-01"}, {"rule_id": "REL-02"}],
+            "graph": {"edus": [{"id": "e1"}, {"id": "e2"}, {"id": "e3"}]},
+        },
+    )
+
+    row = {p["paper_id"]: p for p in db.list_papers()}["paper:t1"]
+
+    assert row["defect_count"] == 2
+    assert row["edu_count"] == 3
+
+
+def test_upsert_result_counts_follow_replacement():
+    _paper()
+    db.upsert_result("paper:t1", {"defects": [{}], "graph": {"edus": [{}]}})
+    db.upsert_result("paper:t1", {"defects": [], "graph": {"edus": [{}, {}]}})
+
+    row = {p["paper_id"]: p for p in db.list_papers()}["paper:t1"]
+
+    assert row["defect_count"] == 0
+    assert row["edu_count"] == 2
+
+
+def test_migration_backfills_counts_for_existing_rows(tmp_path):
+    """A pre-2026-07 DB (no count columns) must get columns + backfill."""
+    import json
+    import sqlite3
+
+    conn = sqlite3.connect(tmp_path / "old.db")
+    conn.execute(
+        "CREATE TABLE papers (paper_id TEXT PRIMARY KEY, title TEXT, "
+        "filename TEXT, content_hash TEXT, pdf_path TEXT, created_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE TABLE results (paper_id TEXT PRIMARY KEY, "
+        "result_json TEXT NOT NULL, finished_at TEXT NOT NULL)"
+    )
+    result = {"defects": [{}], "graph": {"edus": [{}, {}]}}
+    conn.execute(
+        "INSERT INTO results VALUES ('paper:old', ?, 'x')", (json.dumps(result),)
+    )
+    conn.execute("INSERT INTO results VALUES ('paper:bad', 'not json', 'x')")
+
+    db._migrate(conn)
+
+    rows = dict(conn.execute("SELECT paper_id, defect_count FROM results").fetchall())
+    assert rows["paper:old"] == 1
+    assert rows["paper:bad"] is None  # unreadable JSON left NULL, not crashed
+    assert (
+        conn.execute(
+            "SELECT edu_count FROM results WHERE paper_id='paper:old'"
+        ).fetchone()[0]
+        == 2
+    )
+    conn.close()

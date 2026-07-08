@@ -1061,11 +1061,13 @@ def _render_block_latex(block: dict, style: str, order: list[str], ctx: dict) ->
             )
         # longtable can't live inside twocolumn layouts (IEEE / twocolumn
         # article) — fall back to a fixed tabularx anchored in place.
+        # Caption goes ABOVE the table, matching xltabular / DOCX / HTML
+        # (Taiwan-thesis convention: 表 caption on top, 圖 caption below).
         cap = f"\\caption{{{_esc(caption)}}}\n" if caption else ""
         return (
             "\\begin{table}[H]\n\\centering\n"
-            f"\\begin{{tabularx}}{{\\linewidth}}{{{colspec}}}\n\\hline\n"
-            f"{body}\n\\hline\n\\end{{tabularx}}\n{cap}\\end{{table}}\n\n"
+            f"{cap}\\begin{{tabularx}}{{\\linewidth}}{{{colspec}}}\n\\hline\n"
+            f"{body}\n\\hline\n\\end{{tabularx}}\n\\end{{table}}\n\n"
         )
     if t == "tableList":
         return ""  # editor-only live aid; the tables render inline

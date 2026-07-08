@@ -11,11 +11,10 @@ from __future__ import annotations
 import math
 import re
 import threading
-import time
 
 import httpx
 
-from . import crossref, llm, openalex
+from . import crossref, llm, openalex, ratelimit
 from .prompts import load_prompt
 
 _CJK = re.compile(r"[一-鿿]")  # any CJK ideograph → claim is Chinese
@@ -68,22 +67,8 @@ _rate_buckets: dict[str, list[float]] = {}
 
 
 def check_rate_limit(doc_id: str) -> tuple[bool, int]:
-    """Return (allowed, seconds_until_next_slot). Sliding 60s window per doc.
-
-    Same shape as autocomplete.check_rate_limit — kept separate so the two
-    features have independent buckets and ceilings.
-    """
-    now = time.time()
-    window = 60.0
-    with _rate_lock:
-        bucket = [t for t in _rate_buckets.get(doc_id, []) if now - t < window]
-        if len(bucket) >= RATE_LIMIT_PER_MIN:
-            wait = max(1, int(window - (now - min(bucket))))
-            _rate_buckets[doc_id] = bucket
-            return False, wait
-        bucket.append(now)
-        _rate_buckets[doc_id] = bucket
-    return True, 0
+    """Return (allowed, seconds_until_next_slot). Sliding 60s window per doc."""
+    return ratelimit.check(_rate_buckets, _rate_lock, RATE_LIMIT_PER_MIN, doc_id)
 
 
 def _cosine(a: list[float], b: list[float]) -> float:

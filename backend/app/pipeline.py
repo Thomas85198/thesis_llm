@@ -748,6 +748,41 @@ def extract_rst_fru(
 
 # ---------- Orchestration ----------
 
+
+def _dedupe_entities(
+    entities: list[Entity], triples: list[ERTriple]
+) -> tuple[list[Entity], list[ERTriple]]:
+    """Merge same-named entities across sections.
+
+    extract_er dedupes names per section only, so a method/dataset mentioned in
+    both Intro and Method became two Entity nodes — inflating MENTIONED_IN-based
+    rule candidates (REL-02/06) and cluttering the KG view with same-name node
+    clusters. Match is case-insensitive with whitespace collapsed; the first
+    occurrence (document order) keeps its id and type.
+    """
+    canon: dict[str, Entity] = {}
+    remap: dict[str, str] = {}
+    for ent in entities:
+        key = re.sub(r"\s+", " ", ent.name).strip().casefold()
+        kept = canon.get(key)
+        if kept is None:
+            canon[key] = ent
+        else:
+            remap[ent.id] = kept.id
+    if not remap:
+        return entities, triples
+    remapped = [
+        t.model_copy(
+            update={
+                "source_entity_id": remap.get(t.source_entity_id, t.source_entity_id),
+                "target_entity_id": remap.get(t.target_entity_id, t.target_entity_id),
+            }
+        )
+        for t in triples
+    ]
+    return list(canon.values()), remapped
+
+
 _SectionResult = tuple[
     list[EDU], list[Entity], list[ERTriple], list[RSTNode], list[FRUNode]
 ]
@@ -838,6 +873,8 @@ def build_paper_graph(
                 all_triples.extend(triples)
                 all_rst.extend(rst)
                 all_fru.extend(fru)
+
+    all_entities, all_triples = _dedupe_entities(all_entities, all_triples)
 
     return PaperGraph(
         paper_id=paper_id,

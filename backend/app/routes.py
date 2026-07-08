@@ -30,7 +30,7 @@ from . import latex_compile
 from . import grounding as grounding_mod
 from . import outline as outline_mod
 from . import rewrite as rewrite_mod
-from . import db, kg, pipeline, rules
+from . import db, i18n, kg, pipeline, rules
 from .schemas import AnalysisResult, PaperGraph
 
 
@@ -636,22 +636,28 @@ def list_papers() -> list[dict[str, Any]]:
     for p in db.list_papers():
         if not p.get("has_result"):
             continue
-        result = db.get_result(p["paper_id"])
-        if result is None:
-            continue
+        # Counts are denormalized on results; only rows whose migration
+        # backfill hit unreadable JSON are NULL — fall back to the full parse.
+        defect_count = p.get("defect_count")
+        edu_count = p.get("edu_count")
         # Display title: prefer user-input title, fallback to filename, then graph title.
         user_title = p.get("title")
         filename = p.get("filename") or ""
-        display_title = (
-            user_title or filename or result.get("graph", {}).get("title", "")
-        )
+        display_title = user_title or filename
+        if not display_title or defect_count is None or edu_count is None:
+            result = db.get_result(p["paper_id"])
+            if result is None:
+                continue
+            display_title = display_title or result.get("graph", {}).get("title", "")
+            defect_count = len(result.get("defects", []))
+            edu_count = len(result.get("graph", {}).get("edus", []))
         items.append(
             {
                 "paper_id": p["paper_id"],
                 "title": display_title,
                 "filename": filename,
-                "defect_count": len(result.get("defects", [])),
-                "edu_count": len(result.get("graph", {}).get("edus", [])),
+                "defect_count": defect_count,
+                "edu_count": edu_count,
                 "finished_at": p.get("finished_at"),
             }
         )
@@ -1170,7 +1176,7 @@ def export_document(body: ExportIn) -> Response:
     citations and the reference list use the requested style.
     """
     document = {"title": body.title, "content_json": body.content_json}
-    refs_label = "參考文獻" if body.locale == "zh-Hant" else "References"
+    refs_label = i18n.t("refs_label", body.locale)
     if body.format == "docx":
         data = export_doc.to_docx(
             document, body.style, refs_label, body.template, body.locale, body.cover

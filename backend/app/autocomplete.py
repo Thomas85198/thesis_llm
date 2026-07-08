@@ -14,10 +14,9 @@ from __future__ import annotations
 import json
 import re
 import threading
-import time
 from typing import Iterator
 
-from . import i18n, llm
+from . import i18n, llm, ratelimit
 from .prompts import load_prompt
 
 # Autocomplete is high-frequency (one call per typing pause), so the ceiling is
@@ -76,17 +75,7 @@ _rate_buckets: dict[str, list[float]] = {}
 
 def check_rate_limit(doc_id: str) -> tuple[bool, int]:
     """Return (allowed, seconds_until_next_slot). Sliding 60s window per doc."""
-    now = time.time()
-    window = 60.0
-    with _rate_lock:
-        bucket = [t for t in _rate_buckets.get(doc_id, []) if now - t < window]
-        if len(bucket) >= RATE_LIMIT_PER_MIN:
-            wait = max(1, int(window - (now - min(bucket))))
-            _rate_buckets[doc_id] = bucket
-            return False, wait
-        bucket.append(now)
-        _rate_buckets[doc_id] = bucket
-    return True, 0
+    return ratelimit.check(_rate_buckets, _rate_lock, RATE_LIMIT_PER_MIN, doc_id)
 
 
 def _build_system(title: str, outline: str, locale: str) -> str:

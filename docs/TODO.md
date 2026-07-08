@@ -94,7 +94,8 @@ Related Work 深度/比較表（skill #3，偏人工判斷）。
 >   `fix(frontend)`；另修 docker-compose 密碼來源註解/neo4j restart/CORS 預設 IP。
 >   pytest 163 passed 全綠、tsc 零錯誤、eslint 與 baseline 相同。
 > - ⏸ **刻意未動**：S7 non-root 容器（涉及既有 volume 權限，要與部署協調）；
->   S8 限流 key（等帳號系統）；E4 其餘成本/重構項與 E5 的新增測試、E6 功能項。
+>   S8 限流 key（等帳號系統）；E5 的剩餘測試缺口、E6 功能項。
+>   （E4 已於第四輪 2026-07-08 全數修完，見 E4 節。）
 
 > **第三輪（2026-07-06，rules.yaml Cypher 語意修復）**
 > - ✅ **B3（零節點不 fire）**：REL-13 屬實（逐 FRU 回列，零節點 → 0 rows → 不進
@@ -180,16 +181,24 @@ Related Work 深度/比較表（skill #3，偏人工判斷）。
 
 ### E4. 體質改善 IMPROVE
 
-- **Neo4j 全庫掃描**（`kg.py:69, 217`）：`clear_paper`/`fetch_graph_for_viz` 是 AllNodesScan（唯一約束只在 `id`）。修：各 label 的 `paper_id` 建 index、查詢逐 label UNION。
-- **`list_papers` N+1**（`routes.py:543`）：只為取缺陷/EDU 數就 `json.loads` 每篇完整 result。修：results 表冗餘存 `defect_count`/`edu_count`。
-- **Entity 無跨 section 去重**（`pipeline.py:484`）：同名實體每 section 各建節點，REL-02/06 候選膨脹、KG 視圖同名節點成群。修：per-paper 按 name 正規化合併。
-- **重試雙重疊加**（`llm.py:75+228`）：SDK `max_retries=2` × 外層 5 次 → 持續 429 最多 15 請求。修：SDK 設 0，只留外層。
-- **限流碼複製 8 份 + bucket 永不清**（`rewrite.py` 等 8 處）：抽共用 helper + 惰性清理。
-- **grounding「none」不進快取、claim 向量每次重算**（`grounding.py:121`）；**relink 每 ref 各發一次 embed**（`citation_relink.py:147`，可整批）——重複點擊重複付費。
-- **Crossref 無 429/503 retry**（`crossref.py:96`），OpenAlex 有 → 韌性不對稱（Crossref 自稱 primary source）。
-- **`refs_label`/表格 caption 位置 hardcode locale**（`routes.py:1083`、`export_doc.py:1022`）：違反 locale-as-data，新增語言要改 code。
-- **前端小洩漏**：`export-panel.tsx:275` PDF 預覽 `createObjectURL` 從未 revoke；`version-history.tsx:40` relTime 用 `locale.startsWith("zh")` 硬分支。
-- **`llm_temperature()` 壞 env 值直接 ValueError**（`llm.py:113`），同檔 `llm_max_workers` 有防禦 → 不一致。
+> **第四輪（2026-07-08，分支 `fix/e4-improvements`）：E4 剩餘五項全修完。**
+> - ✅ `list_papers` N+1：`results` 表冗餘 `defect_count`/`edu_count`（migration backfill、
+>   壞 JSON 列留 NULL 由 route 惰性 fallback），列表頁不再逐篇解多 MB JSON。
+> - ✅ 限流碼 9 份合一：演算法抽到 `app/ratelimit.py`（各模組保留自己的
+>   `_rate_buckets`/`RATE_LIMIT_PER_MIN`，測試 monkeypatch 不變），並加 stale bucket
+>   惰性清理——原本 dict 每見過一個 doc_id 就永久多一格。
+> - ✅ grounding：負結果（無全文無摘要）以 sentinel 進 `paper_chunks` 快取，重複點擊
+>   不再重抓 OA PDF；claim 向量 `lru_cache(256)`。relink 的 embed 從每 ref 一次改
+>   整份參考文獻一次呼叫。
+> - ✅ `refs_label` 改 `i18n.STRINGS` locale-as-data（新增 `i18n.t()`）；LaTeX 非
+>   longtable fallback 的表格 caption 移到表上方，對齊 xltabular/DOCX/HTML。
+> - ✅ Entity 跨 section 去重：`pipeline._dedupe_entities`（大小寫不敏感＋空白正規化，
+>   首見者留 id/type，triple 重映射）。A/B（現庫 7 篇、暫存雙寫 Neo4j 比 candidate）：
+>   entity 數 73→67 / 68→55 / 44→37，REL-06 候選收斂（27→26、16→14）；
+>   REL-02 在 rules-test-v2 多 1 條合理候選（「本系統」拿回 Method 型別），實跑
+>   LLM 判讀 0 缺陷與基準一致，無語意翻轉。pytest 220 passed。
+> - 第一輪已修：llm 重試疊加、temperature 防禦、Neo4j paper_id index、objectURL、
+>   relTime；第二輪已修 Crossref retry。E4 至此清空。
 
 ### E5. 測試缺口
 

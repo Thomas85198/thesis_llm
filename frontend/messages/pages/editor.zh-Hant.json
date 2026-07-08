@@ -76,6 +76,7 @@
     "find": "找引用",
     "pendingSource": "待補來源",
     "findSource": "找來源",
+    "unlinkedChipTooltip": "（待補來源，點擊找來源）",
     "manualTitle": "補來源（貼 DOI 或手動填寫）",
     "doiPlaceholder": "貼上 DOI 或論文連結",
     "apply": "套用",

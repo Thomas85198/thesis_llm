@@ -4,8 +4,10 @@ Takes the .tex + figures produced by export_doc.to_latex, compiles them in a
 throwaway directory and returns the PDF bytes. One xelatex pass is enough: the
 generated documents have no cross-references or table of contents.
 """
+
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -44,11 +46,23 @@ def compile_pdf(tex: str, images: list[tuple[str, bytes]]) -> bytes:
         for fname, fdata in images:
             (workdir / fname).write_bytes(fdata)
         try:
+            # User content reaches TeX unescaped by design (math/code nodes), so
+            # sandbox the engine: -no-shell-escape blocks \write18, and
+            # openin_any/openout_any=p ("paranoid") stop \input / \openin from
+            # reading files outside the workdir — otherwise a crafted math node
+            # could pull /app/.env (OPENAI_API_KEY) into the returned PDF.
             proc = subprocess.run(
-                ["xelatex", "-interaction=nonstopmode", "-halt-on-error", "main.tex"],
+                [
+                    "xelatex",
+                    "-no-shell-escape",
+                    "-interaction=nonstopmode",
+                    "-halt-on-error",
+                    "main.tex",
+                ],
                 cwd=workdir,
                 capture_output=True,
                 timeout=_TIMEOUT_S,
+                env={**os.environ, "openin_any": "p", "openout_any": "p"},
             )
         except subprocess.TimeoutExpired as e:
             raise LatexCompileError(f"xelatex timed out after {_TIMEOUT_S}s") from e

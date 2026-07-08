@@ -8,6 +8,7 @@ Env knobs for deployment:
                          and IPv6). Override when deploying behind a domain.
     FRONTEND_URL       — displayed on the root endpoint as a convenience pointer.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,6 +29,25 @@ from app.routes import router  # noqa: E402
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Warm the Neo4j constraints up-front — fresh deployments used to hit a
+    # TransientError on the very first upload while constraints were still
+    # being created inside write_graph. Best-effort: Neo4j may not be up yet.
+    try:
+        from app import kg
+
+        kg.init_schema()
+    except Exception as exc:
+        print(f"[main] neo4j schema warm-up skipped: {exc!r}")
+
+    # Job state is in-memory; a restart mid-analysis leaves upload_events rows
+    # stuck at 'pending' forever. Flip them to error so the audit trail closes.
+    try:
+        n = db.mark_stale_uploads_interrupted()
+        if n:
+            print(f"[main] marked {n} interrupted upload(s) from a previous run")
+    except Exception as exc:
+        print(f"[main] stale upload cleanup failed: {exc!r}")
+
     # Start the daily-summary scheduler only when email is actually configured,
     # so dev/test boxes don't spin a pointless task. The task is cancelled on
     # shutdown by exiting the context.
@@ -87,9 +107,11 @@ async def _daily_summary_loop() -> None:
     while True:
         await asyncio.sleep(_seconds_until_next_run(hour))
         try:
-            since = (datetime.now(SUMMARY_TZ) - timedelta(days=1)).astimezone(
-                ZoneInfo("UTC")
-            ).isoformat()
+            since = (
+                (datetime.now(SUMMARY_TZ) - timedelta(days=1))
+                .astimezone(ZoneInfo("UTC"))
+                .isoformat()
+            )
             stats = db.upload_stats_since(since)
             notify.send_daily_summary(stats, window_label="24 小時")
         except Exception as exc:  # never let the loop die

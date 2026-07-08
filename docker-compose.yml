@@ -1,8 +1,12 @@
 # Production-style stack: neo4j + backend + frontend.
 #
 # Usage:
-#   cp backend/.env.example backend/.env   # then fill OPENAI_API_KEY + NEO4J_PASSWORD
+#   cp backend/.env.example backend/.env       # fill OPENAI_API_KEY
+#   echo 'NEO4J_PASSWORD=<pw>' >> .env         # ROOT .env — compose interpolation
+#                                              # only reads this file, NOT backend/.env
 #   docker compose up -d --build
+#
+# (Neo4j-only for native dev: docker compose up -d neo4j)
 #
 # Volumes:
 #   app-data    — SQLite + uploaded PDFs (survives container rebuild)
@@ -18,9 +22,10 @@ services:
     ports:
       - "7474:7474"
       - "7687:7687"
+    restart: unless-stopped
     environment:
-      # Read NEO4J_PASSWORD from the same backend/.env so the two services
-      # never drift. Default keeps the legacy demo password for local-only.
+      # NEO4J_PASSWORD comes from the ROOT .env (compose interpolation never
+      # reads backend/.env). Default keeps the legacy demo password local-only.
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-thesis_demo_pw}
       NEO4J_PLUGINS: '["apoc"]'
     volumes:
@@ -42,6 +47,9 @@ services:
       # Override Neo4j URI so backend reaches the compose-network hostname,
       # not localhost. Keeps backend/.env usable for local dev (localhost).
       NEO4J_URI: bolt://neo4j:7687
+      # Same interpolation source (ROOT .env) as the neo4j service — a password
+      # set only in backend/.env used to drift from what neo4j was booted with.
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-thesis_demo_pw}
       DATA_DIR: /data
     volumes:
       - app-data:/data

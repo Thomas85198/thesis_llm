@@ -9,6 +9,7 @@ abstract when no OA full text is fetchable — so there is always *some* groundi
 This goes beyond M1 (claim × abstract LLM verdict): it pinpoints the supporting
 sentence in the actual source body, and it's cheap on repeat (cached chunks).
 """
+
 from __future__ import annotations
 
 import math
@@ -22,10 +23,11 @@ import pymupdf
 from . import db, llm, openalex
 
 _SENTENCE = re.compile(r".+?[。．.!?！？\n]+|.+\Z", re.S)
-MIN_SENT_CHARS = 20   # skip headers / tiny fragments
-MAX_CHUNKS = 400      # cap embeddings per paper (cost/latency)
+MIN_SENT_CHARS = 20  # skip headers / tiny fragments
+MAX_CHUNKS = 400  # cap embeddings per paper (cost/latency)
 TOP_K = 3
 _TIMEOUT = 20.0
+_MAX_FULLTEXT_BYTES = 30 * 1024 * 1024  # streamed download cap for OA PDFs
 _UA = "thesis-llm-demo/1.0 (mailto:thesis-llm-demo@example.com)"
 
 # Grounding fetches + embeds (heavy on first hit); cap per document.
@@ -87,11 +89,22 @@ def _fetch_fulltext(oa_url: str) -> str:
         return ""
     oa_url = _pdf_url(oa_url)
     try:
-        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True, headers={"User-Agent": _UA}) as cli:
-            resp = cli.get(oa_url)
-            resp.raise_for_status()
-            ctype = resp.headers.get("content-type", "").lower()
-            data = resp.content
+        with httpx.Client(
+            timeout=_TIMEOUT, follow_redirects=True, headers={"User-Agent": _UA}
+        ) as cli:
+            # Streamed with a hard cap — .content buffered arbitrarily large
+            # PDFs fully into memory.
+            with cli.stream("GET", oa_url) as resp:
+                resp.raise_for_status()
+                ctype = resp.headers.get("content-type", "").lower()
+                chunks: list[bytes] = []
+                size = 0
+                for chunk in resp.iter_bytes():
+                    size += len(chunk)
+                    if size > _MAX_FULLTEXT_BYTES:
+                        return ""
+                    chunks.append(chunk)
+                data = b"".join(chunks)
     except httpx.HTTPError:
         return ""
     is_pdf = "pdf" in ctype or oa_url.lower().endswith(".pdf") or data[:4] == b"%PDF"
@@ -106,16 +119,22 @@ def _fetch_fulltext(oa_url: str) -> str:
         return ""
 
 
-def _ensure_chunks(openalex_id: str, oa_url: str) -> tuple[list[dict], str]:
-    """Return (chunks, source). Builds + caches on first use; reuses after."""
+def _ensure_chunks(openalex_id: str) -> tuple[list[dict], str]:
+    """Return (chunks, source). Builds + caches on first use; reuses after.
+
+    The full-text URL is re-derived server-side from OpenAlex. The client used
+    to supply it directly, which let any caller point the fetch at internal
+    hosts (SSRF) AND poison the shared per-openalex_id chunk cache for every
+    other user.
+    """
     cached = db.get_paper_chunks(openalex_id)
     if cached:
         return cached, cached[0]["source"]
 
-    text = _fetch_fulltext(oa_url)
+    fetched = openalex.get_works_by_ids([openalex_id]).get(openalex_id, {})
+    text = _fetch_fulltext(fetched.get("oa_url", ""))
     source = "fulltext"
     if not text.strip():
-        fetched = openalex.get_works_by_ids([openalex_id]).get(openalex_id, {})
         text = fetched.get("abstract", "") or ""
         source = "abstract"
     sentences = _split_sentences(text)
@@ -124,7 +143,8 @@ def _ensure_chunks(openalex_id: str, oa_url: str) -> tuple[list[dict], str]:
 
     embeddings = llm.embed(sentences)
     db.upsert_paper_chunks(
-        openalex_id, source,
+        openalex_id,
+        source,
         [(i, s, e) for i, (s, e) in enumerate(zip(sentences, embeddings))],
     )
     return db.get_paper_chunks(openalex_id), source
@@ -132,12 +152,16 @@ def _ensure_chunks(openalex_id: str, oa_url: str) -> tuple[list[dict], str]:
 
 def ground(openalex_id: str, oa_url: str, claim: str, doc_id: str) -> dict:
     """Return {source, supporting:[{sentence, score}]} — top sentences in the
-    cited source that match the claim. source: fulltext | abstract | none."""
+    cited source that match the claim. source: fulltext | abstract | none.
+
+    `oa_url` is accepted for request-body compatibility but deliberately
+    ignored — the fetch URL is re-derived from OpenAlex (see _ensure_chunks).
+    """
     claim = claim.strip()
     if not claim or not openalex_id:
         return {"source": "none", "supporting": []}
     try:
-        chunks, source = _ensure_chunks(openalex_id, oa_url)
+        chunks, source = _ensure_chunks(openalex_id)
         if not chunks:
             return {"source": "none", "supporting": []}
         claim_vec = llm.embed([claim])[0]
@@ -149,5 +173,7 @@ def ground(openalex_id: str, oa_url: str, claim: str, doc_id: str) -> dict:
         key=lambda t: t[0],
         reverse=True,
     )
-    supporting = [{"sentence": text, "score": round(score, 4)} for score, text in scored[:TOP_K]]
+    supporting = [
+        {"sentence": text, "score": round(score, 4)} for score, text in scored[:TOP_K]
+    ]
     return {"source": source, "supporting": supporting}

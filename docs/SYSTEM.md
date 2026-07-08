@@ -162,45 +162,22 @@ flowchart TD
 - **流水/分析資料進 SQLite**（給統計、cache、評估用）
 - **二進位檔案進磁碟**（給 frontend 拉回顯示）
 
-### 3.6 回饋迴路狀態（Phase 2 已閉合）
+### 3.6 回饋迴路狀態（capture 端已閉、inject 端目前為 zero-shot）
 
-從 2026-05-10 起，迴路**已經閉合**。判定一旦累積到 ≥3 筆（per rule），下次同規則檢核會自動把 correct + wrong 範例 inject 到 LLM system prompt：
+> ⚠️ 2026-07-02 校正：本節原描述「Phase 2 few-shot 已閉合、實作在 `db.get_judgment_examples` / `rules._build_examples_block`」與程式碼不符——**這兩個函式在現行 codebase 不存在**，`check_rule` 未注入任何 few-shot。實況以 [REL-rules-explained.md §8](REL-rules-explained.md) 為準：3.5 版起已移除 few-shot 注入迴路，規則檢核**一律 zero-shot**。以下為現況。
+
+迴路的**擷取端**仍在：per-section verdict 會帶 confidence 與 rule_meta，前端可手動標 ✅ 判對 / 🤔 存疑 / ❌ 誤判，存進 SQLite `defect_judgments`，並以 `/api/judgments/summary` 算 per-rule precision。
 
 ```mermaid
 flowchart LR
     A[新論文] --> B[Cypher 撈候選]
-    B --> C{該規則<br/>≥3 筆<br/>判定?}
-    C -- 否 --> D[LLM 判讀 zero-shot]
-    C -- 是 --> E[db.get_judgment_examples<br/>撈 correct/wrong 各 4 筆]
-    E --> F[LLM 判讀 few-shot<br/>system prompt 含學長範例]
+    B --> D[LLM 判讀 zero-shot]
     D --> G[Defect 清單<br/>+ confidence + rule_meta]
-    F --> G
     G -.手動標 ✅/🤔/❌.-> H[(SQLite<br/>defect_judgments)]
-    H --> E
-    H --> I[/api/judgments/summary<br/>per-rule precision]
+    H --> I[/api/judgments/summary<br/>per-rule precision（離線分析）]
 ```
 
-實作位置：
-- [backend/app/db.py](../backend/app/db.py) `get_judgment_examples(rule_id, limit_per_verdict=4)` — JOIN judgments × results
-- [backend/app/rules.py](../backend/app/rules.py) `_build_examples_block()` — 把範例組成 calibration block，當 ≥3 筆才注入
-- 注入後的 prompt 看起來像：
-  ```
-  Past human judgments on THIS rule (calibrate to these):
-
-  [✓ CORRECT (real defect)]
-    evidence: «single-head 比最佳設定差 0.9 BLEU»
-    why-flagged: 觀察句沒附原因說明...
-
-  [✗ FALSE POSITIVE (do NOT flag again)]
-    evidence: «我們用了 8 個 GPU»
-    reviewer note: 純粹事實陳述，不需歸因
-
-  Use these to recalibrate your threshold...
-  ```
-
-前端 result 頁 header 會顯示「⚙️ 參考 N 筆學長判定」綠色 badge，學長能直觀看出「這次 LLM 有用我的標註」。
-
-**驗證方法**：學長累積 ~50 筆後，跑 with vs without few-shot 的 ablation。預期 precision 上升 10-20%（這也是論文 main result）。詳見 [docs/TODO.md §1](TODO.md#1-立即優先學長標-50-筆--phase-2-ablation)。
+**目前尚未做**的是把這些判定回注 prompt（線上 few-shot）。規則精準度校準走**離線分析**，不在檢核當下 inject。若要重新啟用 few-shot 迴路，需新實作 `db.get_judgment_examples` 與 `check_rule` 的範例注入——見 [TODO.md 待辦 7](TODO.md)（規則回饋校準，Phase 2 迴路程式尚未就緒）。
 
 ### 3.7 跨章節 second pass
 
@@ -218,15 +195,17 @@ flowchart LR
 
 ### 3.8 Prompt 集中化
 
-從 2026-05-10 起，所有 system prompt 抽到 [backend/prompts/](../backend/prompts/)：
-- `edu.md` `er.md` `rst_fru.md` `checker.md` `chat.md` `cross_section.md`
+從 2026-05-10 起，所有 system prompt 抽到 [backend/prompts/](../backend/prompts/)（2026-07-02 校正：現有 16 個 md）：
+- 檢核管線：`edu.md` `er.md` `rst_fru.md` `checker.md` `chat.md` `cross_section.md`
+- 編輯器：`autocomplete.md` `rewrite.md` `outline.md` `citation_query.md` `citation_parse.md` `claim_verifier.md` `title.md` `translate.md`
+- 消融實驗（離線）：`ablation_holistic.md` `ablation_structure.md`
 - 載入器：[backend/app/prompts.py](../backend/app/prompts.py) `load_prompt(name)`（lru_cache，呼叫 `prompts.reload()` 可清快取）
 - 學長改 prompt 重啟 backend 即生效，不用碰 Python
 - Git diff 也能看到 prompt 演進史
 
 ### 3.9 效能：平行化 + 規則瘦身
 
-> 狀態：在 `feat/parallel-pipeline` 分支，尚未合併 main / 尚未上線（.62 跑的還是序列版）。前端對應說明在 about 頁「11. 效能與穩定性」。
+> 狀態（2026-07-02 校正）：平行化**已合併 main 並上線**（`ThreadPoolExecutor` 見 `rules.py:213`、`pipeline.py:760`），`feat/parallel-pipeline` 分支已不存在。前端對應說明在 about 頁「11. 效能與穩定性」。
 
 **為什麼原本很慢（~9 分鐘）**
 一篇論文的分析會發出 ~30–40 次 LLM 呼叫（每章節 EDU→ER→RST/FRU 三次 × N 章節，加 13 條規則各一次，再加跨章節）。這些呼叫原本**一個接一個序列執行**，token 密集的中文段落單次就要 4–10 秒，整篇常常要 ~9 分鐘。瓶頸是「等待」而非「運算」——絕大多數時間花在等 OpenAI 回應。
@@ -262,9 +241,9 @@ flowchart LR
 
 需要三個 terminal：
 
-**Terminal 1 — Neo4j：**
+**Terminal 1 — Neo4j：**（⚠️ 2026-07-02 校正：`docker compose up -d` 會起**全套三容器**〔neo4j+backend+frontend〕，且 backend 需 `backend/.env` 否則起不來；native dev 只要 Neo4j 時請用 `docker compose up -d neo4j`）
 ```bash
-docker compose up -d
+docker compose up -d neo4j
 # Neo4j Browser: http://localhost:7474 (帳號 neo4j / 密碼 thesis_demo_pw)
 ```
 
@@ -317,7 +296,7 @@ flowchart LR
 | `FRU` | Functional Rhetorical Unit，由連續 EDU 組成的「修辭功能單元」 | LLM 標註 |
 | `RST` | Rhetorical Structure 修辭關係（Nucleus + Satellite + 關係類型） | LLM 標註 |
 
-### 5.2 五種邊
+### 5.2 六種邊
 
 | 邊 | From → To | 意義 |
 |---|---|---|
@@ -416,7 +395,7 @@ flowchart TB
 - **Hybrid Local + Cloud**：EDU/ER 用 Ollama (Qwen 2.5 32B/72B) 本地，RST/規則用雲端 gpt-5.4，成本降 60%
 - **跨論文 Entity 對齊**：同一個 method 在多篇對齊，做引用網絡分析
 - **Multi-agent (Claim/Evidence/Critic)**：拆 prompt 細分職責，但需要重設計 pipeline
-- **編輯模式 + 可 merge 缺失建議**：匯入 LaTeX/.md/Word → 系統內編輯 → 像 git commit 同意 merge 修改建議。完整規劃見 [TODO.md §3.1](TODO.md#31-編輯模式--可-merge-的缺失建議大功能規劃)
+- ~~**編輯模式 + 可 merge 缺失建議**~~：**已上線**（AI 寫作編輯器 v4.17，TipTap + Zustand，匯入 txt/md/docx/tex、缺陷一鍵套用 AI 修正、三格式匯出）。唯一剩下缺口＝PDF 匯入，見 [TODO.md 待辦 6](TODO.md)。
 
 ---
 
@@ -551,16 +530,13 @@ Abstract 寫「使用動機及持續使用意圖均有受到心流之影響」�
 
 **通則**：每條 REL 規則的 Cypher 都要回答「同篇內、哪個範圍內」是合理的搜尋邊界，不是 paper-wide boolean。
 
-### 10.3 Human-as-judge 的迴路（曾經開的，現已閉合）
+### 10.3 Human-as-judge 的迴路（擷取端已閉、注入端目前 zero-shot）
 
-最初加完判定 UI 時迴路是開的 — 學長標再多次 LLM 也不會理。容易讓團隊誤以為「按一按就會自動學習」，但其實判定只進 SQLite 統計用。
+> ⚠️ 2026-07-02 校正：本節原稱「2026-05-10 起 Phase 2 已閉合、自動注入 few-shot」與程式碼不符（注入用的函式不存在）。實況：3.5 版**移除了 few-shot 注入迴路**，規則檢核一律 zero-shot，判定只進 SQLite 供離線 precision 統計。詳見 §3.6 與 [REL-rules-explained.md §8](REL-rules-explained.md)。
 
-**2026-05-10 起閉合（Phase 2）**：規則檢核時自動撈該規則最近 4 筆 correct + 4 筆 wrong 注入 system prompt（≥3 筆才注入）。前端 result 頁顯示「⚙️ 參考 N 筆學長判定」綠色 badge 讓使用者知道有用。
+判定 UI 的價值目前在**離線分析**：學長標的 ✅/🤔/❌ 存進 `defect_judgments`，`/api/judgments/summary` 算 per-rule precision，用來人工判斷哪條規則要改 description。**LLM 檢核當下不會讀這些判定**——「按一按就會自動學習」是尚未實作的功能，別誤以為已在線上生效。
 
-**注入閾值決策**：
-- < 3 筆：不注入。樣本太少容易 over-fit，LLM 反而被誤導。
-- 3-8 筆：取最新（時序）。最新的判定通常反映最新的 calibration。
-- > 8 筆：未來可改成「representative sampling」（最有代表性的 wrong + 最有代表性的 correct）。
+**若未來要重啟 few-shot 迴路**，當初設計過的注入閾值（尚未落地，供參）：< 3 筆不注入（樣本太少易 over-fit）、3-8 筆取最新、> 8 筆改 representative sampling。
 
 ### 10.4 跨章節推理需要 1M context
 

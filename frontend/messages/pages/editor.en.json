@@ -76,6 +76,7 @@
     "find": "Find citation",
     "pendingSource": "Pending source",
     "findSource": "Find source",
+    "unlinkedChipTooltip": " (source pending — click to find one)",
     "manualTitle": "Attach a source (paste a DOI or fill in)",
     "doiPlaceholder": "Paste a DOI or paper link",
     "apply": "Apply",

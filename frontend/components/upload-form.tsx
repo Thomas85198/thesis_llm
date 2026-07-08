@@ -8,18 +8,16 @@ import { toast } from "sonner";
 import { useRouter } from "@/i18n/navigation";
 import { useJobTracker } from "@/components/job-tracker";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { uploadPaper } from "@/lib/api";
 import { STATUS_PROGRESS } from "@/lib/job-status";
 import { cn } from "@/lib/utils";
+
+// Mirrors the file input's `accept` — dropped files bypass the picker filter.
+const ACCEPTED_EXTENSIONS = [".pdf", ".txt", ".md"];
 
 export function UploadForm() {
   const t = useTranslations("upload");
@@ -92,7 +90,15 @@ export function UploadForm() {
               setDragActive(false);
               if (busy) return;
               const f = e.dataTransfer.files?.[0];
-              if (f) setFile(f);
+              if (!f) return;
+              const ok = ACCEPTED_EXTENSIONS.some((ext) =>
+                f.name.toLowerCase().endsWith(ext),
+              );
+              if (!ok) {
+                toast.error(t("invalidFileType"));
+                return;
+              }
+              setFile(f);
             }}
             className={cn(
               "flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition",
@@ -101,7 +107,7 @@ export function UploadForm() {
                 : "cursor-pointer hover:border-primary/50 hover:bg-muted/50",
               dragActive
                 ? "border-primary bg-primary/5"
-                : "border-muted-foreground/25"
+                : "border-muted-foreground/25",
             )}
           >
             <UploadIcon className="h-8 w-8 text-muted-foreground" />

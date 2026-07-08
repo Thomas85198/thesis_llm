@@ -7,8 +7,9 @@ unlinked citations — and a search fallback when OpenAlex is rate-limited.
 from __future__ import annotations
 
 import os
-from typing import Any
 import re
+import time
+from typing import Any
 
 import httpx
 
@@ -94,7 +95,14 @@ def search_works(
         params["filter"] = f"from-pub-date:{year_from}-01-01"
     headers = {"User-Agent": f"thesis-llm-demo/1.0 (mailto:{_MAILTO})"}
     with httpx.Client(timeout=_TIMEOUT, headers=headers) as cli:
-        resp = cli.get(_SEARCH, params=params)
+        # Retry transient 429/503 like openalex._fetch_results does — this is
+        # the fallback source when OpenAlex is down, so it must be resilient.
+        for attempt in range(3):
+            resp = cli.get(_SEARCH, params=params)
+            if resp.status_code in (429, 503) and attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            break
         resp.raise_for_status()
         items = (resp.json().get("message") or {}).get("items") or []
     # Skip metadata-only stubs with no usable title (empty string or missing).

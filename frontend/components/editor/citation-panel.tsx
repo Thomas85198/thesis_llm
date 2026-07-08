@@ -91,12 +91,16 @@ function collectCitations(editor: Editor): CitationAttrs[] {
 }
 
 /** The claim a citation supports: the sentence ending at the chip (citations
- * usually sit at the end of the claim sentence). Falls back to the paragraph. */
-function claimForCitation(editor: Editor, openalexId: string): string {
+ * usually sit at the end of the claim sentence). Falls back to the paragraph.
+ * Matched by citeKey — manual/DOI citations have no openalexId. */
+function claimForCitation(editor: Editor, key: string): string {
   let claim = "";
   editor.state.doc.descendants((node, pos) => {
     if (claim) return false;
-    if (node.type.name === "citation" && node.attrs.openalexId === openalexId) {
+    if (
+      node.type.name === "citation" &&
+      citeKey(node.attrs as CitationAttrs) === key
+    ) {
       const $pos = editor.state.doc.resolve(pos);
       const paraStart = pos - $pos.parentOffset;
       const before = editor.state.doc.textBetween(paraStart, pos, " ", " ");
@@ -184,16 +188,17 @@ function CitationPanelBody({
   // Result-language preference: interleave both (all) vs bias English / Chinese.
   const [lang, setLang] = useState<CitationLang>("all");
   const [relinking, setRelinking] = useState(false);
-  // openalex_id → verdict, or "loading" while a verify is in flight. Separate
-  // maps: recommend cards verify against the search box; references verify
-  // against the claim sentence around the inserted chip.
+  // Verdict maps, or "loading" while a verify is in flight. Separate maps:
+  // recommend cards (keyed by openalex_id) verify against the search box;
+  // references (keyed by citeKey — manual/DOI citations have no openalexId)
+  // verify against the claim sentence around the inserted chip.
   const [verdicts, setVerdicts] = useState<
     Record<string, CitationVerdict | "loading">
   >({});
   const [refVerdicts, setRefVerdicts] = useState<
     Record<string, CitationVerdict | "loading">
   >({});
-  // openalexId → full-text grounding result (top supporting sentences), or "loading".
+  // citeKey → full-text grounding result (top supporting sentences), or "loading".
   const [grounds, setGrounds] = useState<
     Record<string, GroundResult | "loading">
   >({});
@@ -471,12 +476,13 @@ function CitationPanelBody({
   // Verify an already-inserted reference: claim = the sentence around the chip;
   // abstract is re-fetched server-side from the openalex_id.
   async function handleVerifyRef(r: CitationAttrs) {
-    const claim = claimForCitation(editor, r.openalexId);
+    const key = citeKey(r);
+    const claim = claimForCitation(editor, key);
     if (!claim) {
       toast.error(t("citation.verifyNoClaim"));
       return;
     }
-    setRefVerdicts((v) => ({ ...v, [r.openalexId]: "loading" }));
+    setRefVerdicts((v) => ({ ...v, [key]: "loading" }));
     try {
       const verdict = await verifyCitation(
         docId,
@@ -486,11 +492,11 @@ function CitationPanelBody({
         locale,
         r.openalexId,
       );
-      setRefVerdicts((v) => ({ ...v, [r.openalexId]: verdict }));
+      setRefVerdicts((v) => ({ ...v, [key]: verdict }));
     } catch (e) {
       setRefVerdicts((v) => {
         const next = { ...v };
-        delete next[r.openalexId];
+        delete next[key];
         return next;
       });
       if (e instanceof ChatRateLimitError)
@@ -502,12 +508,13 @@ function CitationPanelBody({
   // Full-text grounding: fetch the source's text and show the sentences that
   // best support the claim around this citation chip.
   async function handleGround(r: CitationAttrs) {
-    const claim = claimForCitation(editor, r.openalexId);
+    const key = citeKey(r);
+    const claim = claimForCitation(editor, key);
     if (!claim) {
       toast.error(t("citation.verifyNoClaim"));
       return;
     }
-    setGrounds((g) => ({ ...g, [r.openalexId]: "loading" }));
+    setGrounds((g) => ({ ...g, [key]: "loading" }));
     try {
       const result = await groundCitation(
         docId,
@@ -515,11 +522,11 @@ function CitationPanelBody({
         r.oaUrl || r.url,
         claim,
       );
-      setGrounds((g) => ({ ...g, [r.openalexId]: result }));
+      setGrounds((g) => ({ ...g, [key]: result }));
     } catch (e) {
       setGrounds((g) => {
         const next = { ...g };
-        delete next[r.openalexId];
+        delete next[key];
         return next;
       });
       if (e instanceof ChatRateLimitError)
@@ -926,10 +933,11 @@ function CitationPanelBody({
                         </li>
                       );
                     }
+                    const k = citeKey(r);
                     const text = fullReference(r, citationStyle, i + 1);
                     const links = referenceLinks(r);
                     return (
-                      <li key={citeKey(r)} className="flex flex-col gap-1">
+                      <li key={k} className="flex flex-col gap-1">
                         <div className="flex items-start justify-between gap-2">
                           <span className="min-w-0 break-all leading-snug text-foreground/90">
                             {text}
@@ -1004,16 +1012,14 @@ function CitationPanelBody({
                           </div>
                         )}
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                          {refVerdicts[r.openalexId] === "loading" ? (
+                          {refVerdicts[k] === "loading" ? (
                             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                               <Loader2 className="h-3 w-3 animate-spin" />
                               {t("citation.verifying")}
                             </span>
-                          ) : refVerdicts[r.openalexId] ? (
+                          ) : refVerdicts[k] ? (
                             <VerdictBadge
-                              verdict={
-                                refVerdicts[r.openalexId] as CitationVerdict
-                              }
+                              verdict={refVerdicts[k] as CitationVerdict}
                             />
                           ) : (
                             <button
@@ -1025,7 +1031,7 @@ function CitationPanelBody({
                               {t("citation.verify")}
                             </button>
                           )}
-                          {grounds[r.openalexId] === "loading" ? (
+                          {grounds[k] === "loading" ? (
                             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                               <Loader2 className="h-3 w-3 animate-spin" />
                               {t("citation.grounding")}
@@ -1041,12 +1047,9 @@ function CitationPanelBody({
                             </button>
                           )}
                         </div>
-                        {grounds[r.openalexId] &&
-                          grounds[r.openalexId] !== "loading" && (
-                            <GroundView
-                              result={grounds[r.openalexId] as GroundResult}
-                            />
-                          )}
+                        {grounds[k] && grounds[k] !== "loading" && (
+                          <GroundView result={grounds[k] as GroundResult} />
+                        )}
                       </li>
                     );
                   })}

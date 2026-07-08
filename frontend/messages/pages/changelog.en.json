@@ -29,6 +29,18 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_18_0": {
+      "title": "Health-check fixes + md/txt upload upgrade",
+      "summary": "The results of a full codebase health check: md/txt uploads are now typeset into a real PDF first, so PDF preview, defect highlighting, and section detection all work; the analysis pipeline fixes several correctness bugs (EDU id collisions, query semantics of three REL rules); security hardening for the public deployment (export XSS, SSRF, upload limits); and major reliability work — cache hits rebuild the knowledge graph automatically, first uploads no longer fail on database warm-up, and jobs no longer hang forever after a server restart.",
+      "changes": {
+        "0": "md/txt uploads are converted to a real PDF first (reusing the export typesetting chain), so PDF preview, defect highlighting, and section detection all work; on conversion failure it falls back to plain-text analysis without blocking.",
+        "1": "Analysis correctness: fixed EDU id collisions for same-named sections; REL rule Cypher semantics — REL-11/13 now fire on complete absence (zero nodes), REL-03/10 use same-section proximity, REL-02 restricts mentions to Method/Experiment sections to cut candidate bloat.",
+        "2": "Security hardening for the public deployment: LaTeX compilation can no longer read system files, HTML export escapes math (XSS), SSRF guards on image/grounding fetches, size and format limits on the main upload, zip-bomb protection on DOCX import.",
+        "3": "Reliability: cache hits verify and rebuild the knowledge graph (no more empty graph after a Neo4j wipe), automatic retry on first-upload database warm-up, stale jobs are marked as errors after a server restart instead of pending forever, concurrent duplicate uploads are deduplicated, and frontend polling stops after repeated failures.",
+        "4": "Editor fixes: autosave no longer writes the previous document's content into a newly opened one, manual citation verdicts no longer overwrite each other, PDF preview version-conflict regression fixed, citation search correctly falls back to Crossref when OpenAlex is down, and md import section levels align with the Taiwan thesis layout.",
+        "5": "Test coverage: new backend tests for the core chain (verdict parsing defenses, cache semantics) and a first batch of frontend vitest API contract tests."
+      }
+    },
     "4_17_1": {
       "title": "Cross-section check stability fix",
       "summary": "Fixes a case where the cross-section defect check (abstract⇄conclusion, introduction⇄method, etc.) would occasionally run away on a single candidate — bloating output, dragging out analysis, or even aborting the whole run. Output is now capped, and on truncation the pass is skipped gracefully instead of failing the entire analysis. Invisible in normal use; just more stable.",

@@ -24,6 +24,9 @@ const STORAGE_KEY = "paperchecker:activeJob";
 const DONE_TITLE = "✅ Analysis complete — Paper Review System";
 // Auto-dismiss the "done" pill if the user never acts on it.
 const DONE_AUTO_DISMISS_MS = 180_000; // 3 minutes
+// Give up polling after this many consecutive non-404 failures (~60s at
+// POLL_MS) — the backend is unreachable, not just momentarily busy.
+const MAX_POLL_ERRORS = 30;
 
 export type ActiveJob = {
   jobId: string;
@@ -44,11 +47,16 @@ const JobTrackerContext = createContext<JobTrackerValue | null>(null);
 
 export function useJobTracker(): JobTrackerValue {
   const ctx = useContext(JobTrackerContext);
-  if (!ctx) throw new Error("useJobTracker must be used within JobTrackerProvider");
+  if (!ctx)
+    throw new Error("useJobTracker must be used within JobTrackerProvider");
   return ctx;
 }
 
-export function JobTrackerProvider({ children }: { children: React.ReactNode }) {
+export function JobTrackerProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const router = useRouter();
   const t = useTranslations("jobIndicator");
   const [active, setActive] = useState<ActiveJob | null>(null);
@@ -73,7 +81,8 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
   // Persist.
   useEffect(() => {
     try {
-      if (active) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(active));
+      if (active)
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(active));
       else window.localStorage.removeItem(STORAGE_KEY);
     } catch {
       /* storage unavailable — non-fatal */
@@ -88,12 +97,12 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
         paperId,
         title,
         status: "queued",
-        message: "等待後端開始處理…",
+        message: t("waitingBackend"),
       });
       // Fired from the submit-button gesture so the browser allows the prompt.
       void requestNotifyPermission();
     },
-    []
+    [t],
   );
 
   const clearJob = useCallback(() => setActive(null), []);
@@ -103,12 +112,14 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
       setActive((p) =>
         p
           ? { ...p, status: "done", message: "done" }
-          : { jobId: "", paperId, title, status: "done", message: "done" }
+          : { jobId: "", paperId, title, status: "done", message: "done" },
       );
       const open = () => router.push(`/papers/${encodeURIComponent(paperId)}`);
       toast.success(t("toastDone"), {
         description:
-          defectCount != null ? t("toastDefects", { count: defectCount }) : undefined,
+          defectCount != null
+            ? t("toastDefects", { count: defectCount })
+            : undefined,
         action: { label: t("viewResults"), onClick: open },
         duration: 12000,
       });
@@ -119,7 +130,7 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
         document.title = DONE_TITLE;
       }
     },
-    [router, t]
+    [router, t],
   );
 
   // Restore the flashed tab title once the user comes back.
@@ -163,24 +174,26 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
     if (!job0 || !isProcessingStatus(job0.status)) return;
     const { jobId, paperId, title } = job0;
     let cancelled = false;
+    let pollErrors = 0; // consecutive non-404 failures
 
     const tick = async () => {
       try {
         const job = await fetchJob(jobId);
         if (cancelled) return;
+        pollErrors = 0;
         if (job.status === "done") {
           if (doneNotifiedRef.current !== jobId) {
             doneNotifiedRef.current = jobId;
             markDone(paperId, title, job.result?.defects.length ?? null);
           }
         } else if (job.status === "error") {
-          toast.error("分析失敗", { description: job.error });
+          toast.error(t("analysisFailed"), { description: job.error });
           setActive(null);
         } else {
           setActive((p) =>
             p && p.jobId === jobId
               ? { ...p, status: job.status, message: job.message ?? "" }
-              : p
+              : p,
           );
         }
       } catch (e) {
@@ -195,14 +208,25 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
             }
           } catch {
             if (!cancelled) {
-              toast("先前的分析已中斷", {
-                description: "後端可能已重啟，請重新上傳。",
+              toast(t("jobInterrupted"), {
+                description: t("jobInterruptedDesc"),
               });
               setActive(null);
             }
           }
+          return;
         }
-        // Other (transient network) errors: ignore and retry next tick.
+        // Other (transient network) errors: retry next tick — but not forever.
+        // Clearing the job also releases the beforeunload guard.
+        pollErrors += 1;
+        // === (not >=) so a straggler tick can't fire the toast twice before
+        // the effect cleanup lands.
+        if (!cancelled && pollErrors === MAX_POLL_ERRORS) {
+          toast.error(t("jobInterrupted"), {
+            description: t("jobInterruptedDesc"),
+          });
+          setActive(null);
+        }
       }
     };
 
@@ -220,7 +244,7 @@ export function JobTrackerProvider({ children }: { children: React.ReactNode }) 
       document.removeEventListener("visibilitychange", onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active?.jobId, processing, markDone]);
+  }, [active?.jobId, processing, markDone, t]);
 
   return (
     <JobTrackerContext.Provider

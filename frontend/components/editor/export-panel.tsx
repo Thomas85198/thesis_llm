@@ -15,7 +15,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -265,6 +265,16 @@ export function ExportPanel({ editor }: { editor: Editor }) {
     URL.revokeObjectURL(url);
   }
 
+  // The PDF-preview object URL can't be revoked right away like a download's
+  // (the new tab still needs it) — revoke it when replaced or on unmount.
+  const previewUrlRef = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    },
+    [],
+  );
+
   // Compile server-side and show the typeset PDF in a new tab (browser PDF
   // viewer, downloadable from there). Previewing instead of silently saving a
   // file lets the author SEE the real layout — and catch it if it breaks.
@@ -277,7 +287,9 @@ export function ExportPanel({ editor }: { editor: Editor }) {
         toast.error(t("export.popupBlocked"));
         return;
       }
-      win.location.href = URL.createObjectURL(blob);
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = URL.createObjectURL(blob);
+      win.location.href = previewUrlRef.current;
       closeExport();
     } catch (e) {
       win?.close();

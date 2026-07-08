@@ -9,12 +9,14 @@ plain text; the author re-inserts live citations where needed.
 
 Each parser returns (title, doc) where doc is {"type": "doc", "content": [...]}.
 """
+
 from __future__ import annotations
 
 import io
 import os
 import re
 import uuid
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +24,7 @@ import mistune
 
 
 # ---------- ProseMirror node builders ----------
+
 
 def _text(s: str, marks: tuple[str, ...] = ()) -> dict | None:
     """An inline text node. None for empty strings (ProseMirror forbids them)."""
@@ -43,11 +46,16 @@ def _clean(nodes: list[dict | None]) -> list[dict]:
 
 def _para(inline: list[dict | None]) -> dict:
     content = _clean(inline)
-    return {"type": "paragraph", "content": content} if content else {"type": "paragraph"}
+    return (
+        {"type": "paragraph", "content": content} if content else {"type": "paragraph"}
+    )
 
 
 def _heading(level: int, inline: list[dict | None]) -> dict:
-    node: dict[str, Any] = {"type": "heading", "attrs": {"level": min(max(int(level), 1), 3)}}
+    node: dict[str, Any] = {
+        "type": "heading",
+        "attrs": {"level": min(max(int(level), 1), 3)},
+    }
     content = _clean(inline)
     if content:
         node["content"] = content
@@ -68,18 +76,27 @@ def _code_block(raw: str) -> dict:
     return node
 
 
-def _table_block(rows: list[list[list[dict | None]]], caption_inline: list[dict | None]) -> dict:
+def _table_block(
+    rows: list[list[list[dict | None]]], caption_inline: list[dict | None]
+) -> dict:
     """rows is a list of rows; each row is a list of cells; each cell is inline
     content. The first row becomes a header row, mirroring the export."""
     trows: list[dict] = []
     for ri, cells in enumerate(rows):
         ctype = "tableHeader" if ri == 0 else "tableCell"
-        trows.append({
-            "type": "tableRow",
-            "content": [{"type": ctype, "content": [_para(c)]} for c in cells],
-        })
+        trows.append(
+            {
+                "type": "tableRow",
+                "content": [{"type": ctype, "content": [_para(c)]} for c in cells],
+            }
+        )
     if not trows:
-        trows = [{"type": "tableRow", "content": [{"type": "tableCell", "content": [{"type": "paragraph"}]}]}]
+        trows = [
+            {
+                "type": "tableRow",
+                "content": [{"type": "tableCell", "content": [{"type": "paragraph"}]}],
+            }
+        ]
     cap: dict[str, Any] = {"type": "tableCaption"}
     cap_content = _clean(caption_inline)
     if cap_content:
@@ -104,6 +121,9 @@ def _node_text(node: dict) -> str:
 # ---------- image saving (mirror routes._resolve_upload_dir) ----------
 
 _IMG_EXTS = {"png", "jpg", "jpeg", "gif", "webp"}
+_MAX_DOCX_UNCOMPRESSED = 200 * 1024 * 1024  # zip-bomb guard (upload cap is compressed)
+_MAX_EMBEDDED_IMAGES = 100  # per imported document
+_MAX_IMAGE_BYTES = 10 * 1024 * 1024  # per embedded image (mirrors the image endpoint)
 
 
 def _upload_dir() -> Path:
@@ -133,6 +153,7 @@ def _save_image(data: bytes, ext: str) -> str:
 
 # ---------- plain text ----------
 
+
 def from_text(text: str) -> tuple[str, dict]:
     """Blank-line-separated paragraphs; single newlines become hard breaks."""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -153,6 +174,7 @@ def from_text(text: str) -> tuple[str, dict]:
 
 
 # ---------- markdown (mistune AST) ----------
+
 
 def _raw_text(nodes: list[dict] | None) -> str:
     out = ""
@@ -181,7 +203,9 @@ def _md_inline(nodes: list[dict] | None, marks: tuple[str, ...] = ()) -> list[di
         elif t == "codespan":
             out.append(_text(n.get("raw", ""), marks + ("code",)))
         elif t == "inline_math":
-            out.append({"type": "mathInline", "attrs": {"latex": n.get("raw", "").strip()}})
+            out.append(
+                {"type": "mathInline", "attrs": {"latex": n.get("raw", "").strip()}}
+            )
         elif t == "link":
             out += _md_inline(n.get("children"), marks)  # keep text, drop URL
         elif t == "linebreak":
@@ -202,7 +226,9 @@ def _md_paragraph_blocks(children: list[dict]) -> list[dict]:
             if buf:
                 blocks.append(_para(_md_inline(buf)))
                 buf = []
-            caption = _raw_text(n.get("children")) or (n.get("attrs") or {}).get("alt", "")
+            caption = _raw_text(n.get("children")) or (n.get("attrs") or {}).get(
+                "alt", ""
+            )
             blocks.append(_figure((n.get("attrs") or {}).get("url", ""), caption))
         else:
             buf.append(n)
@@ -233,10 +259,14 @@ def _md_table(node: dict) -> dict:
     for section in node.get("children", []):
         st = section.get("type")
         if st == "table_head":
-            rows.append([_md_inline(c.get("children")) for c in section.get("children", [])])
+            rows.append(
+                [_md_inline(c.get("children")) for c in section.get("children", [])]
+            )
         elif st == "table_body":
             for tr in section.get("children", []):
-                rows.append([_md_inline(c.get("children")) for c in tr.get("children", [])])
+                rows.append(
+                    [_md_inline(c.get("children")) for c in tr.get("children", [])]
+                )
     return _table_block(rows, [])
 
 
@@ -245,7 +275,12 @@ def _md_blocks(tokens: list[dict]) -> list[dict]:
     for n in tokens:
         t = n.get("type")
         if t == "heading":
-            out.append(_heading((n.get("attrs") or {}).get("level", 1), _md_inline(n.get("children"))))
+            out.append(
+                _heading(
+                    (n.get("attrs") or {}).get("level", 1),
+                    _md_inline(n.get("children")),
+                )
+            )
         elif t == "paragraph":
             out += _md_paragraph_blocks(n.get("children", []))
         elif t == "list":
@@ -256,13 +291,17 @@ def _md_blocks(tokens: list[dict]) -> list[dict]:
                 for ch in n.get("children", [])
                 if ch.get("type") == "paragraph"
             ]
-            out.append({"type": "blockquote", "content": content or [{"type": "paragraph"}]})
+            out.append(
+                {"type": "blockquote", "content": content or [{"type": "paragraph"}]}
+            )
         elif t == "block_code":
             out.append(_code_block(n.get("raw", "").rstrip("\n")))
         elif t == "thematic_break":
             out.append({"type": "horizontalRule"})
         elif t == "block_math":
-            out.append({"type": "mathBlock", "attrs": {"latex": n.get("raw", "").strip()}})
+            out.append(
+                {"type": "mathBlock", "attrs": {"latex": n.get("raw", "").strip()}}
+            )
         elif t == "table":
             out.append(_md_table(n))
         elif t == "blank_line":
@@ -273,7 +312,9 @@ def _md_blocks(tokens: list[dict]) -> list[dict]:
 
 
 def from_markdown(text: str) -> tuple[str, dict]:
-    md = mistune.create_markdown(renderer=None, plugins=["table", "strikethrough", "math"])
+    md = mistune.create_markdown(
+        renderer=None, plugins=["table", "strikethrough", "math"]
+    )
     tokens = md(text.replace("\r\n", "\n"))
     title = ""
     for idx, tk in enumerate(tokens):
@@ -281,12 +322,21 @@ def from_markdown(text: str) -> tuple[str, dict]:
             continue
         if tk.get("type") == "heading" and (tk.get("attrs") or {}).get("level") == 1:
             title = _raw_text(tk.get("children"))
-            tokens = tokens[:idx] + tokens[idx + 1:]
+            tokens = tokens[:idx] + tokens[idx + 1 :]
+            # The leading `#` became the document title, so shift every other
+            # heading up one level (## → H1, ### → H2 — pandoc's convention).
+            # Without this a "# title + ## chapters" file has no H1 left and
+            # the Taiwan-thesis export renders sections as 0.1/0.2 (no 第N章).
+            for t in tokens:
+                if t.get("type") == "heading":
+                    attrs = t.setdefault("attrs", {})
+                    attrs["level"] = max(1, int(attrs.get("level", 1)) - 1)
         break
     return title, _doc(_md_blocks(tokens))
 
 
 # ---------- docx (python-docx) ----------
+
 
 def _docx_runs(para) -> list[dict]:
     out: list[dict | None] = []
@@ -303,23 +353,35 @@ def _docx_runs(para) -> list[dict]:
         if font is not None and font.strike:
             marks.append("strike")
         fname = (font.name or "") if font is not None else ""
-        if "courier" in fname.lower() or "mono" in fname.lower() or "consolas" in fname.lower():
+        if (
+            "courier" in fname.lower()
+            or "mono" in fname.lower()
+            or "consolas" in fname.lower()
+        ):
             marks.append("code")
         out.append(_text(s, tuple(marks)))
     return _clean(out)
 
 
-def _docx_images(para, doc, qn) -> list[dict]:
+def _docx_images(para, doc, qn, budget: dict[str, int]) -> list[dict]:
     figs: list[dict] = []
     for blip in para._p.findall(".//" + qn("a:blip")):
         rid = blip.get(qn("r:embed")) or blip.get(qn("r:link"))
         if not rid:
             continue
         try:
+            # Caps: a crafted docx stuffed with images used to fill UPLOAD_DIR
+            # unboundedly (each blob is written straight to disk).
+            if budget["images"] >= _MAX_EMBEDDED_IMAGES:
+                break
             part = doc.part.related_parts[rid]
+            blob = part.blob
+            if len(blob) > _MAX_IMAGE_BYTES:
+                continue
             ct = getattr(part, "content_type", "") or ""
             ext = ct.split("/")[-1].lower() if "/" in ct else "png"
-            figs.append(_figure(_save_image(part.blob, ext), ""))
+            figs.append(_figure(_save_image(blob, ext), ""))
+            budget["images"] += 1
         except Exception:  # noqa: BLE001 — best-effort; skip unreadable images
             continue
     return figs
@@ -344,13 +406,34 @@ def _docx_table(table) -> dict:
     return _table_block(rows, [])
 
 
+def _check_zip_expansion(raw: bytes) -> None:
+    """Reject zip bombs before python-docx inflates them.
+
+    The 20MB upload cap measures the COMPRESSED size; a high-ratio archive
+    could expand to gigabytes in memory. Checked from the zip directory only —
+    nothing is decompressed here.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            total = sum(i.file_size for i in zf.infolist())
+    except zipfile.BadZipFile as e:
+        raise ValueError("not a valid .docx (zip) file") from e
+    if total > _MAX_DOCX_UNCOMPRESSED:
+        raise ValueError(
+            f"docx expands to {total // (1024 * 1024)} MB uncompressed "
+            f"(limit {_MAX_DOCX_UNCOMPRESSED // (1024 * 1024)} MB)"
+        )
+
+
 def from_docx(raw: bytes) -> tuple[str, dict]:
     from docx import Document
     from docx.oxml.ns import qn
     from docx.table import Table
     from docx.text.paragraph import Paragraph
 
+    _check_zip_expansion(raw)
     doc = Document(io.BytesIO(raw))
+    img_budget = {"images": 0}
     title = ""
     blocks: list[dict] = []
     list_buf: list[dict] = []
@@ -359,10 +442,12 @@ def from_docx(raw: bytes) -> tuple[str, dict]:
     def flush_list() -> None:
         nonlocal list_buf, list_ordered
         if list_buf:
-            blocks.append({
-                "type": "orderedList" if list_ordered else "bulletList",
-                "content": list_buf,
-            })
+            blocks.append(
+                {
+                    "type": "orderedList" if list_ordered else "bulletList",
+                    "content": list_buf,
+                }
+            )
             list_buf = []
             list_ordered = None
 
@@ -380,7 +465,7 @@ def from_docx(raw: bytes) -> tuple[str, dict]:
         name = (style.name or "") if style else ""
         sid_l, name_l = style_id.lower(), name.lower()
 
-        figs = _docx_images(para, doc, qn)
+        figs = _docx_images(para, doc, qn, img_budget)
         runs = _docx_runs(para)
 
         if figs:
@@ -405,7 +490,9 @@ def from_docx(raw: bytes) -> tuple[str, dict]:
                 blocks.append(_heading(level, runs))
             continue
 
-        has_numpr = para._p.pPr is not None and para._p.pPr.find(qn("w:numPr")) is not None
+        has_numpr = (
+            para._p.pPr is not None and para._p.pPr.find(qn("w:numPr")) is not None
+        )
         is_list = has_numpr or "list" in sid_l or "list" in name_l or "清單" in name_l
         if is_list:
             ordered = "number" in sid_l or "number" in name_l
@@ -433,15 +520,41 @@ def from_docx(raw: bytes) -> tuple[str, dict]:
 # ---------- latex (pragmatic subset parser) ----------
 
 _TEX_MARK_CMDS = {
-    "textbf": "bold", "bfseries": "bold",
-    "textit": "italic", "emph": "italic", "itshape": "italic",
-    "texttt": "code", "textsf": None, "textrm": None,
-    "sout": "strike", "st": "strike",
+    "textbf": "bold",
+    "bfseries": "bold",
+    "textit": "italic",
+    "emph": "italic",
+    "itshape": "italic",
+    "texttt": "code",
+    "textsf": None,
+    "textrm": None,
+    "sout": "strike",
+    "st": "strike",
 }
-_TEX_DROP_CMDS = {"cite", "citep", "citet", "citeauthor", "label", "ref",
-                  "eqref", "footnote", "index", "nocite", "vspace", "hspace"}
-_TEX_UNESCAPE = {"&": "&", "%": "%", "$": "$", "#": "#", "_": "_",
-                 "{": "{", "}": "}", " ": " "}
+_TEX_DROP_CMDS = {
+    "cite",
+    "citep",
+    "citet",
+    "citeauthor",
+    "label",
+    "ref",
+    "eqref",
+    "footnote",
+    "index",
+    "nocite",
+    "vspace",
+    "hspace",
+}
+_TEX_UNESCAPE = {
+    "&": "&",
+    "%": "%",
+    "$": "$",
+    "#": "#",
+    "_": "_",
+    "{": "{",
+    "}": "}",
+    " ": " ",
+}
 
 _SEC_RE = re.compile(r"\\(section|subsection|subsubsection)\*?\s*\{")
 _ENV_RE = re.compile(r"\\begin\{(\w+\*?)\}")
@@ -455,7 +568,7 @@ def _brace_arg(s: str, idx: int) -> tuple[str, int]:
     while i < len(s):
         c = s[i]
         if c == "\\" and i + 1 < len(s):
-            buf += s[i:i + 2]
+            buf += s[i : i + 2]
             i += 2
             continue
         if c == "{":
@@ -480,7 +593,7 @@ def _strip_tex_comments(s: str) -> str:
         while i < len(line):
             c = line[i]
             if c == "\\" and i + 1 < len(line):
-                res += line[i:i + 2]
+                res += line[i : i + 2]
                 i += 2
                 continue
             if c == "%":
@@ -523,7 +636,7 @@ def _tex_inline(s: str, marks: tuple[str, ...] = ()) -> list[dict]:
                     continue
                 j += 1
             flush()
-            out.append({"type": "mathInline", "attrs": {"latex": s[i + 1:j].strip()}})
+            out.append({"type": "mathInline", "attrs": {"latex": s[i + 1 : j].strip()}})
             i = j + 1 if j < n else n
             continue
         if c == "\\":
@@ -614,7 +727,15 @@ def _tex_env(env: str, inner: str) -> list[dict]:
         return [{"type": "blockquote", "content": content}]
     if e in ("verbatim", "lstlisting"):
         return [_code_block(inner.strip("\n"))]
-    if e in ("equation", "displaymath", "align", "math", "eqnarray", "gather", "multline"):
+    if e in (
+        "equation",
+        "displaymath",
+        "align",
+        "math",
+        "eqnarray",
+        "gather",
+        "multline",
+    ):
         return [{"type": "mathBlock", "attrs": {"latex": inner.strip()}}]
     if e == "figure":
         cap = _tex_arg_after(inner, r"\caption")
@@ -661,7 +782,11 @@ def _tex_blocks(body: str) -> list[dict]:
             env = menv.group(1)
             end_tag = "\\end{" + env + "}"
             end_idx = body.find(end_tag, i)
-            inner = body[i + menv.end():end_idx] if end_idx != -1 else body[i + menv.end():]
+            inner = (
+                body[i + menv.end() : end_idx]
+                if end_idx != -1
+                else body[i + menv.end() :]
+            )
             blocks.extend(_tex_env(env, inner))
             i = (end_idx + len(end_tag)) if end_idx != -1 else n
             continue
@@ -707,7 +832,11 @@ def _demote_pseudo_headings(blocks: list[dict]) -> list[dict]:
             s = _node_text(b).strip()
             if len(s) >= _PSEUDO_HEADING_LEN or (s and s[-1] in _SENTENCE_END):
                 inline = b.get("content")
-                out.append({"type": "paragraph", "content": inline} if inline else {"type": "paragraph"})
+                out.append(
+                    {"type": "paragraph", "content": inline}
+                    if inline
+                    else {"type": "paragraph"}
+                )
                 continue
         out.append(b)
     return out
@@ -723,7 +852,9 @@ def _unwrap_pseudo_blockquotes(blocks: list[dict]) -> list[dict]:
         if b.get("type") == "blockquote":
             s = _node_text(b).strip()
             if len(s) >= _PSEUDO_HEADING_LEN or (s and s[-1] in _SENTENCE_END):
-                inner = [c for c in b.get("content", []) if c.get("type") == "paragraph"]
+                inner = [
+                    c for c in b.get("content", []) if c.get("type") == "paragraph"
+                ]
                 out.extend(inner or [{"type": "paragraph"}])
                 continue
         out.append(b)
@@ -733,7 +864,9 @@ def _unwrap_pseudo_blockquotes(blocks: list[dict]) -> list[dict]:
 # Figure/table captions in DOCX live in a separate paragraph (圖 N… below a
 # picture, 表 N… above a table). Pull that prose into the node's caption so the
 # List of Figures / List of Tables show real titles instead of "(untitled)".
-_FIG_CAPTION = re.compile(r"^\s*(?:圖|Figure|Fig\.?)\s*\d+(?:[-－.]\d+)?[：:.\s　]*(.*)$", re.I)
+_FIG_CAPTION = re.compile(
+    r"^\s*(?:圖|Figure|Fig\.?)\s*\d+(?:[-－.]\d+)?[：:.\s　]*(.*)$", re.I
+)
 _TBL_CAPTION = re.compile(r"^\s*(?:表|Table)\s*\d+(?:[-－.]\d+)?[：:.\s　]*(.*)$", re.I)
 
 
@@ -758,7 +891,8 @@ def _set_table_caption(block: dict, caption: str) -> dict:
         if c.get("type") == "tableCaption":
             content.append(
                 {"type": "tableCaption", "content": [{"type": "text", "text": caption}]}
-                if caption else {"type": "tableCaption"}
+                if caption
+                else {"type": "tableCaption"}
             )
         else:
             content.append(c)

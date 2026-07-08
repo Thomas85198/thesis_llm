@@ -27,7 +27,7 @@ thesis_llm_demo_v3/
 │   │   └── cross_section.md
 │   ├── rules.yaml            # 13 條 REL 規則 (學長維護)
 │   ├── pyproject.toml
-│   ├── .env                  # ANTHROPIC_API_KEY 等
+│   ├── .env                  # OPENAI_API_KEY 等
 │   └── uploads/              # 上傳的 PDF（讓前端能取回）
 │
 ├── frontend/                 # Next.js 16 + Tailwind 4 + shadcn/ui
@@ -59,8 +59,8 @@ docker compose up -d
 cd backend
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install -e .
-cp .env.example .env  # 填入 ANTHROPIC_API_KEY
+pip install -e ".[test]"       # 含 pytest；純 runtime 才用 pip install -e .
+cp .env.example .env  # 填入 OPENAI_API_KEY（本專案用 OpenAI，非 Anthropic）
 uvicorn main:app --reload --reload-dir app
 # → http://localhost:8000
 ```
@@ -145,7 +145,7 @@ npm run dev
 
 詳見（文件已精簡為三份核心）：
 - [docs/SYSTEM.md](docs/SYSTEM.md) — 完整系統設計（架構、處理流程、效能、KG 語意、操作）
-- [docs/DB_SCHEMA.md](docs/DB_SCHEMA.md) — SQLite 4 張表中文說明 + ERD
+- [docs/DB_SCHEMA.md](docs/DB_SCHEMA.md) — SQLite schema 中文說明 + ERD（共 9 張表）
 - [docs/TODO.md](docs/TODO.md) — 近況、已完成項目、待辦明細、未來規劃
 
 > Demo 報告 / 投影片 / Q&A 速查（`DEMO_REPORT.md` / `SLIDES.md` / `REPORT_QA.md`）已移除以精簡文件；舊版仍可從 git 歷史取回。網頁版說明見 `/about` 頁。

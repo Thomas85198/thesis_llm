@@ -38,13 +38,13 @@ function pmText(node: unknown): string {
 }
 
 function relTime(iso: string, locale: string): string {
-  const zh = locale.startsWith("zh");
   const diff = Date.now() - new Date(iso).getTime();
   const min = Math.floor(diff / 60000);
-  if (min < 1) return zh ? "剛剛" : "just now";
-  if (min < 60) return zh ? `${min} 分鐘前` : `${min} min ago`;
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  if (min < 1) return rtf.format(0, "second"); // "now" / 「現在」
+  if (min < 60) return rtf.format(-min, "minute");
   const hr = Math.floor(min / 60);
-  if (hr < 24) return zh ? `${hr} 小時前` : `${hr} h ago`;
+  if (hr < 24) return rtf.format(-hr, "hour");
   return new Date(iso).toLocaleString(locale);
 }
 

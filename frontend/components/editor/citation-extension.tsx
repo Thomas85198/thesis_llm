@@ -70,9 +70,11 @@ const VERDICT_DOT: Record<string, { color: string; key: string }> = {
 function CitationChip({ node, editor, getPos, extension }: NodeViewProps) {
   const attrs = node.attrs as CitationAttrs & { verdict?: string | null };
   const style = useEditorStore((s) => s.citationStyle);
-  const labels = (
-    extension.options as { verdictLabels?: Record<string, string> }
-  ).verdictLabels;
+  const options = extension.options as {
+    verdictLabels?: Record<string, string>;
+    unlinkedTooltip?: string;
+  };
+  const labels = options.verdictLabels;
   const dot = attrs.verdict ? VERDICT_DOT[attrs.verdict] : undefined;
   const verdictTitle = dot && labels ? labels[dot.key] : "";
   const number = isNumberedStyle(style)
@@ -80,7 +82,7 @@ function CitationChip({ node, editor, getPos, extension }: NodeViewProps) {
     : 0;
   const label = inTextLabel(attrs, style, number);
   const tooltip = attrs.unlinked
-    ? `${attrs.raw || attrs.authors}（待補來源，點擊找來源）`
+    ? `${attrs.raw || attrs.authors}${options.unlinkedTooltip ?? ""}`
     : `${attrs.title}` +
       (attrs.authors ? ` — ${attrs.authors}` : "") +
       (attrs.year ? ` (${attrs.year})` : "");
@@ -141,9 +143,13 @@ export const Citation = Node.create({
   selectable: true,
 
   addOptions() {
-    // Verdict tooltip labels — passed in from the editor (the NodeView lives
-    // outside the i18n provider, so it can't call useTranslations itself).
-    return { verdictLabels: {} as Record<string, string> };
+    // Tooltip strings — passed in from the editor (the NodeView lives outside
+    // the i18n provider, so it can't call useTranslations itself).
+    return {
+      verdictLabels: {} as Record<string, string>,
+      // Suffix appended to an unlinked chip's tooltip ("pending source" hint).
+      unlinkedTooltip: "",
+    };
   },
 
   addAttributes() {

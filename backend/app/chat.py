@@ -7,6 +7,7 @@ Design:
 - Code-level guards: input length cap, output token cap, history truncation,
   per-paper in-memory rate limit, prompt-injection pattern detection.
 """
+
 from __future__ import annotations
 
 import re
@@ -66,6 +67,7 @@ def _check_rate_limit(paper_id: str) -> tuple[bool, int]:
 
 # ---------- Context assembly ----------
 
+
 def _format_paper_context(paper_id: str, paper_title: str, lang: str) -> str:
     """Pack EDUs, defects, and rule list into a single cached system block.
 
@@ -101,9 +103,7 @@ def _format_paper_context(paper_id: str, paper_title: str, lang: str) -> str:
         items.sort(key=lambda x: x.get("order", 0))
         for e in items:
             text = (e.get("text") or "").strip().replace("\n", " ")
-            parts.append(
-                f"[EDU:{e['id']}] (p.{e.get('page', '?')}) {text}"
-            )
+            parts.append(f"[EDU:{e['id']}] (p.{e.get('page', '?')}) {text}")
 
     # Detected defects with rule + evidence linkage.
     if defects:
@@ -130,7 +130,7 @@ def _truncate_history(
     """Keep only the most recent N user+assistant pairs (plus the latest user msg)."""
     if len(messages) <= max_turns * 2:
         return messages
-    return messages[-(max_turns * 2):]
+    return messages[-(max_turns * 2) :]
 
 
 def _validate_messages(messages: list[dict[str, str]]) -> str | None:
@@ -169,6 +169,7 @@ def _injection_warning(messages: list[dict[str, str]]) -> str:
 
 # ---------- Main entry ----------
 
+
 def chat(
     *,
     paper_id: str,
@@ -201,13 +202,17 @@ def chat(
 
     model = llm.model_light()  # gpt-4.1-mini is plenty for chat; cheaper than heavy.
     # OpenAI auto-caches prompts ≥1024 tokens — no explicit cache_control needed.
-    response = llm.client().chat.completions.create(
-        model=model,
-        max_completion_tokens=MAX_OUTPUT_TOKENS,
-        messages=[
-            {"role": "system", "content": system_text},
-            *({"role": m["role"], "content": m["content"]} for m in truncated),
-        ],
+    # retry_transient: the SDK client has max_retries=0, so a bare 429/5xx here
+    # would surface as a 500 to the user.
+    response = llm.retry_transient(
+        lambda: llm.client().chat.completions.create(
+            model=model,
+            max_completion_tokens=MAX_OUTPUT_TOKENS,
+            messages=[
+                {"role": "system", "content": system_text},
+                *({"role": m["role"], "content": m["content"]} for m in truncated),
+            ],
+        )
     )
 
     reply = (response.choices[0].message.content or "").strip()

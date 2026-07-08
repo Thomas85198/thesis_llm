@@ -6,6 +6,7 @@ Migrated from Anthropic in feat/openai-deploy. Key differences vs the old wrappe
 - Token usage: OpenAI's prompt_tokens INCLUDES the cached portion, so we split
   cached_tokens out of input_tokens before logging, to keep cost math consistent.
 """
+
 from __future__ import annotations
 
 import json
@@ -32,10 +33,10 @@ _client_lock = threading.Lock()
 # Transient errors worth retrying with exponential backoff.
 # 5xx = OpenAI-side issue; 429 = rate limit; connection/timeout = network blip.
 RETRYABLE_ERRORS = (
-    InternalServerError,   # 5xx
-    APIConnectionError,    # network
-    APITimeoutError,       # timeout
-    RateLimitError,        # 429
+    InternalServerError,  # 5xx
+    APIConnectionError,  # network
+    APITimeoutError,  # timeout
+    RateLimitError,  # 429
 )
 MAX_RETRIES = 4  # total attempts = MAX_RETRIES + 1
 
@@ -70,9 +71,10 @@ def client() -> OpenAI:
         with _client_lock:
             if _client is None:
                 # OPENAI_BASE_URL supports Azure / lab self-hosted proxies / vLLM.
-                # max_retries is the SDK's own retry knob; we add our own outer
-                # retry too for stage-aware logging and custom backoff.
-                kwargs: dict[str, Any] = {"max_retries": 2}
+                # SDK retries are OFF: call_with_tool has its own stage-aware
+                # retry with backoff, and the two layers used to multiply
+                # (2 SDK × 5 outer = up to 15 requests per sustained 429).
+                kwargs: dict[str, Any] = {"max_retries": 0}
                 base = os.getenv("OPENAI_BASE_URL")
                 if base:
                     kwargs["base_url"] = base
@@ -97,6 +99,26 @@ def model_embed() -> str:
     return os.getenv("OPENAI_MODEL_EMBED", "text-embedding-3-small")
 
 
+def retry_transient(fn: Any, attempts: int = 3, base_delay: float = 2.0) -> Any:
+    """Run fn(), retrying RETRYABLE_ERRORS with exponential backoff.
+
+    For call sites that don't go through call_with_tool (embed, chat) — the SDK
+    client has max_retries=0, so without this a single 429/5xx surfaces to the
+    caller.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except RETRYABLE_ERRORS as exc:
+            if is_quota_exhausted(exc):
+                raise
+            last_exc = exc
+            if attempt < attempts - 1:
+                time.sleep(base_delay * (2**attempt))
+    raise last_exc  # type: ignore[misc]
+
+
 def embed(texts: list[str]) -> list[list[float]]:
     """Return an embedding vector per input text (OpenAI embeddings).
 
@@ -106,14 +128,19 @@ def embed(texts: list[str]) -> list[list[float]]:
     items = [t if t and t.strip() else " " for t in texts]
     if not items:
         return []
-    resp = client().embeddings.create(model=model_embed(), input=items)
+    resp = retry_transient(
+        lambda: client().embeddings.create(model=model_embed(), input=items)
+    )
     return [d.embedding for d in resp.data]
 
 
 def llm_temperature() -> float:
     # Defect detection wants reproducible verdicts, not creative variety —
     # default to 0 (greedy decoding). Override via env for experiments.
-    return float(os.getenv("LLM_TEMPERATURE", "0"))
+    try:
+        return float(os.getenv("LLM_TEMPERATURE", "0"))
+    except ValueError:
+        return 0.0
 
 
 def llm_max_workers() -> int:
@@ -134,17 +161,17 @@ def llm_max_workers() -> int:
 # OpenAI list pricing (USD per 1M tokens). Approximate; updated 2026-05.
 # Each entry: (input, output, cached_input). OpenAI charges no cache-write fee.
 PRICING: dict[str, tuple[float, float, float]] = {
-    "gpt-5.5":          (5.00, 30.00, 0.50),
-    "gpt-5.4":          (2.50, 15.00, 0.25),
-    "gpt-5.4-mini":     (0.75,  4.50, 0.075),
-    "gpt-5.4-nano":     (0.20,  1.25, 0.02),
-    "gpt-4.1":          (2.00,  8.00, 0.50),
-    "gpt-4.1-mini":     (0.40,  1.60, 0.10),
-    "gpt-4.1-nano":     (0.10,  0.40, 0.025),
-    "gpt-4o":           (2.50, 10.00, 1.25),
-    "gpt-4o-mini":      (0.15,  0.60, 0.075),
-    "o1":               (15.00, 60.00, 7.50),
-    "o3-mini":          (1.10,  4.40, 0.55),
+    "gpt-5.5": (5.00, 30.00, 0.50),
+    "gpt-5.4": (2.50, 15.00, 0.25),
+    "gpt-5.4-mini": (0.75, 4.50, 0.075),
+    "gpt-5.4-nano": (0.20, 1.25, 0.02),
+    "gpt-4.1": (2.00, 8.00, 0.50),
+    "gpt-4.1-mini": (0.40, 1.60, 0.10),
+    "gpt-4.1-nano": (0.10, 0.40, 0.025),
+    "gpt-4o": (2.50, 10.00, 1.25),
+    "gpt-4o-mini": (0.15, 0.60, 0.075),
+    "o1": (15.00, 60.00, 7.50),
+    "o3-mini": (1.10, 4.40, 0.55),
 }
 
 
@@ -164,9 +191,7 @@ def calc_cost_usd(
     but always 0 on OpenAI (no cache-write fee)."""
     in_p, out_p, cr_p = _price(model)
     return (
-        input_tokens * in_p
-        + output_tokens * out_p
-        + cache_read_tokens * cr_p
+        input_tokens * in_p + output_tokens * out_p + cache_read_tokens * cr_p
     ) / 1_000_000
 
 
@@ -247,7 +272,7 @@ def call_with_tool(
                     f"after {MAX_RETRIES + 1} attempts — giving up: {exc!r}"
                 )
                 raise
-            backoff = (1.5 * (2 ** attempt)) + random.uniform(0, 0.5)
+            backoff = (1.5 * (2**attempt)) + random.uniform(0, 0.5)
             print(
                 f"[llm] {type(exc).__name__} on stage={stage} model={model} "
                 f"attempt {attempt + 1}/{MAX_RETRIES + 1} — retrying in {backoff:.1f}s"
@@ -352,7 +377,9 @@ def stream_completion(
         except RETRYABLE_ERRORS as exc:
             last_exc = exc
             if _is_permanent_quota_error(exc):
-                print(f"[llm] insufficient_quota opening stream on stage={stage} — not retrying")
+                print(
+                    f"[llm] insufficient_quota opening stream on stage={stage} — not retrying"
+                )
                 raise
             if attempt == MAX_RETRIES:
                 print(
@@ -360,7 +387,7 @@ def stream_completion(
                     f"model={model} after {MAX_RETRIES + 1} attempts — giving up: {exc!r}"
                 )
                 raise
-            time.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.5))
+            time.sleep((1.5 * (2**attempt)) + random.uniform(0, 0.5))
         except APIStatusError as exc:
             print(
                 f"[llm] {type(exc).__name__} (status={exc.status_code}) opening stream "

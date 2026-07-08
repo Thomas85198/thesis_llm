@@ -1,12 +1,12 @@
 # 部署指南（實驗室伺服器）
 
-論文邏輯缺陷檢核系統的生產部署說明。針對實驗室伺服器 `140.115.54.48`，
+論文邏輯缺陷檢核系統的生產部署說明。針對實驗室伺服器 `140.115.54.62`，
 對外只開放單一 port `8083`。
 
 ## 架構
 
 ```
-瀏覽器 ──► 140.115.54.48:8083 ──► Caddy ┬─ /api/* ─► backend  (FastAPI)
+瀏覽器 ──► 140.115.54.62:8083 ──► Caddy ┬─ /api/* ─► backend  (FastAPI)
                                         └─ /*     ─► frontend (Next.js)
                           backend ──► neo4j   (都在 compose 內網，不對外)
 ```
@@ -18,12 +18,12 @@
 
 相關檔案：
 
-| 檔案 | 用途 |
-|---|---|
-| `docker-compose.prod.yml` | 生產 stack 定義（neo4j + backend + frontend + caddy） |
-| `Caddyfile` | 單一 port 的路徑分流規則 |
-| `backend/.env` | OpenAI key、模型設定（**不進 git**） |
-| `.env`（repo 根目錄） | `NEO4J_PASSWORD`、`PUBLIC_BASE`，供 compose 變數插值（**不進 git**） |
+| 檔案                      | 用途                                                                 |
+| ------------------------- | -------------------------------------------------------------------- |
+| `docker-compose.prod.yml` | 生產 stack 定義（neo4j + backend + frontend + caddy）                |
+| `Caddyfile`               | 單一 port 的路徑分流規則                                             |
+| `backend/.env`            | OpenAI key、模型設定（**不進 git**）                                 |
+| `.env`（repo 根目錄）     | `NEO4J_PASSWORD`、`PUBLIC_BASE`，供 compose 變數插值（**不進 git**） |
 
 > 本機開發仍可用 `docker-compose.yml`（會各自開 3000 / 8000 兩個 port），
 > 或直接 `uvicorn` + `npm run dev`。`docker-compose.prod.yml` 只用於伺服器。
@@ -46,7 +46,7 @@
 
 ```bash
 # 1. SSH 進伺服器
-ssh luchienlin@140.115.54.48
+ssh luchienlin@140.115.54.62
 
 # 2. clone（部署直接用 main，feat/openai-deploy 已合併並刪除）
 cd ~
@@ -62,7 +62,7 @@ nano backend/.env          # 至少填 OPENAI_API_KEY
 # 4. 設定 root .env（compose 變數插值用）
 cat > .env <<EOF
 NEO4J_PASSWORD=$(openssl rand -hex 16)
-PUBLIC_BASE=http://140.115.54.48:8083
+PUBLIC_BASE=http://140.115.54.62:8083
 EOF
 
 # 5. build 並啟動
@@ -70,7 +70,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 > `backend/.env` 也可以直接從本機 `scp` 過去，省得重填：
-> `scp backend/.env luchienlin@140.115.54.48:~/thesis_llm/backend/.env`
+> `scp backend/.env luchienlin@140.115.54.62:~/thesis_llm/backend/.env`
 
 ### 驗證
 
@@ -81,12 +81,12 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8083/          # 200
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8083/api/rules # 200
 ```
 
-從本機瀏覽器開 <http://140.115.54.48:8083> 應看到上傳頁與 13 條 REL 規則。
+從本機瀏覽器開 <http://140.115.54.62:8083> 應看到上傳頁與 13 條 REL 規則。
 
 ## 更新程式
 
 ```bash
-ssh luchienlin@140.115.54.48
+ssh luchienlin@140.115.54.62
 cd ~/thesis_llm
 git pull
 docker compose -f docker-compose.prod.yml up -d --build
@@ -126,11 +126,11 @@ docker compose -f docker-compose.prod.yml down -v
 
 資料存在 Docker named volume，容器重建不會遺失：
 
-| Volume | 內容 |
-|---|---|
-| `thesis_llm_app-data` | SQLite (`data.db`) + 上傳的 PDF |
-| `thesis_llm_neo4j-data` | Neo4j 圖譜 |
-| `thesis_llm_caddy-data` | Caddy 內部狀態 |
+| Volume                  | 內容                            |
+| ----------------------- | ------------------------------- |
+| `thesis_llm_app-data`   | SQLite (`data.db`) + 上傳的 PDF |
+| `thesis_llm_neo4j-data` | Neo4j 圖譜                      |
+| `thesis_llm_caddy-data` | Caddy 內部狀態                  |
 
 備份 SQLite：
 
@@ -146,6 +146,7 @@ SSR（server component）在 frontend 容器內 fetch，必須走 compose 內網
 
 **8083 連不到（從外部）**
 先在伺服器內 `curl localhost:8083` ——
+
 - 內部通、外部不通 → 防火牆問題，找實驗室管理者確認 8083 對外放行。
 - 內部也不通 → `docker compose ... ps` 看 caddy 是否 Up，`logs caddy` 看錯誤。
 

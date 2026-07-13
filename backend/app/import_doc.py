@@ -1023,6 +1023,8 @@ def _localize_pdf_images(doc: dict, image_dir: Path) -> None:
                     data = p.read_bytes()
                     if budget >= _MAX_EMBEDDED_IMAGES or len(data) > _MAX_IMAGE_BYTES:
                         continue
+                    if _is_blank_image(data):
+                        continue  # 純色空白（浮水印殘影等）不值得留一顆 figure
                     budget += 1
                     nb = dict(n)
                     nb["attrs"] = {
@@ -1039,6 +1041,79 @@ def _localize_pdf_images(doc: dict, image_dir: Path) -> None:
         return out
 
     doc["content"] = walk(doc.get("content") or [])
+
+
+# 浮水印偵測：同一個 image xref 被這個比例以上的頁面引用，就視為浮水印/頁首
+# logo（台灣學位論文標配：校徽浮水印每頁一張）。
+_WATERMARK_PAGE_RATIO = 0.6
+_WATERMARK_MIN_PAGES = 5
+
+
+def _neutralize_watermarks(pdf) -> int:
+    """Remove raster images that repeat across most pages (school watermark,
+    header logo) by stripping their `Do` draw operators from the content
+    streams. Left in place, pymupdf4llm classifies each watermark region as a
+    picture and bakes the overlapping BODY TEXT into the rendered image — the
+    text vanishes from the document and a junk caption-less figure appears on
+    every page (flooding the List of Figures). Merely blanking the pixels
+    (`delete_image`) is not enough: the stretched image reference still marks
+    the region as a picture for the layout model, so the operator must go."""
+    import re as _re
+    from collections import Counter
+
+    if len(pdf) < _WATERMARK_MIN_PAGES:
+        return 0
+    counts: Counter[int] = Counter()
+    # xref → [(page_no, name, referencer_xref)] 引用位置（referencer=0 是頁面
+    # 本體，否則是 Form XObject 的 xref——浮水印兩種包法都有）
+    sites: dict[int, list[tuple[int, str, int]]] = {}
+    for pno, page in enumerate(pdf):
+        for img in page.get_images(full=True):
+            xref, name, referencer = img[0], img[7], img[-1]
+            counts[xref] += 1
+            sites.setdefault(xref, []).append((pno, name, referencer))
+    removed = 0
+    threshold = max(_WATERMARK_MIN_PAGES, _WATERMARK_PAGE_RATIO * len(pdf))
+    for xref, seen in counts.items():
+        if seen < threshold:
+            continue
+        try:
+            patched_forms: set[int] = set()
+            for pno, name, referencer in sites[xref]:
+                pattern = _re.compile(rb"/" + _re.escape(name.encode()) + rb"\s+Do\b")
+                if referencer:  # 浮水印畫在共用的 Form XObject 裡，改一次全書生效
+                    if referencer in patched_forms:
+                        continue
+                    data = pdf.xref_stream(referencer) or b""
+                    new = pattern.sub(b"", data)
+                    if new != data:
+                        pdf.update_stream(referencer, new)
+                    patched_forms.add(referencer)
+                else:
+                    page = pdf[pno]
+                    page.clean_contents()  # 多條 content stream 併成一條再補
+                    contents = page.get_contents()
+                    if not contents:
+                        continue
+                    data = pdf.xref_stream(contents[0]) or b""
+                    new = pattern.sub(b"", data)
+                    if new != data:
+                        pdf.update_stream(contents[0], new)
+            removed += 1
+        except Exception:  # noqa: BLE001 — best-effort; keep the page usable
+            continue
+    return removed
+
+
+def _is_blank_image(data: bytes) -> bool:
+    """True for a single-colour image — a rendered picture region with nothing
+    in it. Real figures are never unicolor."""
+    try:
+        import pymupdf
+
+        return bool(pymupdf.Pixmap(data).is_unicolor)
+    except Exception:  # noqa: BLE001 — undecodable → let it through
+        return False
 
 
 def _strip_code_marks(node: dict) -> None:
@@ -1075,6 +1150,7 @@ def from_pdf(raw: bytes) -> tuple[str, dict]:
         pdf = pymupdf.open(stream=raw, filetype="pdf")
         try:
             meta_title = ((pdf.metadata or {}).get("title") or "").strip()
+            _neutralize_watermarks(pdf)
             md = pymupdf4llm.to_markdown(
                 pdf,
                 write_images=True,

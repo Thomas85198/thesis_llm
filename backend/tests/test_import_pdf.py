@@ -45,6 +45,8 @@ def native_pdf() -> bytes:
     )
     pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 120, 80))
     pix.clear_with(90)
+    for x in range(120):  # 純色圖會被 _is_blank_image 濾掉，加點紋理
+        pix.set_pixel(x, 40, (200, 30, 30))
     page2 = doc.new_page()
     page2.insert_text((72, 80), "2. Method", fontsize=16, fontname="hebo")
     page2.insert_image(pymupdf.Rect(72, 120, 292, 240), pixmap=pix)
@@ -178,6 +180,43 @@ def test_from_pdf_strips_inline_code_marks(monkeypatch, native_pdf: bytes):
     walk(doc)
     assert "code" not in marks
     assert "心流、使用與滿足" in _all_text(doc)
+
+
+def test_neutralize_watermarks_strips_repeated_image():
+    """校徽浮水印＝同一 image xref 被幾乎每頁引用。留著會讓 layout 模型把
+    浮水印區判成 picture、內文被烤進圖裡；必須從 content stream 拔掉 Do。"""
+    doc = pymupdf.open()
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 60))
+    pix.clear_with(200)
+    wm_xref = 0
+    for i in range(6):
+        page = doc.new_page()
+        page.insert_text((72, 100), f"Page {i} body text", fontsize=11)
+        if wm_xref == 0:
+            wm_xref = page.insert_image(pymupdf.Rect(200, 300, 400, 500), pixmap=pix)
+        else:  # 重用同一個 xref，模擬每頁同一張浮水印
+            page.insert_image(pymupdf.Rect(200, 300, 400, 500), xref=wm_xref)
+    # 對照組：只出現一次的真圖
+    uniq = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 30, 30))
+    uniq.clear_with(90)
+    doc[0].insert_image(pymupdf.Rect(72, 200, 172, 260), pixmap=uniq)
+
+    assert import_doc._neutralize_watermarks(doc) == 1
+    # 浮水印在每一頁都不再被繪製；唯一真圖仍在第 0 頁
+    for i in range(6):
+        shown = doc[i].get_image_info()
+        assert len(shown) == (1 if i == 0 else 0)
+    doc.close()
+
+
+def test_blank_image_detection():
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 40))
+    pix.clear_with(255)
+    assert import_doc._is_blank_image(pix.tobytes("png")) is True
+    for x in range(40):
+        pix.set_pixel(x, 20, (10, 20, 30))
+    assert import_doc._is_blank_image(pix.tobytes("png")) is False
+    assert import_doc._is_blank_image(b"not an image") is False
 
 
 # ---------- scanned detection + OCR paragraph grouping ----------

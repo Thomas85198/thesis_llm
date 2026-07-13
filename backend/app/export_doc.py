@@ -512,7 +512,18 @@ def _omml_element(latex: str, block: bool = False):
             xml = f"<m:oMathPara {_OMML_NS}>{omml}</m:oMathPara>"
         else:
             xml = omml.replace("<m:oMath>", f"<m:oMath {_OMML_NS}>", 1)
-        return parse_xml(xml)
+        el = parse_xml(xml)
+        # 每個 math run 補 Cambria Math 字型宣告（w:rPr 置於 m:rPr 之後、
+        # m:t 之前）。少了它 Word——尤其 Mac 版——會把整條方程式渲染成
+        # 空白，這是 OMML 的知名地雷。
+        for r in el.iter(qn("m:r")):
+            rpr = OxmlElement("w:rPr")
+            fonts = OxmlElement("w:rFonts")
+            fonts.set(qn("w:ascii"), "Cambria Math")
+            fonts.set(qn("w:hAnsi"), "Cambria Math")
+            rpr.append(fonts)
+            r.insert(1 if r.find(qn("m:rPr")) is not None else 0, rpr)
+        return el
     except Exception:  # noqa: BLE001 — graceful fallback to literal text
         return None
 
@@ -1380,6 +1391,8 @@ def to_latex(
     tex = (
         magic + f"{docclass}\n" + cjk_packages + layout + "\\usepackage{graphicx}\n"
         "\\usepackage{float}\n"  # [H] placement for figures/tables
+        "\\usepackage{amsmath}\n"  # pmatrix/cases/aligned/\text — 編輯器數學節點會用到
+        "\\usepackage{amssymb}\n"  # \mathbb 等符號集
         "\\usepackage{xltabular}\n"  # width-bounded wrapping columns + page-breakable tables
         "\\usepackage[normalem]{ulem}\n"
         "\\usepackage{hyperref}\n"
@@ -1595,6 +1608,8 @@ th, td { border: 1px solid #999; padding: .4rem .6rem; }
 blockquote { border-left: 3px solid #ccc; margin: 1rem 0; padding-left: 1rem; color: #444; }
 pre { background: #f5f5f5; padding: .8rem; overflow-x: auto; font-family: ui-monospace,monospace; }
 ol.refs li { margin-bottom: .4rem; }
+/* 寬數學式在容器內水平捲動，不撐破頁面（MathJax display 容器） */
+mjx-container[display="true"] { display: block; overflow-x: auto; overflow-y: hidden; max-width: 100%; }
 @media print { body { margin: 0; max-width: none; } }
 """
 
@@ -1628,6 +1643,8 @@ figcaption { margin-top: .4rem; }
 .tw-cap { text-align: center; margin: .6rem 0 .3rem; }
 table { border-collapse: collapse; width: 100%; margin: .3rem 0 1rem; }
 th, td { border: 1px solid #333; padding: .3rem .6rem; text-indent: 0; }
+/* 寬數學式在 A4 頁內水平捲動，不撐破版面 */
+mjx-container[display="true"] { display: block; overflow-x: auto; overflow-y: hidden; max-width: 100%; }
 blockquote { border-left: 3px solid #ccc; margin: 1rem 0; padding-left: 1rem; color: #444; }
 pre { background: #f5f5f5; padding: .8rem; overflow-x: auto; font-family: ui-monospace,monospace; text-indent: 0; }
 .refs-title { page-break-before: always; }

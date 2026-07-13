@@ -404,3 +404,32 @@ def test_omml_patches_mathml2omml_groupchr_bug():
     for latex in (r"\bar{X} = \frac{1}{n}\sum_{i=1}^{n} X_i", r"\overline{AB}",
                   r"\underline{x}", r"\underbrace{a+b}_{2}"):
         assert export_doc._omml_element(latex) is not None, latex
+
+
+def test_math_regressions_from_user_acceptance():
+    """使用者驗收抓到的三件事：LaTeX 缺 amsmath（pmatrix 炸 &）、DOCX math
+    run 缺 Cambria Math（Mac Word 顯示空白）、HTML 寬式子無捲動。"""
+    import io as _io
+
+    from docx import Document as _Doc
+    from docx.oxml.ns import qn as _qn
+
+    doc = {"type": "doc", "content": [
+        {"type": "mathBlock", "attrs": {"latex": "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}"}},
+    ]}
+    wrapper = {"title": "t", "content_json": doc}
+    # 1. LaTeX preamble 必須載 amsmath/amssymb
+    tex, _ = export_doc.to_latex(wrapper, "apa", "References")
+    assert "\\usepackage{amsmath}" in tex and "\\usepackage{amssymb}" in tex
+    # 2. DOCX 每個 math run 都帶 Cambria Math 字型
+    data = export_doc.to_docx(wrapper, "apa", "References")
+    d = _Doc(_io.BytesIO(data))
+    runs = [r for p in d.paragraphs for r in p._p.iter(_qn("m:r"))]
+    assert runs
+    for r in runs:
+        fonts = r.findall(f"{_qn('w:rPr')}/{_qn('w:rFonts')}")
+        assert fonts and fonts[0].get(_qn("w:ascii")) == "Cambria Math"
+    # 3. HTML 預覽的 display math 有水平捲動規則（兩套 CSS 都要）
+    for tpl in ("article", "twthesis"):
+        html = export_doc.to_html(wrapper, "apa", "References", template=tpl)
+        assert 'mjx-container[display="true"]' in html

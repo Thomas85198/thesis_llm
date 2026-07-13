@@ -186,9 +186,18 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
         <span className="hidden text-sm font-medium sm:inline">{t("fab")}</span>
       </button>
 
-      <Sheet open={open} onOpenChange={setOpen}>
+      {/* Non-modal + no overlay: clicking an [EDU:xxx] chip jumps the PDF view
+          behind the drawer — the background must stay visible and interactive
+          (mirrors defect-panel / kg-check-panel). */}
+      <Sheet
+        open={open}
+        onOpenChange={setOpen}
+        modal={false}
+        disablePointerDismissal
+      >
         <SheetContent
           side="right"
+          overlay={false}
           className="flex w-full flex-col gap-0 p-0 sm:max-w-md"
         >
           <SheetHeader className="border-b">

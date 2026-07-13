@@ -2,7 +2,14 @@
 
 import { MessageCircleIcon, SendIcon, SparklesIcon } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -17,7 +24,9 @@ import {
 } from "@/components/ui/sheet";
 import {
   ChatRateLimitError,
-  sendChat,
+  clearChatHistory,
+  fetchChatHistory,
+  streamChat,
   type ChatMessage,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -39,11 +48,7 @@ type Props = {
   onDefectClick?: (defectId: string) => void;
 };
 
-type UIMessage = ChatMessage & {
-  /** Citations parsed from the model output, for the assistant message. */
-  citedEduIds?: string[];
-  citedDefectIds?: string[];
-};
+type UIMessage = ChatMessage;
 
 export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
   const t = useTranslations("chat");
@@ -52,8 +57,26 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  // True once the first streamed token arrived — switches the "thinking" row
+  // off in favour of the live assistant bubble.
+  const [streamStarted, setStreamStarted] = useState(false);
+  const historyLoadedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Conversation is persisted server-side — load it on first open so the
+  // thread survives reloads and navigation.
+  useEffect(() => {
+    if (!open || historyLoadedRef.current) return;
+    historyLoadedRef.current = true;
+    fetchChatHistory(paperId)
+      .then((msgs) =>
+        setMessages(msgs.map(({ role, content }) => ({ role, content }))),
+      )
+      .catch(() => {
+        historyLoadedRef.current = false; // retry on next open
+      });
+  }, [open, paperId]);
 
   // Keep input scrolled to newest message.
   useEffect(() => {
@@ -79,28 +102,36 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
         return;
       }
 
-      const nextHistory: UIMessage[] = [
-        ...messages,
-        { role: "user", content: trimmed },
-      ];
-      setMessages(nextHistory);
+      setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
       setInput("");
       setSending(true);
+      setStreamStarted(false);
+      // History lives server-side — stream only the new message; deltas grow
+      // the assistant bubble in place (typewriter).
+      let gotDelta = false;
       try {
-        const res = await sendChat(
-          paperId,
-          nextHistory.map(({ role, content }) => ({ role, content })),
-          locale
-        );
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: res.reply || t("emptyReply"),
-            citedEduIds: res.cited_edu_ids,
-            citedDefectIds: res.cited_defect_ids,
-          },
-        ]);
+        await streamChat(paperId, trimmed, locale, (delta) => {
+          if (!gotDelta) {
+            gotDelta = true;
+            setStreamStarted(true);
+          }
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role === "assistant") {
+              return [
+                ...prev.slice(0, -1),
+                { ...last, content: last.content + delta },
+              ];
+            }
+            return [...prev, { role: "assistant", content: delta }];
+          });
+        });
+        if (!gotDelta) {
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: t("emptyReply") },
+          ]);
+        }
       } catch (err) {
         if (err instanceof ChatRateLimitError) {
           toast.error(t("rateLimited", { seconds: err.retryAfter }));
@@ -109,14 +140,16 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
             description: err instanceof Error ? err.message : String(err),
           });
         }
-        // Roll back the user message so they can retry.
-        setMessages((prev) => prev.slice(0, -1));
+        // Roll back the user message (and any partial reply) so they can
+        // retry — the server rolled its copy back too.
+        setMessages((prev) => prev.slice(0, gotDelta ? -2 : -1));
         setInput(trimmed);
       } finally {
         setSending(false);
+        setStreamStarted(false);
       }
     },
-    [messages, paperId, sending, t, locale]
+    [paperId, sending, t, locale],
   );
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -129,6 +162,10 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
   function reset() {
     setMessages([]);
     setInput("");
+    // Server-side thread too — otherwise it reappears on the next open.
+    clearChatHistory(paperId).catch(() => {
+      historyLoadedRef.current = false; // reload the surviving thread next open
+    });
   }
 
   return (
@@ -141,7 +178,7 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
           "fixed bottom-5 right-5 z-40 flex h-12 items-center gap-2 rounded-full",
           "bg-primary px-4 text-primary-foreground shadow-lg transition-all",
           "hover:scale-105 hover:shadow-xl active:scale-95",
-          open && "pointer-events-none opacity-0"
+          open && "pointer-events-none opacity-0",
         )}
         aria-label={t("openAria")}
       >
@@ -178,7 +215,7 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
                 onDefectClick={onDefectClick}
               />
             ))}
-            {sending && (
+            {sending && !streamStarted && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
                 {t("thinking")}
@@ -192,7 +229,9 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
               <textarea
                 ref={textareaRef}
                 value={input}
-                onChange={(e) => setInput(e.target.value.slice(0, MAX_INPUT_CHARS))}
+                onChange={(e) =>
+                  setInput(e.target.value.slice(0, MAX_INPUT_CHARS))
+                }
                 onKeyDown={handleKeyDown}
                 placeholder={t("placeholder")}
                 rows={2}
@@ -200,7 +239,7 @@ export function ChatDrawer({ paperId, onEduClick, onDefectClick }: Props) {
                   "min-h-[44px] flex-1 resize-none rounded-md border bg-background px-3 py-2",
                   "text-sm leading-relaxed",
                   "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-                  "disabled:cursor-not-allowed disabled:opacity-50"
+                  "disabled:cursor-not-allowed disabled:opacity-50",
                 )}
                 disabled={sending}
                 maxLength={MAX_INPUT_CHARS}
@@ -250,7 +289,7 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
               onClick={() => onPick(s)}
               className={cn(
                 "block w-full rounded-md border bg-card px-3 py-2 text-left text-xs",
-                "transition-colors hover:bg-accent"
+                "transition-colors hover:bg-accent",
               )}
             >
               {s}
@@ -277,7 +316,7 @@ function MessageBubble({
     <div
       className={cn(
         "rounded-lg px-3 py-2 text-sm leading-relaxed",
-        isUser ? "ml-6 bg-primary/10" : "mr-6 border bg-card"
+        isUser ? "ml-6 bg-primary/10" : "mr-6 border bg-card",
       )}
     >
       <div className="mb-0.5 text-[10px] font-medium uppercase text-muted-foreground">
@@ -323,7 +362,7 @@ function AssistantMarkdown({
           </Fragment>
         ) : (
           <Fragment key={i}>{c}</Fragment>
-        )
+        ),
       );
     }
     return children;
@@ -351,7 +390,7 @@ function AssistantMarkdown({
         "[&_hr]:my-2 [&_hr]:border-border",
         "[&_table]:my-2 [&_table]:w-full [&_table]:overflow-x-auto [&_table]:rounded [&_table]:border [&_table]:text-xs",
         "[&_th]:border-b [&_th]:bg-muted/40 [&_th]:p-1.5 [&_th]:text-left [&_th]:font-medium",
-        "[&_td]:border-t [&_td]:p-1.5 [&_td]:align-top"
+        "[&_td]:border-t [&_td]:p-1.5 [&_td]:align-top",
       )}
     >
       <ReactMarkdown
@@ -361,12 +400,16 @@ function AssistantMarkdown({
           li: ({ children }) => <li>{processChildren(children)}</li>,
           td: ({ children }) => <td>{processChildren(children)}</td>,
           th: ({ children }) => <th>{processChildren(children)}</th>,
-          strong: ({ children }) => <strong>{processChildren(children)}</strong>,
+          strong: ({ children }) => (
+            <strong>{processChildren(children)}</strong>
+          ),
           em: ({ children }) => <em>{processChildren(children)}</em>,
           h1: ({ children }) => <h1>{processChildren(children)}</h1>,
           h2: ({ children }) => <h2>{processChildren(children)}</h2>,
           h3: ({ children }) => <h3>{processChildren(children)}</h3>,
-          blockquote: ({ children }) => <blockquote>{processChildren(children)}</blockquote>,
+          blockquote: ({ children }) => (
+            <blockquote>{processChildren(children)}</blockquote>
+          ),
         }}
       >
         {text}
@@ -380,7 +423,7 @@ function renderCitations(
   text: string,
   onEduClick?: (eduId: string) => void,
   onDefectClick?: (defectId: string) => void,
-  labels?: { eduJump: string; defectFocus: string }
+  labels?: { eduJump: string; defectFocus: string },
 ): ReactNode {
   const tokens = splitCitations(text);
   if (tokens.length === 1 && tokens[0].kind === "text") return tokens[0].value;
@@ -393,7 +436,7 @@ function renderCitations(
           type="button"
           onClick={() => onEduClick?.(p.id)}
           className="mx-0.5 rounded bg-primary/10 px-1 font-mono text-[10px] text-primary hover:bg-primary/20"
-          title={onEduClick ? labels?.eduJump ?? "" : ""}
+          title={onEduClick ? (labels?.eduJump ?? "") : ""}
         >
           EDU:{p.id}
         </button>
@@ -406,7 +449,7 @@ function renderCitations(
           type="button"
           onClick={() => onDefectClick?.(p.id)}
           className="mx-0.5 rounded bg-orange-100 px-1 font-mono text-[10px] text-orange-700 hover:bg-orange-200 dark:bg-orange-950 dark:text-orange-300"
-          title={onDefectClick ? labels?.defectFocus ?? "" : ""}
+          title={onDefectClick ? (labels?.defectFocus ?? "") : ""}
         >
           DEFECT:{p.id}
         </button>

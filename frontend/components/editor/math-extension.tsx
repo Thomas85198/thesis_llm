@@ -183,7 +183,8 @@ function MathView(props: NodeViewProps) {
           selected || editing ? "rounded-lg bg-primary/5" : ""
         }`}
       >
-        <div className="w-full py-2 text-center text-xl leading-relaxed">
+        {/* 寬式子（長方程、矩陣）在自身容器內水平捲動，不撐破編輯器版面 */}
+        <div className="w-full overflow-x-auto py-2 text-center text-xl leading-relaxed">
           {preview}
         </div>
         {editing && editorRow}

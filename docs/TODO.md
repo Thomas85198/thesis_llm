@@ -215,7 +215,9 @@ Related Work 深度/比較表（skill #3，偏人工判斷）。
 - ✅ **前端首批測試（2026-07-06）**：引入 vitest（lockfile 以 npm 10 重產、docker
   `npm ci` 驗證通過），`lib/api.test.ts` 14 條 contract 測試（`pickLocalized` 降級鏈、
   URL encode、錯誤內文、uploadPaper FormData）；`npm test` script。
-  仍未覆蓋：editor Zustand store 與 TipTap JSON 轉換純邏輯（v4.17 最易 regression 區）。
+  ✅ editor 純邏輯已補（2026-07-14）：editor-store 自動儲存 12 條（debounce/
+  部分 PUT/樂觀並發 token/B6 跨文件汙染回歸鎖/409 暫停/退避重試）、
+  citation-format 六格式 10 條、lint 三規則 6 條；vitest 42 綠。
 - ✅ 前端 typecheck script——第一輪已加。
 
 ### E6. 值得補的功能（先修完上面再談）

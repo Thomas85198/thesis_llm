@@ -29,6 +29,15 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_19_0": {
+      "title": "PDF import for the editor",
+      "summary": "The writing editor's last missing import format: upload an existing PDF draft and the system reconstructs heading levels from font sizes, extracts embedded images with their captions, and turns it into an editable document. Scanned PDFs without a text layer automatically go through OCR (processed in the background with live progress), then open in the editor the same way.",
+      "changes": {
+        "0": "PDF import: heading levels and paragraphs reconstructed from font sizes, embedded images persisted with captions folded in; scanned PDFs run through OCR (Chinese + English) as a background job with progress polling, opening in the editor when done.",
+        "1": "Watermark handling: a school watermark (the same image repeated on every page) used to bake body text into pictures and flood the List of Figures with dozens of unnamed images — now detected and removed before extraction, keeping only real figures.",
+        "2": "Parity with Word import: dimension-by-dimension fixes benchmarked against the same thesis imported from Word — page numbers and typeset-TOC debris removed, paragraphs and long tables split across pages rejoined (duplicate header rows dropped), references rebuilt one entry per paragraph, heading levels renumbered from section numbering, and scrambled mixed CJK/Latin punctuation repaired."
+      }
+    },
     "4_18_0": {
       "title": "Health-check fixes + md/txt upload upgrade",
       "summary": "The results of a full codebase health check: md/txt uploads are now typeset into a real PDF first, so PDF preview, defect highlighting, and section detection all work; the analysis pipeline fixes several correctness bugs (EDU id collisions, query semantics of three REL rules); security hardening for the public deployment (export XSS, SSRF, upload limits); and major reliability work — cache hits rebuild the knowledge graph automatically, first uploads no longer fail on database warm-up, and jobs no longer hang forever after a server restart.",

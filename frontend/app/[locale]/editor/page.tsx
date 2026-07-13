@@ -11,15 +11,22 @@ import { Link, useRouter } from "@/i18n/navigation";
 import {
   createDocument,
   deleteDocument,
+  fetchImportJob,
   importDocument,
   listDocuments,
   type EditorDocListItem,
+  type ImportResult,
 } from "@/lib/api";
 
 // Accepted import types (mirrors the backend's _IMPORT_EXTS).
 const IMPORT_ACCEPT =
-  ".txt,.md,.markdown,.mdown,.docx,.tex,.latex,text/plain,text/markdown," +
+  ".txt,.md,.markdown,.mdown,.docx,.tex,.latex,.pdf,text/plain,text/markdown," +
+  "application/pdf," +
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+// PDF import runs as a backend job (scanned PDFs go through OCR — minutes).
+const IMPORT_POLL_MS = 3000;
+const IMPORT_POLL_TIMEOUT_MS = 20 * 60 * 1000;
 
 export default function EditorHomePage() {
   const t = useTranslations("editor");
@@ -60,14 +67,41 @@ export default function EditorHomePage() {
     if (!file) return;
     setImporting(true);
     try {
-      const { title, content_json } = await importDocument(file);
-      const doc = await createDocument({ locale, title, content_json });
+      const res = await importDocument(file);
+      let result: ImportResult;
+      if ("job_id" in res) {
+        result = await pollImportJob(res.job_id);
+      } else {
+        result = res;
+      }
+      const doc = await createDocument({
+        locale,
+        title: result.title,
+        content_json: result.content_json,
+      });
       toast.success(t("imported", { title: doc.title }));
       router.push(`/editor/${encodeURIComponent(doc.doc_id)}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
       setImporting(false);
     }
+  };
+
+  // Poll a PDF import job; surface the OCR stage once (scanned PDFs take minutes).
+  const pollImportJob = async (jobId: string): Promise<ImportResult> => {
+    let ocrNotified = false;
+    const deadline = Date.now() + IMPORT_POLL_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, IMPORT_POLL_MS));
+      const st = await fetchImportJob(jobId);
+      if (st.status === "done") return st;
+      if (st.status === "error") throw new Error(st.detail);
+      if (st.stage === "ocr" && !ocrNotified) {
+        ocrNotified = true;
+        toast.info(t("importOcr"), { duration: 10000 });
+      }
+    }
+    throw new Error(t("importTimeout"));
   };
 
   const handleDelete = async (docId: string) => {
@@ -128,7 +162,11 @@ export default function EditorHomePage() {
         <Card className="flex flex-col items-center gap-3 py-16 text-center">
           <FileText className="h-10 w-10 text-muted-foreground/40" />
           <p className="text-muted-foreground">{t("empty")}</p>
-          <Button onClick={handleCreate} disabled={creating} variant="secondary">
+          <Button
+            onClick={handleCreate}
+            disabled={creating}
+            variant="secondary"
+          >
             <FilePlus2 className="h-4 w-4" />
             {t("newDocument")}
           </Button>
@@ -144,7 +182,9 @@ export default function EditorHomePage() {
                 >
                   <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{d.title}</span>
+                    <span className="block truncate font-medium">
+                      {d.title}
+                    </span>
                     <span className="block text-xs text-muted-foreground">
                       {t("updatedAt")}{" "}
                       {new Date(d.updated_at).toLocaleString(locale)}

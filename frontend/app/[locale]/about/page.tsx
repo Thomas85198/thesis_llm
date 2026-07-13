@@ -359,15 +359,16 @@ export default function AboutPage() {
         {/* 7. 流程：寫作 → 匯出 PDF */}
         <Section id="flow-writing" title="流程：寫作 → LaTeX / PDF">
           <p>
-            可從既有檔案<strong>匯入</strong>（Word / Markdown / LaTeX /
-            純文字）開始編輯；輸出時，
+            可從既有檔案<strong>匯入</strong>（PDF / Word / Markdown / LaTeX /
+            純文字）開始編輯——PDF 依字型大小還原標題階層與圖片， 掃描檔自動走
+            OCR；輸出時，
             <strong>PDF 與 LaTeX 同源</strong>——先產生 <code>.tex</code>
             ，偵測到中文就自動套 ctex / XeLaTeX，再編譯成 PDF。
           </p>
           <MermaidDiagram
             caption="匯入 → 編輯 → 匯出；PDF 由 LaTeX 經 XeLaTeX 編譯"
             code={`flowchart LR
-    Imp["匯入<br/>.docx / .md / .tex / .txt"] --> ED
+    Imp["匯入<br/>.pdf / .docx / .md / .tex / .txt"] --> ED
     ED["編輯器<br/>(結構化 JSON)"]
     ED -- AI 輔助 / 引用 / 檢查 --> ED
     ED --> EXP{選擇匯出格式}
@@ -1087,10 +1088,6 @@ const AI_DETAIL = [
 ];
 
 const ROADMAP = [
-  {
-    title: "PDF 匯入編輯器",
-    desc: "把既有 PDF 草稿直接帶進寫作編輯器修改（目前主要缺口）。",
-  },
   {
     title: "規則隨用越準",
     desc: "把使用者的人工判定（判對 / 誤判）回饋給系統，自動校準規則精準度。",

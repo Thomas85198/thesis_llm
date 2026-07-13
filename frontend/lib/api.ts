@@ -493,15 +493,27 @@ export async function relinkCitations(
   return res.json();
 }
 
+export type ImportResult = { title: string; content_json: ProseMirrorDoc };
+
+// PDF 匯入走後端背景 job（掃描檔要跑 OCR，數分鐘），其餘格式同步回結果。
+export type ImportResponse =
+  | ImportResult
+  | { job_id: string; status: "processing" };
+
+export type ImportJobStatus =
+  | { status: "processing"; stage: "parse" | "ocr" }
+  | ({ status: "done" } & ImportResult)
+  | { status: "error"; detail: string };
+
 /**
- * Parse an uploaded .txt / .md / .docx / .tex file into editor (ProseMirror)
- * JSON server-side. Returns the detected title and content; the caller creates a
- * new document from it. Embedded DOCX images are saved server-side and referenced
- * by figure nodes, so they render and re-export like any uploaded image.
+ * Parse an uploaded .txt / .md / .docx / .tex / .pdf file into editor
+ * (ProseMirror) JSON server-side. Non-PDF formats return the detected title and
+ * content synchronously; PDFs return a job_id to poll via fetchImportJob (the
+ * scanned-PDF OCR path takes minutes). Embedded images are saved server-side
+ * and referenced by figure nodes, so they render and re-export like any
+ * uploaded image.
  */
-export async function importDocument(
-  file: File,
-): Promise<{ title: string; content_json: ProseMirrorDoc }> {
+export async function importDocument(file: File): Promise<ImportResponse> {
   const form = new FormData();
   form.append("file", file);
   const res = await fetch(`${API_BASE}/api/editor/import`, {
@@ -512,6 +524,12 @@ export async function importDocument(
     throw new Error(`importDocument failed: ${res.status} ${await res.text()}`);
   }
   return res.json();
+}
+
+export async function fetchImportJob(jobId: string): Promise<ImportJobStatus> {
+  return get<ImportJobStatus>(
+    `/api/editor/import/jobs/${encodeURIComponent(jobId)}`,
+  );
 }
 
 /** Thrown when a PUT is rejected because the document was modified elsewhere

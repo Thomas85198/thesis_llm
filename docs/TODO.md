@@ -1,6 +1,6 @@
 # 專案現況 / 待辦
 
-> 最後更新：2026-07-01
+> 最後更新：2026-07-13
 > 用途：只放「目前在做 / 還沒做的事」。已完成的歷史不留在這，看 git log 與 `/changelog`。
 >
 > **各層文件的分工（互不重疊）**
@@ -12,9 +12,9 @@
 
 ---
 
-## 現況快照（2026-07-01）
+## 現況快照（2026-07-13）
 
-- **產品端**：審稿 + AI 寫作編輯器兩大子系統都上線；編輯器已到 **v4.17.1**（三格式一致、專注模式、文法 lint、缺陷一鍵套用、多格式匯入皆完成）。中英 i18n + 深色模式已併入 `main`。
+- **產品端**：審稿 + AI 寫作編輯器兩大子系統都上線；編輯器已到 **v4.19.0**（三格式一致、專注模式、文法 lint、缺陷一鍵套用、五格式匯入含 PDF 皆完成）。中英 i18n + 深色模式已併入 `main`。
 - **研究端**：離線消融實驗（三 arm × 雙 judge pairwise）的 harness 已進版控（`backend/experiments/`，commit `88ffaf9`）。目前在 `experiment/ablation` 分支收尾。
 - **REL 擴展**：老師會議提出 6 類新缺陷 + student-thesis-review skill（14 條）→ REL 擴展計畫已定調（全 symbolic KG 擴充），見待辦 D 組。
 - **實驗結論屬敏感區**：任何勝負數字 / 一致率一律以 `backend/experiments/HANDOVER.md` 標記「已驗證」者為準，不要憑記憶引用。
@@ -31,7 +31,11 @@
 5. 收斂出可寫進論文 evaluation 章節的結論
 
 ### B. 產品缺口
-6. **PDF 匯入編輯器**——把既有 PDF 草稿直接帶進寫作編輯器修改（`/about` 未來展望列為主要缺口）
+6. ✅ **PDF 匯入編輯器**（2026-07-13，v4.19.0，使用者已驗收）——pymupdf4llm 依字型大小
+   還原標題階層 → 現成 markdown 匯入管線；掃描檔自動 OCR（背景 job + 輪詢）；
+   浮水印自動移除；`_pdf_post_process` 8-pass 後處理對齊 Word 匯入品質
+   （頁碼/目錄殘渣清除、跨頁段落與長表接回、參考文獻重組、標題層級重定、
+   標點錯亂重建）。已知限制：複雜多行儲存格的跨欄語序（pymupdf4llm 固有）。
 7. 規則回饋校準：把人工判定（判對 / 誤判）回饋給系統，自動校準規則精準度。⚠️ 校正（2026-07-02）：擷取端（標註存 SQLite + `/api/judgments/summary` 算 precision）已就緒，但**線上 few-shot 注入迴路的程式尚未實作**（`db.get_judgment_examples` / `check_rule` 範例注入都不存在，現為 zero-shot）；要閉合迴路須新寫這段，見 SYSTEM.md §3.6
 
 ### C. 基建（實用功能穩了再做）
@@ -216,7 +220,7 @@ Related Work 深度/比較表（skill #3，偏人工判斷）。
 
 ### E6. 值得補的功能（先修完上面再談）
 
-- **PDF 匯入編輯器**：已在待辦 B/6，分析管線的 PyMuPDF 可複用。
+- ✅ **PDF 匯入編輯器**：已完成，見待辦 B/6。
 - **DOCX 數學式轉 OMML**：目前 DOCX 只輸出字面 `$...$`（LaTeX/PDF 真排版、HTML 走 MathJax）→ 三格式一致的北極星下 DOCX 是落後者（`export_doc.py:476`）。
 - **論文問答對話持久化 + streaming**（`chat-drawer.tsx:52`）：目前存 component state，換頁即消失、無 SSE（rewrite/autocomplete 都已 SSE），長回答乾等 spinner。
 - **部署自動備份/監控**：目前僅手動 `docker compose cp` 一條指令，且 uploads/ 與 neo4j-data 完全無備份。對「給老師長期用」是缺口（見 E7 備份修法）。

@@ -498,6 +498,15 @@ def _omml_element(latex: str, block: bool = False):
         from docx.oxml import parse_xml
 
         omml = mathml2omml.convert(latex2mathml.converter.convert(latex))
+        # mathml2omml 0.0.2 的 MUnder/MOver 把 </m:groupChrPr> 誤植為
+        # </m:groupChr>（\bar/\overline/\underline 這類修飾必踩），XML 直接
+        # 解析失敗。錯誤關閉標籤永遠緊跟在 <m:pos .../> 屬性後，精準修補。
+        omml = omml.replace(
+            '<m:pos m:val="top"/></m:groupChr>', '<m:pos m:val="top"/></m:groupChrPr>'
+        )
+        omml = omml.replace(
+            '<m:pos m:val="bot"/></m:groupChr>', '<m:pos m:val="bot"/></m:groupChrPr>'
+        )
         if block:
             # oMathPara = display equation；Word 預設置中，與 LaTeX \[..\] 一致。
             xml = f"<m:oMathPara {_OMML_NS}>{omml}</m:oMathPara>"

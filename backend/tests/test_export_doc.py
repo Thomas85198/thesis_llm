@@ -396,3 +396,11 @@ def test_omml_element_handles_garbage():
     # 正常式子回 lxml element
     el = export_doc._omml_element("x^2")
     assert el is not None and el.tag.endswith("}oMath")
+
+
+def test_omml_patches_mathml2omml_groupchr_bug():
+    """mathml2omml 0.0.2 對 \\bar/\\overline（MOver/MUnder groupChr）輸出
+    錯誤關閉標籤 → XML 解析失敗。已做精準修補，統計常用符號必須原生輸出。"""
+    for latex in (r"\bar{X} = \frac{1}{n}\sum_{i=1}^{n} X_i", r"\overline{AB}",
+                  r"\underline{x}", r"\underbrace{a+b}_{2}"):
+        assert export_doc._omml_element(latex) is not None, latex

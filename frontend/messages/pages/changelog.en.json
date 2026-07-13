@@ -29,6 +29,14 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_20_0": {
+      "title": "Paper assistant: live streaming + persistent conversations",
+      "summary": "The paper assistant gets a full upgrade: replies now stream in live — words start appearing within a second instead of waiting on a spinner for the whole answer; conversations are stored in the database, so the thread survives reloads and navigation, and can be cleared with one click. Also fixed the dimmed background: clicking an [EDU] citation now jumps the PDF behind the drawer so you can chat and check the source side by side.",
+      "changes": {
+        "0": "Live streamed replies (SSE, same plumbing as autocomplete/rewrite): first token in ~2s, typewriter output; conversations persisted per paper (auto-pruned), surviving reloads and navigation, with one-click clear.",
+        "1": "The assistant drawer is now non-modal (matching the defect panel): the PDF behind stays visible and interactive, and clicking an [EDU:xxx] citation jumps straight to the source without closing the assistant."
+      }
+    },
     "4_19_0": {
       "title": "PDF import for the editor",
       "summary": "The writing editor's last missing import format: upload an existing PDF draft and the system reconstructs heading levels from font sizes, extracts embedded images with their captions, and turns it into an editable document. Scanned PDFs without a text layer automatically go through OCR (processed in the background with live progress), then open in the editor the same way.",

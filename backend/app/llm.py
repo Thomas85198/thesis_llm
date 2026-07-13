@@ -339,6 +339,7 @@ def stream_completion(
     model: str,
     system: str,
     user_content: str,
+    history: list[dict[str, str]] | None = None,
     max_tokens: int = 256,
     temperature: float | None = None,
     paper_id: str | None = None,
@@ -349,6 +350,9 @@ def stream_completion(
     The counterpart to call_with_tool: that one forces a function call and returns
     a parsed dict synchronously; this one is for open-ended generation (e.g. the
     editor's autocomplete) where we want tokens to flow to the UI immediately.
+    `history` slots prior conversation turns (role/content dicts) between the
+    system prompt and the latest user message — the paper-chat assistant is the
+    consumer; single-shot callers just omit it.
 
     Cost is logged once at the end — OpenAI emits a final usage-only chunk when
     stream_options.include_usage is set. We retry only opening the stream (same
@@ -357,6 +361,7 @@ def stream_completion(
     """
     messages = [
         {"role": "system", "content": system},
+        *({"role": m["role"], "content": m["content"]} for m in (history or [])),
         {"role": "user", "content": user_content},
     ]
     temp = llm_temperature() if temperature is None else temperature

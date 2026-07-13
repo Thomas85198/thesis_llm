@@ -416,6 +416,79 @@ export async function sendChat(
   return res.json();
 }
 
+/** Persisted chat thread for a paper (oldest first). */
+export async function fetchChatHistory(
+  paperId: string,
+): Promise<ChatMessage[]> {
+  const res = await get<{ messages: ChatMessage[] }>(
+    `/api/papers/${encodeURIComponent(paperId)}/chat`,
+  );
+  return res.messages;
+}
+
+export async function clearChatHistory(paperId: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/papers/${encodeURIComponent(paperId)}/chat`,
+    { method: "DELETE" },
+  );
+  if (!res.ok)
+    throw new Error(`clear chat failed: ${res.status} ${await res.text()}`);
+}
+
+/**
+ * Streaming chat turn (SSE). History lives server-side — send only the new
+ * user message; deltas arrive via onDelta. 429 throws ChatRateLimitError.
+ */
+export async function streamChat(
+  paperId: string,
+  message: string,
+  lang: string | undefined,
+  onDelta: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/papers/${encodeURIComponent(paperId)}/chat/stream`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, lang }),
+      signal,
+    },
+  );
+  if (res.status === 429) {
+    const text = await res.text();
+    const m = text.match(/~(\d+)s/);
+    throw new ChatRateLimitError(text, m ? Number(m[1]) : 30);
+  }
+  if (!res.ok || !res.body)
+    throw new Error(`chat failed: ${res.status} ${await res.text()}`);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+    for (const evt of events) {
+      const line = evt.trim();
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (data === "[DONE]") return;
+      let parsed: { t?: string; error?: string };
+      try {
+        parsed = JSON.parse(data);
+      } catch {
+        continue; // ignore malformed chunk
+      }
+      if (parsed.error) throw new Error(parsed.error);
+      if (parsed.t) onDelta(parsed.t);
+    }
+  }
+}
+
 // ---------- editor mode: writing documents ----------
 
 // TipTap/ProseMirror serialized document. Kept structurally opaque here so the

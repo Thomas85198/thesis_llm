@@ -825,13 +825,25 @@ _SENTENCE_END = "。．.！？!?；;："
 _PSEUDO_HEADING_LEN = 40
 
 
+# 圖說/資料來源被套上 Heading style（DOCX 常見）或被字級誤判（PDF）——
+# 都不是結構標題，會污染大綱與目錄。
+_JUNK_HEADING_RE = re.compile(
+    r"^(?:[（(]?資料來源|來源[:：]|(?:圖|表|Figure|Table)\s*\d+(?:[-－.]\d+)?"
+    r"|\([a-z]\)\s|\d{4}\s*年)"
+)
+
+
 def _demote_pseudo_headings(blocks: list[dict]) -> list[dict]:
     """Demote mis-styled body paragraphs (DOCX) that came in as headings."""
     out: list[dict] = []
     for b in blocks:
         if b.get("type") == "heading":
             s = _node_text(b).strip()
-            if len(s) >= _PSEUDO_HEADING_LEN or (s and s[-1] in _SENTENCE_END):
+            if (
+                len(s) >= _PSEUDO_HEADING_LEN
+                or (s and s[-1] in _SENTENCE_END + "，,、")
+                or _JUNK_HEADING_RE.match(s)
+            ):
                 inline = b.get("content")
                 out.append(
                     {"type": "paragraph", "content": inline}
@@ -952,7 +964,25 @@ def _directory_node_for(block: dict) -> str | None:
 def _is_directory_debris(block: dict) -> bool:
     """A leftover TOC entry: an empty paragraph, a tab-leadered line, or a line
     ending in leader dots + a page number. These are what a Word TOC field
-    degrades into on import — safe to drop in favour of a live directory node."""
+    degrades into on import — safe to drop in favour of a live directory node.
+    PDF 匯入另會把整頁目錄辨識成「單欄、全是點 leader」的表格，一併認定。"""
+    if block.get("type") == "tableBlock":
+        rows = [
+            r
+            for c in block.get("content", [])
+            if c.get("type") == "table"
+            for r in c.get("content", [])
+        ]
+        if not rows or len(rows[0].get("content", [])) != 1:
+            return False
+        cells = [
+            _node_text(cell).strip()
+            for r in rows
+            for cell in r.get("content", [])
+            if _node_text(cell).strip()
+        ]
+        leadered = sum(1 for t in cells if re.search(r"[.…]{4,}", t))
+        return bool(cells) and leadered >= 0.8 * len(cells)
     if block.get("type") != "paragraph":
         return False
     raw = _node_text(block)
@@ -960,7 +990,8 @@ def _is_directory_debris(block: dict) -> bool:
         return True
     if "\t" in raw:
         return True
-    return bool(re.search(r"[.…]{2,}\s*\d+$", raw.strip()))
+    # 頁碼可能是阿拉伯數字、羅馬數字（前置頁），或被截掉只剩點 leader
+    return bool(re.search(r"[.…]{2,}\s*(?:\d+|[ivxlcdm]+)?\s*$", raw.strip(), re.I))
 
 
 def _relink_directories(blocks: list[dict]) -> list[dict]:
@@ -1158,15 +1189,531 @@ def from_pdf(raw: bytes) -> tuple[str, dict]:
                 image_format="png",
                 use_ocr=False,
                 ignore_code=True,
+                # 剝除 running header/footer（layout 模型分類，非 y 座標猜測）：
+                # 不加的話 113 頁論文會混入 110 個純頁碼段落打斷正文。
+                header=False,
+                footer=False,
+                # 頁界標記（"--- end of page.… ---" 文字行），供跨頁段落/表格
+                # 合併使用，_merge_page_boundaries 用完即棄。
+                page_separators=True,
             )
         finally:
             pdf.close()
         title, doc = from_markdown(md)
         _localize_pdf_images(doc, Path(td))
     _strip_code_marks(doc)  # 殘餘的行內 code span（CJK 誤判 monospace）
+    doc["content"] = _pdf_post_process(doc["content"], raw)
     blocks = _unwrap_pseudo_blockquotes(_demote_pseudo_headings(doc["content"]))
     doc["content"] = _attach_captions(blocks)
     return title or meta_title, doc
+
+
+# ---------- pdf post-processing（只掛在 from_pdf 路徑）----------
+#
+# pymupdf4llm layout 模式對「排版後的論文 PDF」有一批系統性誤讀，DOCX 匯入
+# （結構直接來自 Word style）都沒有。這條 pass 鏈把 PDF 匯入結果整回與
+# DOCX 匯入一致的形狀。每個 pass 對應一個實測病灶，順序有相依性。
+
+_PAGE_SEP_RE = re.compile(r"^-{2,}\s*end of page.*?-{2,}\s*$", re.I)
+_SENT_END_CHARS = set("。．.！？!?；;：:…")
+_CLOSERS = "」』〉》）)]｝}＞>\"'"
+_FW_PUNCT = "、。，；：！？（）「」『』《》〈〉【】"
+_CJK_PUNCT_CLASS = r"㐀-鿿豈-﫿" + _FW_PUNCT
+
+# 條目/標籤式行首：跨頁合併與清單項合併時，撞到這些開頭就不併
+_LABEL_START_RE = re.compile(
+    r"^(?:（[一二三四五六七八九十]+）|\([a-z0-9]{1,3}\)|[一二三四五六七八九十]+、"
+    r"|第[一-鿿\d]+章|附錄|圖\s*\d|表\s*\d|H\d|[\d.]+\s)"
+)
+# 參考文獻條目開頭（拉丁作者 (年) / 中文作者（年） / 分組標籤）
+_REF_ENTRY_RE = re.compile(
+    r"^(?:[A-Z][^()]{0,100}\(\d{4}[a-z]?\)"
+    r"|[㐀-鿿]{1,8}[、，]?[㐀-鿿、，\s]{0,25}[（(]\s*\d{4}"
+    r"|網路資源$|中文$|英文$)"
+)
+
+
+def _ends_sentence(s: str) -> bool:
+    s = s.rstrip()
+    while s and s[-1] in _CLOSERS:
+        s = s[:-1].rstrip()
+    return bool(s) and s[-1] in _SENT_END_CHARS
+
+
+def _join_text(a: str, b: str) -> str:
+    """CJK 邊界直接相連，其餘補一個空格（模擬原始換行的語意）。"""
+    if not a:
+        return b
+    if not b:
+        return a
+    if a[-1] == "-" and re.match(r"[a-z]", b[:1]):  # URL/英文斷字換行
+        return a + b
+    if (
+        _CJK_RE.search(a[-1])
+        or _CJK_RE.search(b[0])
+        or a[-1] in _FW_PUNCT
+        or b[0] in _FW_PUNCT
+    ):
+        return a + b
+    return a + " " + b
+
+
+def _para_of(text: str) -> dict:
+    return _para([_text(text)])
+
+
+def _merge_paras(a: dict, b: dict) -> dict:
+    return _para_of(_join_text(_node_text(a).strip(), _node_text(b).strip()))
+
+
+def _split_caption_lines(blocks: list[dict]) -> list[dict]:
+    """pymupdf4llm 常把「圖說＋資料來源」甚至「圖說＋下一張表的標題」併成
+    同一行；先拆開，_attach_captions 才會只把圖說折進 figure、資料來源留在
+    正文（對齊 DOCX）、表題留給表格。"""
+    out: list[dict] = []
+    for b in blocks:
+        if b.get("type") != "paragraph":
+            out.append(b)
+            continue
+        s = _node_text(b).strip()
+        if not _FIG_CAPTION.match(s) and not _TBL_CAPTION.match(s):
+            out.append(b)
+            continue
+        pieces: list[str]
+        m = re.search(r"[（(]?資料來源", s)  # 資料來源
+        if m and m.start() > 4:
+            pieces = [s[: m.start()].strip(), s[m.start() :].strip()]
+        else:
+            pieces = [s]
+        final: list[str] = []
+        for p in pieces:
+            m2 = re.search(r"(?<!^)表\s*\d+[-－.]\d+", p)  # 內嵌「表 N-N」
+            if m2:
+                final += [p[: m2.start()].strip(), p[m2.start() :].strip()]
+            else:
+                final.append(p)
+        out += [_para_of(p) for p in final if p]
+    return out
+
+
+def _flatten_pdf_lists(blocks: list[dict]) -> list[dict]:
+    """layout 模式把懸掛縮排（參考文獻）與字面編號「1. 2.」段落當成清單，
+    近半 listItem 是斷行碎片。先把碎片項併回，再依 DOCX 基準攤平：
+    orderedList（字面編號）保留編號攤成段落；bulletList 僅在「≥2 項且每項
+    都短」時保留，其餘攤平。"""
+    refs_at = len(blocks)
+    for i, b in enumerate(blocks):
+        if b.get("type") == "heading" and re.match(
+            r"^(參考文獻|References|Bibliography)\b",
+            _node_text(b).strip(),
+        ):
+            refs_at = i
+            break
+
+    out: list[dict] = []
+    for i, b in enumerate(blocks):
+        if b.get("type") not in ("bulletList", "orderedList"):
+            out.append(b)
+            continue
+        items = [
+            _node_text(li).strip()
+            for li in b.get("content", [])
+            if _node_text(li).strip()
+        ]
+        merged: list[str] = []
+        for it in items:
+            if (
+                merged
+                and len(merged[-1]) >= 30  # 真 bullet 通常短；碎片來自長句斷行
+                and not _ends_sentence(merged[-1])
+                and not _LABEL_START_RE.match(it)
+                and not _REF_ENTRY_RE.match(it)
+            ):
+                merged[-1] = _join_text(merged[-1], it)
+            else:
+                merged.append(it)
+        ordered = b["type"] == "orderedList"
+        keep = (
+            not ordered
+            and i < refs_at
+            and len(merged) >= 2
+            and all(len(m) <= 40 for m in merged)
+        )
+        if keep:
+            out.append(
+                {
+                    "type": "bulletList",
+                    "content": [
+                        {"type": "listItem", "content": [_para_of(m)]} for m in merged
+                    ],
+                }
+            )
+        else:
+            start = int((b.get("attrs") or {}).get("start") or 1)
+            for k, m in enumerate(merged):
+                out.append(_para_of(f"{start + k}. {m}" if ordered else m))
+    return out
+
+
+def _row_texts(row: dict) -> list[str]:
+    return [_node_text(c).strip() for c in row.get("content", [])]
+
+
+def _demote_header_row(row: dict) -> dict:
+    return {
+        "type": "tableRow",
+        "content": [
+            {**c, "type": "tableCell"} if c.get("type") == "tableHeader" else c
+            for c in row.get("content", [])
+        ],
+    }
+
+
+def _table_rows(tb: dict) -> list[dict]:
+    for c in tb.get("content", []):
+        if c.get("type") == "table":
+            return c.get("content", [])
+    return []
+
+
+def _merge_tables(a: dict, b: dict) -> dict:
+    """跨頁被切開的同一張表：接回 b 的列。b 的第一列若是重複表頭就丟棄，
+    否則是被升格的資料列，降回 tableCell。"""
+    rows_a, rows_b = _table_rows(a), _table_rows(b)
+    if rows_b:
+        if rows_a and _row_texts(rows_b[0]) == _row_texts(rows_a[0]):
+            rows_b = rows_b[1:]
+        rows_a.extend(_demote_header_row(r) for r in rows_b)
+    return a
+
+
+def _col_count(tb: dict) -> int:
+    rows = _table_rows(tb)
+    return len(rows[0].get("content", [])) if rows else 0
+
+
+def _table_has_caption(tb: dict) -> bool:
+    for c in tb.get("content", []):
+        if c.get("type") == "tableCaption":
+            return bool(_node_text(c).strip())
+    return False
+
+
+def _merge_page_boundaries(blocks: list[dict]) -> list[dict]:
+    """用 page_separators 標記把跨頁切斷的段落／表格接回，然後丟棄標記。
+    段落合併是保守閥：只在頁界、前段沒收尾、後段像接續句時才併。"""
+    out: list[dict] = []
+    i = 0
+    while i < len(blocks):
+        b = blocks[i]
+        if b.get("type") == "paragraph" and _PAGE_SEP_RE.match(_node_text(b).strip()):
+            prev = out[-1] if out else None
+            nxt = blocks[i + 1] if i + 1 < len(blocks) else None
+            if prev is not None and nxt is not None:
+                if (
+                    prev.get("type") == "paragraph"
+                    and nxt.get("type") == "paragraph"
+                    and not _ends_sentence(_node_text(prev))
+                    and len(_node_text(prev).strip()) >= 30
+                    and re.match(r"[㐀-鿿a-z]", _node_text(nxt).strip()[:1] or "-")
+                    and not _LABEL_START_RE.match(_node_text(nxt).strip())
+                ):
+                    out[-1] = _merge_paras(prev, nxt)
+                    i += 2
+                    continue
+                if (
+                    prev.get("type") == "tableBlock"
+                    and nxt.get("type") == "tableBlock"
+                    and _col_count(prev) == _col_count(nxt)
+                    and _col_count(prev) > 0
+                    and not _table_has_caption(nxt)
+                ):
+                    out[-1] = _merge_tables(prev, nxt)
+                    i += 2
+                    continue
+            i += 1  # 丟棄標記本身
+            continue
+        # 頁界之外的窄規則：URL / Retrieved from 斷行
+        if (
+            out
+            and out[-1].get("type") == "paragraph"
+            and b.get("type") == "paragraph"
+            and re.search(
+                r"(?:Retrieved from|Available at|https?://\S*[-/])$",
+                _node_text(out[-1]).strip(),
+            )
+            and re.match(
+                r"(?:https?://|\S+\.(?:com|org|net|edu))", _node_text(b).strip()
+            )
+        ):
+            out[-1] = _merge_paras(out[-1], b)
+            i += 1
+            continue
+        out.append(b)
+        i += 1
+    return out
+
+
+def _repair_pdf_tables(blocks: list[dict]) -> list[dict]:
+    """兩個表內修復：(1) caption 被吸進第一列 → 拉回 tableCaption、第二列
+    升格表頭；(2) 多行儲存格被拆成「首欄空白的延續列」→ 折回上一列。"""
+    out: list[dict] = []
+    for b in blocks:
+        if b.get("type") != "tableBlock":
+            out.append(b)
+            continue
+        rows = _table_rows(b)
+        if rows and not _table_has_caption(b):
+            texts = _row_texts(rows[0])
+            joined = re.sub(r"\s+", "", "".join(texts))
+            nonempty = [t for t in texts if t]
+            mcap = _TBL_CAPTION.match(joined)
+            if mcap and len(nonempty) <= 2:
+                rows.pop(0)
+                if rows:
+                    rows[0] = {
+                        "type": "tableRow",
+                        "content": [
+                            {**c, "type": "tableHeader"}
+                            if c.get("type") == "tableCell"
+                            else c
+                            for c in rows[0].get("content", [])
+                        ],
+                    }
+                new_b = _set_table_caption(b, mcap.group(1) or joined)
+                _table_rows(new_b)[:] = rows
+                b = new_b
+        rows = _table_rows(b)
+        folded: list[dict] = []
+        for r in rows:
+            texts = _row_texts(r)
+            empties = sum(1 for t in texts if not t)
+            if (
+                folded
+                and len(texts) >= 2
+                and not texts[0]
+                and empties * 2 >= len(texts)
+            ):
+                prev_cells = folded[-1].get("content", [])
+                for ci, t in enumerate(texts):
+                    if t and ci < len(prev_cells):
+                        old = _node_text(prev_cells[ci]).strip()
+                        prev_cells[ci]["content"] = [_para_of(_join_text(old, t))]
+                continue
+            folded.append(r)
+        _table_rows(b)[:] = folded
+        out.append(b)
+    return out
+
+
+def _rebuild_references(blocks: list[dict]) -> list[dict]:
+    """參考文獻區：hanging indent 造成的條目斷裂併回（一條文獻一段）。"""
+    refs_at = next(
+        (
+            i
+            for i, b in enumerate(blocks)
+            if b.get("type") == "heading"
+            and re.match(
+                r"^(參考文獻|References|Bibliography)\b",
+                _node_text(b).strip(),
+            )
+        ),
+        None,
+    )
+    if refs_at is None:
+        return blocks
+    end = next(
+        (
+            i
+            for i in range(refs_at + 1, len(blocks))
+            if blocks[i].get("type") == "heading"
+            and re.match(r"^(附錄|Appendix)", _node_text(blocks[i]).strip())
+        ),
+        len(blocks),
+    )
+    rebuilt: list[dict] = []
+    for b in blocks[refs_at + 1 : end]:
+        if b.get("type") != "paragraph":
+            rebuilt.append(b)
+            continue
+        s = _node_text(b).strip()
+        if (
+            rebuilt
+            and rebuilt[-1].get("type") == "paragraph"
+            and not _REF_ENTRY_RE.match(s)
+            and not _ends_sentence(_node_text(rebuilt[-1]))
+        ):
+            rebuilt[-1] = _merge_paras(rebuilt[-1], b)
+        else:
+            rebuilt.append(b)
+    return blocks[: refs_at + 1] + rebuilt + blocks[end:]
+
+
+# 結構錨點：這之前的 heading 都是封面殘影（校名/題目/Master Thesis）。
+# 編號起手（1. / 1.1 / Chapter N）也算，英文或無 front-matter 的文件才不會
+# 被整份誤降。
+_FRONT_ANCHOR_RE = re.compile(
+    r"^(誌謝|謝辭|中文摘要|摘要|英文摘要|Abstract|Acknowledg|目錄|Contents"
+    r"|第[一-鿿\d]+\s*章|Chapter\s|\d+[.、\s]|Introduction)"
+)
+
+
+def _renumber_heading_levels(blocks: list[dict]) -> list[dict]:
+    """論文的節與小節常同字級，pymupdf4llm 全判 H3；依編號前綴重定層級，
+    並清掉封面與參考文獻之後的字級誤判標題。"""
+    # fail-open：整份文件找不到結構錨點（如第一個章標題被抽成文件 title），
+    # 就不做封面降級，避免把全部標題誤降。
+    anchor_seen = not any(
+        b.get("type") == "heading" and _FRONT_ANCHOR_RE.match(_node_text(b).strip())
+        for b in blocks
+    )
+    refs_seen = False
+    out: list[dict] = []
+    for b in blocks:
+        if b.get("type") != "heading":
+            out.append(b)
+            continue
+        s = _node_text(b).strip()
+        if not anchor_seen and _FRONT_ANCHOR_RE.match(s):
+            anchor_seen = True
+        if not anchor_seen:
+            out.append(_para_of(s))
+            continue
+        if re.match(r"^(參考文獻|References|Bibliography)\b", s):
+            refs_seen = True
+            out.append({**b, "attrs": {"level": 1}})
+            continue
+        if refs_seen and not re.match(r"^(附錄|Appendix)", s):
+            out.append(_para_of(s))  # 網路資源/中文/英文、同意書條款等字級誤判
+            continue
+        level = None
+        if re.match(r"^(第[一-鿿\d]+\s*章|附錄|Appendix)", s):
+            level = 1
+        elif re.match(r"^\d+\.\d+\.\d+\b", s):
+            level = 3
+        elif re.match(r"^\d+\.\d+\b", s):
+            level = 2
+        if level is not None:
+            out.append({**b, "attrs": {"level": level}})
+        else:
+            out.append(b)
+    return out
+
+
+def _split_inline_numbered_headings(blocks: list[dict]) -> list[dict]:
+    """「3.1.2 訪談對象 訪談對象主要針對…」——編號標題被黏進段落開頭時
+    切成 heading＋段落；「（一）短標」獨立短段升為 H3（對齊 DOCX 基準）。"""
+    out: list[dict] = []
+    for b in blocks:
+        if b.get("type") != "paragraph":
+            out.append(b)
+            continue
+        s = _node_text(b).strip()
+        m = re.match(r"^(\d+\.\d+(?:\.\d+)?)[ 　]+(\S{2,25})[ 　]+(\S.*)$", s)
+        if m and not re.match(r"^\d", m.group(2)):
+            level = 3 if m.group(1).count(".") == 2 else 2
+            out.append(_heading(level, [_text(f"{m.group(1)} {m.group(2)}")]))
+            out.append(_para_of(m.group(3)))
+            continue
+        if re.match(
+            r"^（[一二三四五六七八九十]+）[ 　]*\S{2,20}$", s
+        ) and not _ends_sentence(s):
+            out.append(_heading(3, [_text(s)]))
+            continue
+        # 「…呈正相關。（二）感知隱私權」——枚舉小節標題黏在上一段結尾
+        m3 = re.search(
+            r"(?<=[。！？!?；;])\s*（[一二三四五六七八九十]+）[ 　]*\S{2,20}$", s
+        )
+        if m3:
+            out.append(_para_of(s[: m3.start()].strip()))
+            out.append(_heading(3, [_text(s[m3.start() :].strip())]))
+            continue
+        out.append(b)
+    return out
+
+
+_CJK_GAP_RE = re.compile(rf"(?<=[{_CJK_PUNCT_CLASS}])[ \t]+(?=[{_CJK_PUNCT_CLASS}])")
+# 全形括號「內側」的空白（「（ 2000 ）」→「（2000）」），內容不限 CJK
+_FW_BRACKET_GAP_RE = re.compile(r"(?<=[（「『《〈【])[ \t]+|[ \t]+(?=[）」』》〉】])")
+
+
+def _strip_cjk_gaps(node: dict) -> None:
+    """PDF 換行/對齊殘留的 CJK 字間空白（「網路成 癮」「（ 2000 ）」）。"""
+    if node.get("type") == "text" and node.get("text"):
+        node["text"] = _FW_BRACKET_GAP_RE.sub("", _CJK_GAP_RE.sub("", node["text"]))
+    for ch in node.get("content", []):
+        _strip_cjk_gaps(ch)
+
+
+# 孤兒全形標點（「、 、 。 帳號」）＝ layout 模式對 justified 混排行的
+# span 排序錯亂特徵
+_ORPHAN_PUNCT_RE = re.compile(r"(?:^|\s)[、。，；：！？](?=\s|$)")
+
+
+def _repair_scrambled_paragraphs(blocks: list[dict], raw: bytes) -> None:
+    """對出現孤兒標點的段落，用原生 span 文字（順序正確）重建內文：
+    以 12 字滑窗在原生全文定位，字元多重集吻合 ≥90% 才替換。"""
+    from collections import Counter
+
+    from . import pipeline
+
+    scrambled = [
+        b
+        for b in blocks
+        if b.get("type") == "paragraph"
+        and len(_ORPHAN_PUNCT_RE.findall(_node_text(b))) >= 2
+    ]
+    if not scrambled:
+        return
+    spans = pipeline._extract_pdf_spans_native(raw)
+    raw_text = "".join(
+        s.text
+        for s in spans
+        if not re.fullmatch(r"(?:\d{1,4}|[ivxlcdm]{1,6})", s.text.strip(), re.I)
+    )
+    norm_chars: list[str] = []
+    idx_map: list[int] = []
+    for i, ch in enumerate(raw_text):
+        if not ch.isspace():
+            norm_chars.append(ch)
+            idx_map.append(i)
+    t_norm = "".join(norm_chars)
+
+    for b in scrambled:
+        p = _node_text(b)
+        p_norm = "".join(ch for ch in p if not ch.isspace())
+        if len(p_norm) < 30:
+            continue
+        starts = []
+        for k in range(0, len(p_norm) - 12, 8):
+            pos = t_norm.find(p_norm[k : k + 12])
+            if pos >= 0:
+                starts.append(pos - k)
+        if len(starts) < 3:
+            continue
+        start = max(0, min(starts))
+        end = min(len(t_norm), start + len(p_norm))
+        window = t_norm[start:end]
+        overlap = sum((Counter(window) & Counter(p_norm)).values())
+        if overlap < 0.9 * len(p_norm):
+            continue
+        raw_slice = raw_text[idx_map[start] : idx_map[end - 1] + 1]
+        fixed = _join_ocr_lines(raw_slice.splitlines())
+        b["content"] = [_text(fixed)]
+
+
+def _pdf_post_process(blocks: list[dict], raw: bytes) -> list[dict]:
+    blocks = _flatten_pdf_lists(blocks)
+    blocks = _split_caption_lines(blocks)
+    blocks = _merge_page_boundaries(blocks)
+    blocks = _repair_pdf_tables(blocks)
+    blocks = _rebuild_references(blocks)
+    blocks = _split_inline_numbered_headings(blocks)
+    blocks = _renumber_heading_levels(blocks)
+    _repair_scrambled_paragraphs(blocks, raw)
+    for b in blocks:
+        _strip_cjk_gaps(b)
+    return blocks
 
 
 _CJK_RE = re.compile(r"[㐀-鿿豈-﫿]")

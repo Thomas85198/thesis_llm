@@ -252,6 +252,170 @@ def test_from_pdf_ocr_groups_paragraphs(monkeypatch, native_pdf: bytes):
     ]
 
 
+# ---------- pdf post-processing（layout 模式病灶的回歸鎖）----------
+
+
+def _pdf_with_md(monkeypatch, native_pdf: bytes, md: str) -> dict:
+    """走 to_prosemirror 完整鏈（含 _relink_directories），markdown 由測試指定。"""
+    import pymupdf4llm
+
+    monkeypatch.setattr(pymupdf4llm, "to_markdown", lambda doc, **kw: md)
+    _, doc = import_doc.to_prosemirror("test.pdf", native_pdf)
+    return doc
+
+
+def test_pdf_cover_demoted_and_levels_renumbered(monkeypatch, native_pdf):
+    md = (
+        "## 長庚大學資訊管理學系\n\n## 碩士論文\n\n"
+        "# 誌謝\n\n感謝大家。\n\n"
+        "# 第一章 緒論\n\n### 1.1 研究背景與動機\n\n內文。\n\n"
+        "### 1.1.1 小節\n\n內文。\n\n"
+        "# 參考文獻\n\n### 網路資源\n\n# 附錄一 問卷\n\n內文。\n"
+    )
+    doc = _pdf_with_md(monkeypatch, native_pdf, md)
+    heads = [
+        (b["attrs"]["level"], _all_text(b))
+        for b in doc["content"]
+        if b["type"] == "heading"
+    ]
+    assert (1, "誌謝") in heads
+    assert (2, "1.1 研究背景與動機") in heads  # H3 → H2（依編號）
+    assert (3, "1.1.1 小節") in heads
+    assert all("長庚大學" not in t and "碩士論文" != t for _, t in heads)  # 封面降級
+    assert all(t != "網路資源" for _, t in heads)  # 參考文獻區字級誤判降級
+    assert any(t.startswith("附錄") and lv == 1 for lv, t in heads)
+
+
+def test_pdf_page_boundary_paragraph_and_table_merge(monkeypatch, native_pdf):
+    md = (
+        "# 第一章 緒論\n\n"
+        "Instagram 是目前最容\n\n--- end of page.page_number=2 ---\n\n"
+        "易導致年輕族群產生心理症狀的平台，因此本研究針對其使用者進行分析。\n\n"
+        "|構面|定義|\n|---|---|\n|心流|甲|\n\n"
+        "--- end of page.page_number=3 ---\n\n"
+        "|構面|定義|\n|---|---|\n|成癮|乙|\n"
+    )
+    doc = _pdf_with_md(monkeypatch, native_pdf, md)
+    text = _all_text(doc)
+    assert "end of page" not in text  # 標記用完即棄
+    assert "最容易導致年輕族群" in text.replace(" ", "")  # 跨頁段落接回
+    tables = _find(doc, "tableBlock")
+    assert len(tables) == 1  # 跨頁表合併
+    rows = _find(tables[0], "tableRow")
+    assert len(rows) == 3  # 表頭 + 兩列資料（重複表頭已去除）
+
+
+def test_pdf_lists_flattened(monkeypatch, native_pdf):
+    long_a = "性別：男性共 172 位，占總人數四成以上，其餘皆為女性受訪者。"
+    md = (
+        "# 第一章 緒論\n\n"
+        f"1. {long_a}\n2. 年齡：以 20 到 29 歲為大宗。\n\n"
+        "- 短項目一\n- 短項目二\n\n"
+        "# 參考文獻\n\n- 朱美慧（2000）。研究一。\n- 江欣茹（2004）。研究二。\n"
+    )
+    doc = _pdf_with_md(monkeypatch, native_pdf, md)
+    ordered = _find(doc, "orderedList")
+    bullets = _find(doc, "bulletList")
+    assert not ordered  # 字面編號攤平、保留編號
+    assert f"1. {long_a}" in [
+        _all_text(b) for b in doc["content"] if b["type"] == "paragraph"
+    ]
+    assert len(bullets) == 1  # 短 bullet 清單保留
+    # 參考文獻區清單攤平成一條一段
+    paras = [_all_text(b) for b in doc["content"] if b["type"] == "paragraph"]
+    assert any(p.startswith("朱美慧") for p in paras)
+    assert any(p.startswith("江欣茹") for p in paras)
+
+
+def test_pdf_toc_debris_table_replaced(monkeypatch, native_pdf):
+    md = (
+        "# 測試論文\n\n"  # 第一個 H1 會被抽成文件標題，墊一個
+        "# 目錄\n\n"
+        "|第一章 緒論.......... 1|\n|---|\n|1.1 研究背景................ 2|\n|誌謝............ iii|\n\n"
+        "# 第一章 緒論\n\n內文。\n"
+    )
+    doc = _pdf_with_md(monkeypatch, native_pdf, md)
+    assert _find(doc, "tableOfContents"), "live TOC node inserted"
+    assert not _find(doc, "tableBlock"), "dot-leader debris table consumed"
+
+
+def test_pdf_reference_entries_rejoined(monkeypatch, native_pdf):
+    md = (
+        "# 測試論文\n\n"  # 第一個 H1 會被抽成文件標題，墊一個
+        "# 參考文獻\n\n"
+        "Bryant, J., & Miron, D. (2004). Theory and research in mass\n\n"
+        "communication. Journal of communication, 54(4), 662-704.\n\n"
+        "Instagram. (2010). Press release. Retrieved from https://instagram-\n\n"
+        "press.com/blog/2010/10/06/instagram-launches-2/.\n"
+    )
+    doc = _pdf_with_md(monkeypatch, native_pdf, md)
+    paras = [_all_text(b) for b in doc["content"] if b["type"] == "paragraph"]
+    assert any("Theory and research in mass communication" in p for p in paras)
+    assert any("https://instagram-press.com/blog" in p for p in paras)
+
+
+def test_pdf_cjk_gaps_stripped(monkeypatch, native_pdf):
+    md = "# 第一章 緒論\n\n本研究探討網路成 癮與（ 2000 ）年的現象。\n"
+    doc = _pdf_with_md(monkeypatch, native_pdf, md)
+    text = _all_text(doc)
+    assert "網路成癮" in text
+    assert "（2000）" in text
+
+
+def test_pdf_caption_source_split(monkeypatch, native_pdf):
+    md = (
+        "# 第一章 緒論\n\n"
+        "![](https://example.com/x.png)\n\n"
+        "圖1-1 全球社群媒體使用概況 資料來源：Smart Insights (2018)\n"
+    )
+    doc = _pdf_with_md(monkeypatch, native_pdf, md)
+    figs = _find(doc, "figure")
+    assert figs and "資料來源" not in figs[0]["attrs"]["caption"]
+    assert "全球社群媒體使用概況" in figs[0]["attrs"]["caption"]
+    assert any(
+        _all_text(b).startswith("資料來源")
+        for b in doc["content"]
+        if b["type"] == "paragraph"
+    )  # 資料來源留在正文（對齊 DOCX）
+
+
+def test_pdf_trailing_enum_heading_split(monkeypatch, native_pdf):
+    md = (
+        "# 第一章 緒論\n\n"
+        "研究結果顯示兩者呈正相關，證實假說成立。（二）感知隱私權\n\n"
+        "當社群媒體要求愈來愈多使用者資訊，使用者便會開始關注隱私。\n"
+    )
+    doc = _pdf_with_md(monkeypatch, native_pdf, md)
+    heads = [_all_text(b) for b in doc["content"] if b["type"] == "heading"]
+    assert "（二）感知隱私權" in heads
+
+
+def test_repair_scrambled_paragraph(monkeypatch, native_pdf):
+    """孤兒標點段落用原生 span 文字（順序正確）重建。"""
+    correct = (
+        "超過八成都有臉書 (Facebook) 帳號，其次則依序為 YouTube (60.4%)、"
+        "PTT (37.8%)、Instagram (32.7%)。基於台灣民眾社群媒體的使用情況本研究繼續分析。"
+    )
+    scrambled = (
+        "超過八成都有臉書 (Facebook) 、 、 。 帳號，其次則依序為 YouTube (60.4%) "
+        "PTT (37.8%) Instagram (32.7%) 基於台灣民眾社群媒體的使用情況本研究繼續分析。"
+    )
+
+    def fake_spans(raw):
+        return [
+            pipeline.Span(
+                page=0, bbox=(0, 0, 0, 0), text=line + "\n", char_start=0, char_end=0
+            )
+            for line in [correct[: len(correct) // 2], correct[len(correct) // 2 :]]
+        ]
+
+    monkeypatch.setattr(pipeline, "_extract_pdf_spans_native", fake_spans)
+    blocks = [{"type": "paragraph", "content": [{"type": "text", "text": scrambled}]}]
+    import_doc._repair_scrambled_paragraphs(blocks, b"%PDF-fake")
+    fixed = _all_text(blocks[0]).replace(" ", "")
+    assert "(60.4%)、PTT(37.8%)、Instagram(32.7%)。" in fixed
+
+
 # ---------- /api/editor/import PDF job flow ----------
 
 

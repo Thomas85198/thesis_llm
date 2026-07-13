@@ -482,6 +482,52 @@ def _style_heading_runs(paragraph) -> None:
         r.font.color.rgb = RGBColor(0, 0, 0)
 
 
+# LaTeX → OMML（Word 原生數學）。轉換鏈是 latex2mathml → mathml2omml，
+# 兩者對罕見語法都可能失敗——回 None 讓呼叫端退回字面 $...$ 文字，
+# 匯出永不因單一數學式中斷。與 LaTeX/PDF（原生排版）、HTML（MathJax）
+# 對齊後，DOCX 補上三格式一致的最後一塊。
+_OMML_NS = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
+
+
+def _omml_element(latex: str, block: bool = False):
+    if not (latex or "").strip():
+        return None
+    try:
+        import latex2mathml.converter
+        import mathml2omml
+        from docx.oxml import parse_xml
+
+        omml = mathml2omml.convert(latex2mathml.converter.convert(latex))
+        # mathml2omml 0.0.2 的 MUnder/MOver 把 </m:groupChrPr> 誤植為
+        # </m:groupChr>（\bar/\overline/\underline 這類修飾必踩），XML 直接
+        # 解析失敗。錯誤關閉標籤永遠緊跟在 <m:pos .../> 屬性後，精準修補。
+        omml = omml.replace(
+            '<m:pos m:val="top"/></m:groupChr>', '<m:pos m:val="top"/></m:groupChrPr>'
+        )
+        omml = omml.replace(
+            '<m:pos m:val="bot"/></m:groupChr>', '<m:pos m:val="bot"/></m:groupChrPr>'
+        )
+        if block:
+            # oMathPara = display equation；Word 預設置中，與 LaTeX \[..\] 一致。
+            xml = f"<m:oMathPara {_OMML_NS}>{omml}</m:oMathPara>"
+        else:
+            xml = omml.replace("<m:oMath>", f"<m:oMath {_OMML_NS}>", 1)
+        el = parse_xml(xml)
+        # 每個 math run 補 Cambria Math 字型宣告（w:rPr 置於 m:rPr 之後、
+        # m:t 之前）。少了它 Word——尤其 Mac 版——會把整條方程式渲染成
+        # 空白，這是 OMML 的知名地雷。
+        for r in el.iter(qn("m:r")):
+            rpr = OxmlElement("w:rPr")
+            fonts = OxmlElement("w:rFonts")
+            fonts.set(qn("w:ascii"), "Cambria Math")
+            fonts.set(qn("w:hAnsi"), "Cambria Math")
+            rpr.append(fonts)
+            r.insert(1 if r.find(qn("m:rPr")) is not None else 0, rpr)
+        return el
+    except Exception:  # noqa: BLE001 — graceful fallback to literal text
+        return None
+
+
 def _add_inline_docx(
     paragraph, nodes: list[dict], style: str, order: list[str]
 ) -> None:
@@ -503,7 +549,12 @@ def _add_inline_docx(
             num = _citation_number(order, _cite_key(a))
             _apply_run_font(paragraph.add_run(in_text_label(a, style, num)))
         elif t == "mathInline":
-            paragraph.add_run(f"${(n.get('attrs') or {}).get('latex', '')}$")
+            latex = (n.get("attrs") or {}).get("latex", "")
+            el = _omml_element(latex)
+            if el is not None:
+                paragraph._p.append(el)  # 落在目前 run 序列的正確位置（尾端）
+            else:
+                paragraph.add_run(f"${latex}$")
 
 
 def _docx_caption_num(ctx: dict, kind: str) -> str:
@@ -631,8 +682,13 @@ def _render_block_docx(
     elif t == "figureList":
         pass  # an editor-only live aid; the figures themselves render inline
     elif t == "mathBlock":
+        latex = (block.get("attrs") or {}).get("latex", "")
         p = docx.add_paragraph()
-        p.add_run(f"$${(block.get('attrs') or {}).get('latex', '')}$$")
+        el = _omml_element(latex, block=True)
+        if el is not None:
+            p._p.append(el)
+        else:
+            p.add_run(f"$${latex}$$")
     elif t == "tableBlock":
         caption, rows = _table_parts(block)
         if caption:
@@ -1335,6 +1391,8 @@ def to_latex(
     tex = (
         magic + f"{docclass}\n" + cjk_packages + layout + "\\usepackage{graphicx}\n"
         "\\usepackage{float}\n"  # [H] placement for figures/tables
+        "\\usepackage{amsmath}\n"  # pmatrix/cases/aligned/\text — 編輯器數學節點會用到
+        "\\usepackage{amssymb}\n"  # \mathbb 等符號集
         "\\usepackage{xltabular}\n"  # width-bounded wrapping columns + page-breakable tables
         "\\usepackage[normalem]{ulem}\n"
         "\\usepackage{hyperref}\n"
@@ -1550,6 +1608,8 @@ th, td { border: 1px solid #999; padding: .4rem .6rem; }
 blockquote { border-left: 3px solid #ccc; margin: 1rem 0; padding-left: 1rem; color: #444; }
 pre { background: #f5f5f5; padding: .8rem; overflow-x: auto; font-family: ui-monospace,monospace; }
 ol.refs li { margin-bottom: .4rem; }
+/* 寬數學式在容器內水平捲動，不撐破頁面（MathJax display 容器） */
+mjx-container[display="true"] { display: block; overflow-x: auto; overflow-y: hidden; max-width: 100%; }
 @media print { body { margin: 0; max-width: none; } }
 """
 
@@ -1583,6 +1643,8 @@ figcaption { margin-top: .4rem; }
 .tw-cap { text-align: center; margin: .6rem 0 .3rem; }
 table { border-collapse: collapse; width: 100%; margin: .3rem 0 1rem; }
 th, td { border: 1px solid #333; padding: .3rem .6rem; text-indent: 0; }
+/* 寬數學式在 A4 頁內水平捲動，不撐破版面 */
+mjx-container[display="true"] { display: block; overflow-x: auto; overflow-y: hidden; max-width: 100%; }
 blockquote { border-left: 3px solid #ccc; margin: 1rem 0; padding-left: 1rem; color: #444; }
 pre { background: #f5f5f5; padding: .8rem; overflow-x: auto; font-family: ui-monospace,monospace; text-indent: 0; }
 .refs-title { page-break-before: always; }

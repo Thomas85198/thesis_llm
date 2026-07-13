@@ -337,3 +337,99 @@ def test_docx_uses_serif_font():
     data = export_doc.to_docx({"title": "t", "content_json": DOC}, "apa", "References")
     d = _Doc(_io.BytesIO(data))
     assert d.styles["Normal"].font.name == "Times New Roman"
+
+
+# ---------- DOCX math → OMML ----------
+
+_M_NS = {"m": "http://schemas.openxmlformats.org/officeDocument/2006/math"}
+
+
+def test_docx_math_renders_native_omml():
+    """行內/區塊數學式輸出 Word 原生 OMML（非字面 $...$ 文字）——三格式
+    一致的最後一塊：LaTeX/PDF 原生排版、HTML MathJax、DOCX OMML。"""
+    import io as _io
+
+    from docx import Document as _Doc
+
+    doc = {"type": "doc", "content": [
+        {"type": "paragraph", "content": [
+            {"type": "text", "text": "能量公式 "},
+            {"type": "mathInline", "attrs": {"latex": "E=mc^2"}},
+            {"type": "text", "text": " 很有名。"},
+        ]},
+        {"type": "mathBlock", "attrs": {"latex": "\\int_0^1 x^2\\,dx = \\frac{1}{3}"}},
+    ]}
+    data = export_doc.to_docx({"title": "t", "content_json": doc}, "apa", "References")
+    d = _Doc(_io.BytesIO(data))
+    paras = d.paragraphs
+    inline = [p for p in paras if p._p.findall(".//m:oMath", _M_NS)]
+    blocks = [p for p in paras if p._p.findall(".//m:oMathPara", _M_NS)]
+    assert len(inline) >= 2 and len(blocks) == 1
+    full_text = "\n".join(p.text for p in paras)
+    assert "$E=mc^2$" not in full_text  # 不再是字面文字
+    # 行內數學位於文字 run 之間、同一段落
+    host = next(p for p in paras if "能量公式" in p.text)
+    assert host._p.findall(".//m:oMath", _M_NS)
+
+
+def test_docx_math_falls_back_to_literal_on_conversion_failure(monkeypatch):
+    import io as _io
+
+    from docx import Document as _Doc
+
+    monkeypatch.setattr(export_doc, "_omml_element", lambda *a, **k: None)
+    doc = {"type": "doc", "content": [
+        {"type": "paragraph", "content": [
+            {"type": "mathInline", "attrs": {"latex": "E=mc^2"}},
+        ]},
+        {"type": "mathBlock", "attrs": {"latex": "\\bad{cmd}"}},
+    ]}
+    data = export_doc.to_docx({"title": "t", "content_json": doc}, "apa", "References")
+    d = _Doc(_io.BytesIO(data))
+    full_text = "\n".join(p.text for p in d.paragraphs)
+    assert "$E=mc^2$" in full_text and "$$\\bad{cmd}$$" in full_text
+
+
+def test_omml_element_handles_garbage():
+    assert export_doc._omml_element("") is None
+    assert export_doc._omml_element("   ") is None
+    # 正常式子回 lxml element
+    el = export_doc._omml_element("x^2")
+    assert el is not None and el.tag.endswith("}oMath")
+
+
+def test_omml_patches_mathml2omml_groupchr_bug():
+    """mathml2omml 0.0.2 對 \\bar/\\overline（MOver/MUnder groupChr）輸出
+    錯誤關閉標籤 → XML 解析失敗。已做精準修補，統計常用符號必須原生輸出。"""
+    for latex in (r"\bar{X} = \frac{1}{n}\sum_{i=1}^{n} X_i", r"\overline{AB}",
+                  r"\underline{x}", r"\underbrace{a+b}_{2}"):
+        assert export_doc._omml_element(latex) is not None, latex
+
+
+def test_math_regressions_from_user_acceptance():
+    """使用者驗收抓到的三件事：LaTeX 缺 amsmath（pmatrix 炸 &）、DOCX math
+    run 缺 Cambria Math（Mac Word 顯示空白）、HTML 寬式子無捲動。"""
+    import io as _io
+
+    from docx import Document as _Doc
+    from docx.oxml.ns import qn as _qn
+
+    doc = {"type": "doc", "content": [
+        {"type": "mathBlock", "attrs": {"latex": "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}"}},
+    ]}
+    wrapper = {"title": "t", "content_json": doc}
+    # 1. LaTeX preamble 必須載 amsmath/amssymb
+    tex, _ = export_doc.to_latex(wrapper, "apa", "References")
+    assert "\\usepackage{amsmath}" in tex and "\\usepackage{amssymb}" in tex
+    # 2. DOCX 每個 math run 都帶 Cambria Math 字型
+    data = export_doc.to_docx(wrapper, "apa", "References")
+    d = _Doc(_io.BytesIO(data))
+    runs = [r for p in d.paragraphs for r in p._p.iter(_qn("m:r"))]
+    assert runs
+    for r in runs:
+        fonts = r.findall(f"{_qn('w:rPr')}/{_qn('w:rFonts')}")
+        assert fonts and fonts[0].get(_qn("w:ascii")) == "Cambria Math"
+    # 3. HTML 預覽的 display math 有水平捲動規則（兩套 CSS 都要）
+    for tpl in ("article", "twthesis"):
+        html = export_doc.to_html(wrapper, "apa", "References", template=tpl)
+        assert 'mjx-container[display="true"]' in html

@@ -38,6 +38,14 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.21.0",
+    date: "2026-07-14",
+    changes: [
+      { type: "feat" }, // Word 匯出數學式原生化（OMML）：三格式一致收官——LaTeX/PDF 原生排版、HTML MathJax、DOCX 真方程式
+      { type: "fix" }, // PDF 匯出補 amsmath（矩陣/分段函數不再編譯失敗）；Mac Word 方程式空白修復；寬式子預覽與編輯器內改水平捲動
+    ],
+  },
+  {
     version: "4.20.0",
     date: "2026-07-14",
     changes: [

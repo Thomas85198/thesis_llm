@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1232,17 +1233,56 @@ def export_document(body: ExportIn) -> Response:
     return Response(content=data, media_type=media, headers=headers)
 
 
-_IMPORT_EXTS = {"txt", "text", "md", "markdown", "mdown", "docx", "tex", "latex"}
+_IMPORT_EXTS = {"txt", "text", "md", "markdown", "mdown", "docx", "tex", "latex", "pdf"}
 _MAX_IMPORT_BYTES = 20 * 1024 * 1024  # 20 MB
+_MAX_IMPORT_BYTES_PDF = 50 * 1024 * 1024  # 論文 PDF 常見 20–40MB，對齊主上傳的 50MB
+
+# PDF 匯入一律走背景 job：原生文字層幾秒完成，掃描檔 OCR 要數分鐘，
+# 同步端點撐不住後者。in-memory 與分析流的 _jobs 同款（重啟即失效，可接受）。
+_import_jobs: dict[str, dict[str, Any]] = {}
+_import_jobs_lock = threading.Lock()
+_IMPORT_JOB_TTL_SECONDS = 30 * 60
+
+
+def _prune_import_jobs() -> None:
+    now = time.time()
+    with _import_jobs_lock:
+        stale = [
+            jid
+            for jid, job in _import_jobs.items()
+            if now - job["created"] > _IMPORT_JOB_TTL_SECONDS
+        ]
+        for jid in stale:
+            _import_jobs.pop(jid, None)
+
+
+def _run_pdf_import(job_id: str, filename: str, raw: bytes) -> None:
+    """Worker thread: parse the PDF (native fast path, or tesseract OCR for
+    scans) and stash the result on the job for the client to poll."""
+    job = _import_jobs.get(job_id)
+    if job is None:  # pruned before we started — nobody is polling
+        return
+    try:
+        needs_ocr = import_doc.pdf_needs_ocr(raw)
+        if needs_ocr:
+            job["stage"] = "ocr"
+        title, content_json = import_doc.to_prosemirror(
+            filename, raw, pdf_ocr=needs_ocr
+        )
+        job.update(status="done", title=title, content_json=content_json)
+    except Exception as exc:  # noqa: BLE001 — surfaced via the poll endpoint
+        job.update(status="error", detail=f"could not parse .pdf: {exc}")
 
 
 @router.post("/api/editor/import")
 async def import_document(file: UploadFile) -> dict[str, Any]:
-    """Parse an uploaded .txt / .md / .docx / .tex into editor (ProseMirror) JSON.
+    """Parse an uploaded .txt / .md / .docx / .tex / .pdf into editor JSON.
 
-    Returns {title, content_json}; the client creates a new document from it and
-    opens the editor. Embedded DOCX images are saved to UPLOAD_DIR and referenced
-    by figure nodes' src, so they render and re-export like any uploaded image.
+    Non-PDF formats parse synchronously and return {title, content_json}; the
+    client creates a new document from it and opens the editor. Embedded images
+    are saved to UPLOAD_DIR and referenced by figure nodes' src. PDFs return
+    {job_id, status: "processing"} instead — poll /api/editor/import/jobs/{id}
+    (native-text PDFs finish in seconds; scanned PDFs run tesseract OCR).
     """
     if not file.filename:
         raise HTTPException(400, "missing filename")
@@ -1250,8 +1290,23 @@ async def import_document(file: UploadFile) -> dict[str, Any]:
     if ext not in _IMPORT_EXTS:
         raise HTTPException(415, f"unsupported import type: .{ext or '?'}")
     raw = await file.read()
-    if len(raw) > _MAX_IMPORT_BYTES:
-        raise HTTPException(413, "file too large (max 20MB)")
+    limit = _MAX_IMPORT_BYTES_PDF if ext == "pdf" else _MAX_IMPORT_BYTES
+    if len(raw) > limit:
+        raise HTTPException(413, f"file too large (max {limit // (1024 * 1024)}MB)")
+
+    if ext == "pdf":
+        _prune_import_jobs()
+        job_id = uuid.uuid4().hex
+        _import_jobs[job_id] = {
+            "status": "processing",
+            "stage": "parse",
+            "created": time.time(),
+        }
+        threading.Thread(
+            target=_run_pdf_import, args=(job_id, file.filename, raw), daemon=True
+        ).start()
+        return {"job_id": job_id, "status": "processing"}
+
     try:
         title, content_json = import_doc.to_prosemirror(file.filename, raw)
     except ValueError as exc:
@@ -1259,6 +1314,25 @@ async def import_document(file: UploadFile) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 — malformed upload → 422
         raise HTTPException(422, f"could not parse .{ext}: {exc}") from exc
     return {"title": title, "content_json": content_json}
+
+
+@router.get("/api/editor/import/jobs/{job_id}")
+def import_job_status(job_id: str) -> dict[str, Any]:
+    """Poll a PDF import job. done → {status, title, content_json} (single-shot
+    semantics are not enforced; the job simply expires after its TTL)."""
+    _prune_import_jobs()
+    job = _import_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "unknown or expired import job")
+    if job["status"] == "done":
+        return {
+            "status": "done",
+            "title": job["title"],
+            "content_json": job["content_json"],
+        }
+    if job["status"] == "error":
+        return {"status": "error", "detail": job["detail"]}
+    return {"status": "processing", "stage": job.get("stage", "parse")}
 
 
 _EDITOR_IMAGE_EXTS = {"png", "jpg", "jpeg", "gif", "webp"}

@@ -265,7 +265,7 @@ def test_dispatch_by_extension_and_title_fallback():
 
 def test_dispatch_rejects_unknown():
     try:
-        import_doc.to_prosemirror("x.pdf", b"%PDF")
+        import_doc.to_prosemirror("x.xyz", b"whatever")
         assert False, "should have raised"
     except ValueError:
         pass

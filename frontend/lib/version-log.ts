@@ -38,6 +38,13 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.19.0",
+    date: "2026-07-13",
+    changes: [
+      { type: "feat" }, // PDF 匯入編輯器：字型大小還原標題階層、圖片與 caption 落地；掃描檔自動 OCR（背景任務＋輪詢）
+    ],
+  },
+  {
     version: "4.18.0",
     date: "2026-07-07",
     changes: [

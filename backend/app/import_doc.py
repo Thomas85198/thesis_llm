@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import tempfile
 import uuid
 import zipfile
 from pathlib import Path
@@ -982,14 +983,193 @@ def _relink_directories(blocks: list[dict]) -> list[dict]:
     return out
 
 
+# ---------- pdf (pymupdf4llm → markdown → 現成 markdown 管線) ----------
+
+# 原生文字層總量低於這個字元數就視為掃描檔（純掃描 PDF 的原生層近乎空白）。
+# 誤判成本低：小文件 OCR 只多花幾秒，結果相同。
+_PDF_MIN_NATIVE_CHARS = 100
+
+
+def pdf_needs_ocr(raw: bytes) -> bool:
+    """True when the PDF has no usable native text layer (pure scan, or the
+    glyph-cipher garble the analysis pipeline already knows how to detect)."""
+    from . import pipeline
+
+    spans = pipeline._extract_pdf_spans_native(raw)
+    text = "".join(s.text for s in spans)
+    if len(text.strip()) < _PDF_MIN_NATIVE_CHARS:
+        return True
+    return pipeline._looks_garbled(spans)
+
+
+def _localize_pdf_images(doc: dict, image_dir: Path) -> None:
+    """Rewrite figure srcs that point into pymupdf4llm's temp image dir to
+    persisted /api/editor/images/ paths. Unreadable or over-cap images drop
+    the figure node entirely (a broken temp path would 404 after import)."""
+    budget = 0
+    root = image_dir.resolve()  # macOS: /var/… 是 /private/var/… 的 symlink
+
+    def walk(nodes: list[dict]) -> list[dict]:
+        nonlocal budget
+        out: list[dict] = []
+        for n in nodes:
+            if n.get("type") == "figure":
+                src = (n.get("attrs") or {}).get("src", "")
+                try:
+                    p = Path(src)
+                    if not p.is_absolute() or root not in p.resolve().parents:
+                        out.append(n)  # 外部 URL 等非暫存圖，原樣保留
+                        continue
+                    data = p.read_bytes()
+                    if budget >= _MAX_EMBEDDED_IMAGES or len(data) > _MAX_IMAGE_BYTES:
+                        continue
+                    budget += 1
+                    nb = dict(n)
+                    nb["attrs"] = {
+                        **n.get("attrs", {}),
+                        "src": _save_image(data, p.suffix.lstrip(".")),
+                    }
+                    out.append(nb)
+                except Exception:  # noqa: BLE001 — best-effort; drop broken figures
+                    continue
+            else:
+                if n.get("content"):
+                    n = {**n, "content": walk(n["content"])}
+                out.append(n)
+        return out
+
+    doc["content"] = walk(doc.get("content") or [])
+
+
+def _strip_code_marks(node: dict) -> None:
+    """Remove inline `code` marks everywhere. pymupdf4llm flags CJK fonts as
+    monospace, so whole Chinese paragraphs come back wrapped in backticks;
+    real inline-code semantics don't survive PDF typesetting anyway."""
+    marks = node.get("marks")
+    if marks:
+        kept = [m for m in marks if m.get("type") != "code"]
+        if kept:
+            node["marks"] = kept
+        else:
+            node.pop("marks", None)
+    for ch in node.get("content", []):
+        _strip_code_marks(ch)
+
+
+def from_pdf(raw: bytes) -> tuple[str, dict]:
+    """Native-text PDFs: pymupdf4llm infers headings from font sizes and emits
+    markdown (images written to a temp dir), which reuses the whole mistune →
+    ProseMirror pipeline plus the docx post-processing heuristics.
+
+    `use_ocr=False` is load-bearing: pymupdf4llm 1.28 in layout mode silently
+    OCRs pages its decision model distrusts — with `ocr_language="eng"` — so on
+    a host WITH tesseract a Chinese thesis came back as Latin glyph salad while
+    the same code was fine on a host without it. Scanned PDFs are OUR call via
+    `pdf_needs_ocr` → `from_pdf_ocr` (chi_tra+eng), never pymupdf4llm's.
+    `ignore_code=True` for the same CJK reason: CJK fonts get flagged as
+    monospace and whole paragraphs turn into fenced code blocks."""
+    import pymupdf
+    import pymupdf4llm
+
+    with tempfile.TemporaryDirectory() as td:
+        pdf = pymupdf.open(stream=raw, filetype="pdf")
+        try:
+            meta_title = ((pdf.metadata or {}).get("title") or "").strip()
+            md = pymupdf4llm.to_markdown(
+                pdf,
+                write_images=True,
+                image_path=td,
+                image_format="png",
+                use_ocr=False,
+                ignore_code=True,
+            )
+        finally:
+            pdf.close()
+        title, doc = from_markdown(md)
+        _localize_pdf_images(doc, Path(td))
+    _strip_code_marks(doc)  # 殘餘的行內 code span（CJK 誤判 monospace）
+    blocks = _unwrap_pseudo_blockquotes(_demote_pseudo_headings(doc["content"]))
+    doc["content"] = _attach_captions(blocks)
+    return title or meta_title, doc
+
+
+_CJK_RE = re.compile(r"[㐀-鿿豈-﫿]")
+
+
+def _join_ocr_lines(lines: list[str]) -> str:
+    """Join OCR line fragments into one paragraph string: CJK boundaries join
+    directly, everything else with a space (mirrors how the lines would wrap)."""
+    out = ""
+    for ln in lines:
+        ln = ln.strip()
+        if not ln:
+            continue
+        if not out:
+            out = ln
+        elif _CJK_RE.search(out[-1]) and _CJK_RE.search(ln[0]):
+            out += ln
+        else:
+            out += " " + ln
+    return out
+
+
+def from_pdf_ocr(raw: bytes) -> tuple[str, dict]:
+    """Scanned PDFs: tesseract via the analysis pipeline's OCR path (bbox-level
+    lines), then group lines into paragraphs by vertical gaps. Structure beyond
+    paragraphs (headings/tables) is not recoverable from OCR output."""
+    import pymupdf
+
+    from . import pipeline
+
+    pdf = pymupdf.open(stream=raw, filetype="pdf")
+    try:
+        meta_title = ((pdf.metadata or {}).get("title") or "").strip()
+    finally:
+        pdf.close()
+
+    spans = pipeline._extract_pdf_spans_ocr(raw)
+    paragraphs: list[str] = []
+    buf: list[str] = []
+    prev = None
+    for s in spans:
+        if prev is not None:
+            gap = s.bbox[1] - prev.bbox[3]  # 這行的 y0 − 上一行的 y1
+            line_h = max(prev.bbox[3] - prev.bbox[1], 1.0)
+            if s.page != prev.page or gap > 0.8 * line_h:
+                if buf:
+                    paragraphs.append(_join_ocr_lines(buf))
+                buf = []
+        buf.append(s.text)
+        prev = s
+    if buf:
+        paragraphs.append(_join_ocr_lines(buf))
+
+    _, doc = from_text("\n\n".join(p for p in paragraphs if p))
+    return meta_title, doc
+
+
 # ---------- dispatch ----------
 
-SUPPORTED_EXTS = {"txt", "text", "md", "markdown", "mdown", "docx", "tex", "latex"}
+SUPPORTED_EXTS = {
+    "txt",
+    "text",
+    "md",
+    "markdown",
+    "mdown",
+    "docx",
+    "tex",
+    "latex",
+    "pdf",
+}
 
 
-def to_prosemirror(filename: str, raw: bytes) -> tuple[str, dict]:
+def to_prosemirror(
+    filename: str, raw: bytes, *, pdf_ocr: bool = False
+) -> tuple[str, dict]:
     """Dispatch by file extension. Returns (title, prosemirror_doc). Title falls
-    back to the filename stem when the document carries none."""
+    back to the filename stem when the document carries none. `pdf_ocr` routes a
+    scanned PDF through tesseract instead of the native-text path (the caller
+    decides via `pdf_needs_ocr` — OCR takes minutes, so it runs as a job)."""
     ext = Path(filename or "").suffix.lower().lstrip(".")
     if ext in ("txt", "text"):
         title, doc = from_text(raw.decode("utf-8", "replace"))
@@ -999,6 +1179,8 @@ def to_prosemirror(filename: str, raw: bytes) -> tuple[str, dict]:
         title, doc = from_docx(raw)
     elif ext in ("tex", "latex"):
         title, doc = from_latex(raw.decode("utf-8", "replace"))
+    elif ext == "pdf":
+        title, doc = from_pdf_ocr(raw) if pdf_ocr else from_pdf(raw)
     else:
         raise ValueError(f"unsupported import type: .{ext or '?'}")
     doc["content"] = _relink_directories(doc.get("content") or [])

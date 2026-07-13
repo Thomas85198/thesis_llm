@@ -337,3 +337,62 @@ def test_docx_uses_serif_font():
     data = export_doc.to_docx({"title": "t", "content_json": DOC}, "apa", "References")
     d = _Doc(_io.BytesIO(data))
     assert d.styles["Normal"].font.name == "Times New Roman"
+
+
+# ---------- DOCX math → OMML ----------
+
+_M_NS = {"m": "http://schemas.openxmlformats.org/officeDocument/2006/math"}
+
+
+def test_docx_math_renders_native_omml():
+    """行內/區塊數學式輸出 Word 原生 OMML（非字面 $...$ 文字）——三格式
+    一致的最後一塊：LaTeX/PDF 原生排版、HTML MathJax、DOCX OMML。"""
+    import io as _io
+
+    from docx import Document as _Doc
+
+    doc = {"type": "doc", "content": [
+        {"type": "paragraph", "content": [
+            {"type": "text", "text": "能量公式 "},
+            {"type": "mathInline", "attrs": {"latex": "E=mc^2"}},
+            {"type": "text", "text": " 很有名。"},
+        ]},
+        {"type": "mathBlock", "attrs": {"latex": "\\int_0^1 x^2\\,dx = \\frac{1}{3}"}},
+    ]}
+    data = export_doc.to_docx({"title": "t", "content_json": doc}, "apa", "References")
+    d = _Doc(_io.BytesIO(data))
+    paras = d.paragraphs
+    inline = [p for p in paras if p._p.findall(".//m:oMath", _M_NS)]
+    blocks = [p for p in paras if p._p.findall(".//m:oMathPara", _M_NS)]
+    assert len(inline) >= 2 and len(blocks) == 1
+    full_text = "\n".join(p.text for p in paras)
+    assert "$E=mc^2$" not in full_text  # 不再是字面文字
+    # 行內數學位於文字 run 之間、同一段落
+    host = next(p for p in paras if "能量公式" in p.text)
+    assert host._p.findall(".//m:oMath", _M_NS)
+
+
+def test_docx_math_falls_back_to_literal_on_conversion_failure(monkeypatch):
+    import io as _io
+
+    from docx import Document as _Doc
+
+    monkeypatch.setattr(export_doc, "_omml_element", lambda *a, **k: None)
+    doc = {"type": "doc", "content": [
+        {"type": "paragraph", "content": [
+            {"type": "mathInline", "attrs": {"latex": "E=mc^2"}},
+        ]},
+        {"type": "mathBlock", "attrs": {"latex": "\\bad{cmd}"}},
+    ]}
+    data = export_doc.to_docx({"title": "t", "content_json": doc}, "apa", "References")
+    d = _Doc(_io.BytesIO(data))
+    full_text = "\n".join(p.text for p in d.paragraphs)
+    assert "$E=mc^2$" in full_text and "$$\\bad{cmd}$$" in full_text
+
+
+def test_omml_element_handles_garbage():
+    assert export_doc._omml_element("") is None
+    assert export_doc._omml_element("   ") is None
+    # 正常式子回 lxml element
+    el = export_doc._omml_element("x^2")
+    assert el is not None and el.tag.endswith("}oMath")

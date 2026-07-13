@@ -482,6 +482,32 @@ def _style_heading_runs(paragraph) -> None:
         r.font.color.rgb = RGBColor(0, 0, 0)
 
 
+# LaTeX → OMML（Word 原生數學）。轉換鏈是 latex2mathml → mathml2omml，
+# 兩者對罕見語法都可能失敗——回 None 讓呼叫端退回字面 $...$ 文字，
+# 匯出永不因單一數學式中斷。與 LaTeX/PDF（原生排版）、HTML（MathJax）
+# 對齊後，DOCX 補上三格式一致的最後一塊。
+_OMML_NS = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
+
+
+def _omml_element(latex: str, block: bool = False):
+    if not (latex or "").strip():
+        return None
+    try:
+        import latex2mathml.converter
+        import mathml2omml
+        from docx.oxml import parse_xml
+
+        omml = mathml2omml.convert(latex2mathml.converter.convert(latex))
+        if block:
+            # oMathPara = display equation；Word 預設置中，與 LaTeX \[..\] 一致。
+            xml = f"<m:oMathPara {_OMML_NS}>{omml}</m:oMathPara>"
+        else:
+            xml = omml.replace("<m:oMath>", f"<m:oMath {_OMML_NS}>", 1)
+        return parse_xml(xml)
+    except Exception:  # noqa: BLE001 — graceful fallback to literal text
+        return None
+
+
 def _add_inline_docx(
     paragraph, nodes: list[dict], style: str, order: list[str]
 ) -> None:
@@ -503,7 +529,12 @@ def _add_inline_docx(
             num = _citation_number(order, _cite_key(a))
             _apply_run_font(paragraph.add_run(in_text_label(a, style, num)))
         elif t == "mathInline":
-            paragraph.add_run(f"${(n.get('attrs') or {}).get('latex', '')}$")
+            latex = (n.get("attrs") or {}).get("latex", "")
+            el = _omml_element(latex)
+            if el is not None:
+                paragraph._p.append(el)  # 落在目前 run 序列的正確位置（尾端）
+            else:
+                paragraph.add_run(f"${latex}$")
 
 
 def _docx_caption_num(ctx: dict, kind: str) -> str:
@@ -631,8 +662,13 @@ def _render_block_docx(
     elif t == "figureList":
         pass  # an editor-only live aid; the figures themselves render inline
     elif t == "mathBlock":
+        latex = (block.get("attrs") or {}).get("latex", "")
         p = docx.add_paragraph()
-        p.add_run(f"$${(block.get('attrs') or {}).get('latex', '')}$$")
+        el = _omml_element(latex, block=True)
+        if el is not None:
+            p._p.append(el)
+        else:
+            p.add_run(f"$${latex}$$")
     elif t == "tableBlock":
         caption, rows = _table_parts(block)
         if caption:

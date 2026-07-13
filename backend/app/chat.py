@@ -10,6 +10,7 @@ Design:
 
 from __future__ import annotations
 
+import json
 import re
 import threading
 from typing import Any, Literal
@@ -158,6 +159,82 @@ def _injection_warning(messages: list[dict[str, str]]) -> str:
 # ---------- Main entry ----------
 
 
+def _build_system(
+    paper_id: str, paper_title: str, locale: str, messages: list[dict[str, str]]
+) -> str:
+    """Assemble the guarded system prompt (paper context + language + injection
+    warning for the latest user turn)."""
+    paper_context = _format_paper_context(paper_id, paper_title, locale)
+    system_text = load_prompt("chat").format(
+        paper_context=paper_context,
+        language=i18n.LANG_NAME[locale],
+    )
+    return system_text + _injection_warning(messages)
+
+
+def validate_message(text: str) -> str | None:
+    """Route-level validation for a single incoming user message (streaming
+    path). Returns an error string or None."""
+    if not isinstance(text, str) or not text.strip():
+        return "user message is empty"
+    if len(text) > MAX_USER_INPUT_CHARS:
+        return f"user message too long (max {MAX_USER_INPUT_CHARS} chars)"
+    return None
+
+
+def sse_stream(
+    *,
+    paper_id: str,
+    paper_title: str,
+    message: str,
+    lang: str | None = None,
+) -> Any:
+    """One chat turn as Server-Sent Events: `data: {"t": "<delta>"}` per token,
+    then [DONE]. History lives server-side (chat_messages) — the client sends
+    only the new user message.
+
+    The user turn is persisted up front and the assistant turn on completion;
+    a mid-stream failure rolls the user turn back (so a retry doesn't duplicate
+    it) and surfaces `data: {"error": ...}` before the terminator — mirroring
+    rewrite.sse_stream. Validation and rate limiting happen in the route so
+    errors get proper status codes before any bytes are streamed.
+    """
+    locale = i18n.normalize_locale(lang)
+    history = [
+        {"role": m["role"], "content": m["content"]}
+        for m in db.get_chat_messages(paper_id)
+    ]
+    turns = _truncate_history(
+        [*history, {"role": "user", "content": message}], MAX_HISTORY_TURNS
+    )
+    system_text = _build_system(paper_id, paper_title, locale, turns)
+
+    user_row_id = db.add_chat_message(paper_id, "user", message)
+    reply_parts: list[str] = []
+    try:
+        for delta in llm.stream_completion(
+            model=llm.model_light(),
+            system=system_text,
+            user_content=turns[-1]["content"],
+            history=turns[:-1],
+            max_tokens=MAX_OUTPUT_TOKENS,
+            paper_id=paper_id,
+            stage="chat",
+        ):
+            reply_parts.append(delta)
+            yield f"data: {json.dumps({'t': delta}, ensure_ascii=False)}\n\n"
+    except Exception as exc:  # noqa: BLE001 — surface any failure to the client
+        db.delete_chat_message(user_row_id)
+        yield f"data: {json.dumps({'error': repr(exc)})}\n\n"
+        yield "data: [DONE]\n\n"
+        return
+
+    reply = "".join(reply_parts).strip()
+    if reply:
+        db.add_chat_message(paper_id, "assistant", reply)
+    yield "data: [DONE]\n\n"
+
+
 def chat(
     *,
     paper_id: str,
@@ -181,12 +258,7 @@ def chat(
 
     locale = i18n.normalize_locale(lang)
     truncated = _truncate_history(messages, MAX_HISTORY_TURNS)
-    paper_context = _format_paper_context(paper_id, paper_title, locale)
-    system_text = load_prompt("chat").format(
-        paper_context=paper_context,
-        language=i18n.LANG_NAME[locale],
-    )
-    system_text += _injection_warning(truncated)
+    system_text = _build_system(paper_id, paper_title, locale, truncated)
 
     model = llm.model_light()  # gpt-4.1-mini is plenty for chat; cheaper than heavy.
     # OpenAI auto-caches prompts ≥1024 tokens — no explicit cache_control needed.

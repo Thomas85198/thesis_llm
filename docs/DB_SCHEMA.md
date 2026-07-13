@@ -2,11 +2,11 @@
 
 > 檔案位置：[backend/data.db](../backend/data.db)
 > 程式碼定義：[backend/app/db.py](../backend/app/db.py) `SCHEMA` 字串
-> 共 9 張表（2026-07-02 校正，原文誤記 4 張）：
-> - 檢核管線：`papers`（metadata）、`results`（analysis result）、`llm_calls`（cost log）、`defect_judgments`（human judgments）
+> 共 10 張表（2026-07-13 新增 `chat_messages`）：
+> - 檢核管線：`papers`（metadata）、`results`（analysis result）、`llm_calls`（cost log）、`defect_judgments`（human judgments）、`chat_messages`（論文助手對話持久化）
 > - 編輯器：`documents`、`document_versions`、`paper_chunks`、`draft_check_cache`
 > - 上傳稽核：`upload_events`
-> 下文詳述前四張；後五張見 [backend/app/db.py](../backend/app/db.py) `SCHEMA` 字串（尚未全數展開於本文件）。
+> 下文詳述前四張；其餘見 [backend/app/db.py](../backend/app/db.py) `SCHEMA` 字串（尚未全數展開於本文件）。
 
 ---
 

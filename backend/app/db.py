@@ -216,6 +216,23 @@ CREATE TABLE IF NOT EXISTS draft_check_cache (
     defects_json TEXT NOT NULL,       -- 該段 defects 的 JSON 陣列
     created_at   TEXT NOT NULL
 );
+
+-- ============================================================
+-- 表 10: chat_messages — 論文助手對話持久化
+-- ----------------------------------------------------------------
+-- 每篇論文一條對話串 (paper_id 分組、id 遞增即時間序)。前端重新整理 /
+-- 換頁後從這裡取回歷史；送 LLM 時仍只取最近 MAX_HISTORY_TURNS 輪
+-- (chat.py 截斷)，儲存上限由 MAX_CHAT_MESSAGES_PER_PAPER 修剪。
+-- delete_paper 會一併清除。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    paper_id   TEXT NOT NULL,
+    role       TEXT NOT NULL CHECK (role IN ('user','assistant')),
+    content    TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_paper ON chat_messages(paper_id, id);
 """
 
 
@@ -389,6 +406,7 @@ def delete_paper(paper_id: str) -> None:
     with connect() as c:
         c.execute("DELETE FROM defect_judgments WHERE paper_id=?", (paper_id,))
         c.execute("DELETE FROM llm_calls WHERE paper_id=?", (paper_id,))
+        c.execute("DELETE FROM chat_messages WHERE paper_id=?", (paper_id,))
         c.execute("DELETE FROM papers WHERE paper_id=?", (paper_id,))
 
 
@@ -1202,3 +1220,49 @@ def upsert_paper_chunks(
             "VALUES(?,?,?,?,?)",
             [(openalex_id, i, t, json.dumps(e), source) for (i, t, e) in chunks],
         )
+
+
+# ---------- chat_messages (paper-scoped assistant history) ----------
+
+# 每篇論文最多留這麼多則訊息（100 輪）；超過從最舊修剪。防止長期使用無界成長。
+MAX_CHAT_MESSAGES_PER_PAPER = 200
+
+
+def add_chat_message(paper_id: str, role: str, content: str) -> int:
+    """Append one message to a paper's chat thread; returns its row id.
+    Prunes the oldest rows beyond MAX_CHAT_MESSAGES_PER_PAPER."""
+    with connect() as c:
+        cur = c.execute(
+            "INSERT INTO chat_messages(paper_id, role, content, created_at) "
+            "VALUES(?,?,?,?)",
+            (paper_id, role, content, _now()),
+        )
+        c.execute(
+            "DELETE FROM chat_messages WHERE paper_id=? AND id NOT IN ("
+            "  SELECT id FROM chat_messages WHERE paper_id=? "
+            "  ORDER BY id DESC LIMIT ?)",
+            (paper_id, paper_id, MAX_CHAT_MESSAGES_PER_PAPER),
+        )
+        return int(cur.lastrowid)
+
+
+def get_chat_messages(paper_id: str) -> list[dict[str, Any]]:
+    """A paper's chat thread, oldest first."""
+    with connect() as c:
+        rows = c.execute(
+            "SELECT id, role, content, created_at FROM chat_messages "
+            "WHERE paper_id=? ORDER BY id",
+            (paper_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_chat_message(msg_id: int) -> None:
+    """Remove a single message (mid-stream failure rolls back the user turn)."""
+    with connect() as c:
+        c.execute("DELETE FROM chat_messages WHERE id=?", (msg_id,))
+
+
+def clear_chat_messages(paper_id: str) -> None:
+    with connect() as c:
+        c.execute("DELETE FROM chat_messages WHERE paper_id=?", (paper_id,))

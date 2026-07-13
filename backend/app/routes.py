@@ -789,6 +789,63 @@ def eval_summary() -> dict[str, Any]:
 # ---------- paper-scoped chat assistant ----------
 
 
+class ChatStreamIn(BaseModel):
+    message: str
+    lang: str | None = None  # UI locale; assistant reads context + replies in it
+
+
+@router.get("/api/papers/{paper_id}/chat")
+def chat_history(paper_id: str) -> dict[str, Any]:
+    """Persisted chat thread for this paper (oldest first). The client renders
+    it on open so the conversation survives reloads and navigation."""
+    if db.get_paper(paper_id) is None:
+        raise HTTPException(404, "paper not found")
+    return {"messages": db.get_chat_messages(paper_id)}
+
+
+@router.delete("/api/papers/{paper_id}/chat")
+def chat_clear(paper_id: str) -> dict[str, Any]:
+    if db.get_paper(paper_id) is None:
+        raise HTTPException(404, "paper not found")
+    db.clear_chat_messages(paper_id)
+    return {"ok": True}
+
+
+@router.post("/api/papers/{paper_id}/chat/stream")
+def paper_chat_stream(paper_id: str, body: ChatStreamIn) -> StreamingResponse:
+    """Streaming chat turn (SSE). History is server-side — the body carries only
+    the new user message. Validation / rate limit run up front so 400/429 get
+    real status codes; the stream then emits `data: {"t": ...}` chunks ending
+    with [DONE] (mirrors /api/editor/rewrite)."""
+    paper = db.get_paper(paper_id)
+    if paper is None:
+        raise HTTPException(404, "paper not found")
+    if db.get_result(paper_id) is None:
+        raise HTTPException(409, "paper analysis not finished yet")
+    err = chat_mod.validate_message(body.message)
+    if err:
+        raise HTTPException(400, err)
+    allowed, wait = chat_mod._check_rate_limit(paper_id)
+    if not allowed:
+        raise HTTPException(429, f"chat rate limit reached, retry in ~{wait}s")
+    return StreamingResponse(
+        chat_mod.sse_stream(
+            paper_id=paper_id,
+            paper_title=paper.get("title") or "",
+            message=body.message,
+            lang=body.lang,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# Legacy non-streaming endpoint — kept for API compatibility; the frontend now
+# uses /chat/stream + the persisted GET/DELETE endpoints above.
 @router.post("/api/papers/{paper_id}/chat")
 def paper_chat(paper_id: str, body: ChatIn) -> dict[str, Any]:
     paper = db.get_paper(paper_id)

@@ -42,6 +42,8 @@ export const VERSION_LOG: VersionEntry[] = [
     date: "2026-07-13",
     changes: [
       { type: "feat" }, // PDF 匯入編輯器：字型大小還原標題階層、圖片與 caption 落地；掃描檔自動 OCR（背景任務＋輪詢）
+      { type: "fix" }, // 浮水印處理：校徽浮水印不再把內文烤進圖片、圖目錄不再被垃圾圖灌爆
+      { type: "fix" }, // 與 Word 匯入一致性：頁碼/目錄殘渣清除、跨頁段落與長表接回、參考文獻重組、標題層級重定、標點錯亂重建
     ],
   },
   {

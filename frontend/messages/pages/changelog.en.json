@@ -29,6 +29,14 @@
     "chore": "Chore"
   },
   "versions": {
+    "4_21_0": {
+      "title": "Native math in Word export (three-format parity complete)",
+      "summary": "Math exported to Word is no longer literal $...$ source text but native Word equation objects — typeset in Cambria Math, editable with Word's equation editor, visually consistent with the LaTeX/PDF output. All three export formats (LaTeX/PDF, Word, HTML preview) now render math natively. Also fixed a batch of math issues: PDF export no longer fails to compile on matrices/piecewise functions, equations no longer render blank in Word for Mac, and overly wide formulas now scroll horizontally in the preview and the editor instead of breaking the layout.",
+      "changes": {
+        "0": "Inline and block math in Word (.docx) export becomes native OMML equations (editable, Cambria Math, display blocks centered); any formula that fails conversion falls back to the previous literal text without breaking the export. Statistical overline notation (\\bar, \\overline) fixed by patching an upstream converter bug.",
+        "1": "PDF/LaTeX export now loads amsmath and amssymb: pmatrix, cases, \\mathbb and friends no longer fail compilation; blank equations in Word for Mac fixed (Cambria Math run fonts); wide formulas scroll horizontally in the online preview and inside the editor."
+      }
+    },
     "4_20_0": {
       "title": "Paper assistant: live streaming + persistent conversations",
       "summary": "The paper assistant gets a full upgrade: replies now stream in live — words start appearing within a second instead of waiting on a spinner for the whole answer; conversations are stored in the database, so the thread survives reloads and navigation, and can be cleared with one click. Also fixed the dimmed background: clicking an [EDU] citation now jumps the PDF behind the drawer so you can chat and check the source side by side.",

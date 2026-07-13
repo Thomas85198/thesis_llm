@@ -38,6 +38,14 @@ export const CHANGE_TYPE_META: Record<ChangeType, { className: string }> = {
 // 最新版本放最前面。
 export const VERSION_LOG: VersionEntry[] = [
   {
+    version: "4.20.0",
+    date: "2026-07-14",
+    changes: [
+      { type: "feat" }, // 論文助手升級：回答即時串流（打字機）、對話持久化（重整/換頁不消失）、可清空
+      { type: "fix" }, // 助手抽屜改非 modal：點 [EDU] 引用時背景 PDF 保持可見可互動，邊聊邊對照原文
+    ],
+  },
+  {
     version: "4.19.0",
     date: "2026-07-13",
     changes: [
